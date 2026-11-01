@@ -1,6 +1,10 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:40 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:45 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## 北交所账作废（2026-11-01 19:45，无账户）
+
+用户不买北交所。Mandate 第 69 行也写明默认剔除北交所。`stable_book` 的代码序在 2024-06-03 与 2025-06-16 把 60 个位子全部给了 `bj.`。因此 60 万 CAGR 81.66% 不是可引用的收益，代码序也不能再当「不打分」基线。2026-06-26 换成 `sh.600*` 仍是同一种排序，同样不作数。没有用新规则重跑。`strategy_promotion_approved` 仍为 false。
 
 ## 81% 对照的核对（2026-11-01 19:40，无账户）
 
@@ -34,7 +38,6 @@ GitHub Release `quantlab-data-2026-11-01` 的分卷已下载到 git 忽略的 `d
 `quantlab/data/v2_readers.py` 在文件存在时按 `docs/v2/ASOF_EXTEND_PANEL_MERGE.md` 拼接 D0 与 extend，文件不在时抛 `FileNotFoundError`。读取器不算收益。返回值的 `promotion_approved` 保持 false。`quantlab/universe/d1_masks.py` 的 `sw_l1_asof` 丢掉 `available_at` 上海日期不早于决策日的行。`quantlab/smallcap/panel.py` 第 94 行的复权 `bfill` 仍在，对应测试是预期失败。`quantlab/v2_eng_smoke.py` 第 224 行要求日频流通市值视图的 `promotion_approved` 为 true；没有 `output/d1/ENG_PING_PATHS.json`，这个标志不写 true。
 
 需要你传达的 parquet 在 `docs/rd/tasks/data_request.md`。这次检出仍没有这些文件。没有生成替代行情，没有编 7–10 月月度盈亏，没有跑密封窗。`tests/test_skeleton_oneclick.py::test_live_dryrun_gates_only` 仍因缺少 `data/v2/tushare_raw/trade_cal.parquet` 失败。`tests/test_rd_contracts.py` 与 `tests/test_rd_board.py` 通过，其中复权回填是预期失败。`strategy_promotion_approved` 仍为 false。
-
 ## 接线：补回被 gitignore 挡住的 quantlab/data（2026-11-01 16:44，无账户）
 
 `.gitignore` 里的 `data/` 会匹配任意名为 data 的目录，所以 `quantlab/data` 源码包没有进入 `6ecab69`。已改为只忽略仓库根的 `/data/`。补回的模块按现有测试写：`contracts`、`exchange_rules`、`market`、`industry`、`qualification`、`local_adapter`、`store`、`sources`、`sina`，以及 `v2_readers` 的导入面。行情 parquet 仍不在检出里。`v2_readers.load_merged_panel` 等在文件缺失时抛 `FileNotFoundError`，不编净值。

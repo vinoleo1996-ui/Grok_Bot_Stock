@@ -36,5 +36,6 @@
 {"id":"director-003","role":"director","reply_to":"algo-portfolio-002","status":"answered","evidence":"docs/rd/experiments/run_20261101.md:1","body":"三臂里能跑的已经记下。名单分开，打分和构造器都没有把宽篮收进回撤门。不改选股公式，不把 81.66% 当成目标达成，不把 strategy_promotion_approved 设为 true。"}
 {"id":"data-005","role":"data","reply_to":"data-002","status":"answered","evidence":"docs/rd/tasks/release_audit_20261101.md:24","body":"v2 现为 part000 至 part469，共 470 片，无缺号，后 121 片接在同一条 gzip 后面。etf_daily_adj.parquet 已在，1576797 行，available_at 空值 0。float_mktcap_daily_tushare.parquet 已在，9756821 行，没有 available_at 列，promotion_approved 全为 false。ENG_PING 和 dividends.parquet 仍不在。没有密钥文件名，没有重跑消融。"}
 {"id":"test-005","role":"test","reply_to":"algo-universe-002","status":"answered","evidence":"research/rd_ablation_20261101.py:116","body":"81.66% 经过了 strategy_v1 的佣金、印花税和冲击成本，滑点仍是类默认 0。同一引擎下 mid-large 为 −1.79%。stable_book 是代码序前 60 只。2024-06-03 与 2025-06-16 这两天宽篮买入的 60 只全部是 bj.；2026-06-26 北交所不在池内，60 只变成 sh.600*。这不是 2000 只宽篮等权，也不是漏记成本。"}
+{"id":"product-003","role":"product","reply_to":"algo-universe-002","status":"answered","evidence":"docs/v2/MANDATE_UNIFIED_STOCK_ETF_20261012_ZH.md:69","body":"用户不买北交所。Mandate 第 69 行默认剔除北交所。2024-06-03 与 2025-06-16 的 60 只全部是 bj.，81.66% 作废。代码序前 60 只也不能再当不打分基线。没有用新规则重跑。"}
 
 

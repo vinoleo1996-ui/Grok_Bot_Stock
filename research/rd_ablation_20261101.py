@@ -113,7 +113,12 @@ def wide_pool(store, day: pd.Timestamp) -> list[str]:
 
 
 def stable_book(pool: list[str], n: int = HOLD) -> list[str]:
-    return sorted(pool)[:n]
+    """Retired. Lexicographic order filled the book with Beijing names.
+
+    The user does not trade Beijing Stock Exchange names, and Mandate line 69
+    excludes them by default. Do not report a code-order book as a result.
+    """
+    raise ValueError("code_order_book_retired: excludes neither bj nor a real unscored sample")
 
 
 def load_prices(ids: list[str]) -> dict[str, pd.DataFrame]:
