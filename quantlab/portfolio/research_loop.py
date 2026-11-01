@@ -14,6 +14,13 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _sw_members_path() -> Path:
+    """Accepted membership is the tushare PIT file. The shorter name is the older table."""
+    landed = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
+    short = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1.parquet"
+    return landed if landed.is_file() else short
 LOOP = ROOT / "output/loop"
 ALERTS = ROOT / "data/v2/alerts"
 PY = sys.executable
@@ -244,7 +251,7 @@ def intel_to_alerts(js):
     import hashlib
     gen = pd.Timestamp(js["generated_et"]).tz_localize("America/New_York")
     exp = gen + pd.Timedelta(hours=24)
-    sw = pd.read_parquet(ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1.parquet", columns=["sw_code", "sw_name"]).drop_duplicates()
+    sw = pd.read_parquet(_sw_members_path(), columns=["sw_code", "sw_name"]).drop_duplicates()
     name2code = dict(zip(sw.sw_name.astype(str), sw.sw_code.astype(str)))
     out, sev_log = [], []
 
@@ -329,7 +336,7 @@ def risk_flags(holdings: pd.DataFrame, asof=None):
     a = active_alerts(asof); h = holdings.copy(); h["risk_flag"] = None
     if a.empty:
         return h
-    sw = pd.read_parquet(ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1.parquet", columns=["instrument_id", "sw_code", "out_date"])
+    sw = pd.read_parquet(_sw_members_path(), columns=["instrument_id", "sw_code", "out_date"])
     sw = sw[sw.out_date.isna()].drop_duplicates("instrument_id").set_index("instrument_id").sw_code.astype(str)
     for i, r in h.iterrows():
         hits = a[((a.scope == "stock") & (a.code == r.instrument_id)) | ((a.scope == "industry") & (a.code == sw.get(r.instrument_id, "?")))]

@@ -1,6 +1,14 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:50 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+更新时间：2026-11-01 20:19 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## 读取器对齐公告时钟和 ETF 成交单位（2026-11-01 20:19，无账户）
+
+没有调用外部行情接口，密钥没有写入仓库。巨潮样本用 `announcement_time` 作为 `available_at`，`instrument_id` 作为标的，极性固定为 0，表示还没有分类。`etf_daily_adj` 的 `vol` 按手数、`amount` 按千元，读入后手数保持、金额乘 1000 变成元，和 D0 的 `sh.510300` 同一天对得上（2024-06-03 成交额 2,533,469,501 元）。没有 D0 面板的场内基金改读这张表，不再因为缺面板直接失败。原 parquet 不改。`promotion_approved` 仍为 false。没有重跑探索窗，也没有重跑已作废的代码序账。
+
+## 读取器对齐已落地的列和路径（2026-11-01 20:10，无账户）
+
+没有调用外部行情接口，也没有把密钥写入仓库。E/P 用内存中的 `e_available_at` 作为 `available_at`，原文件不改。财务宽表按列名取 `net_profit` 等指标。分红默认改为 `data/v2/corporate_actions/dividend_tushare.parquet`，`ts_code` 在内存里变成 `sh.`/`sz.`/`bj.` 的 `instrument_id`。tushare extend 缺日历时改读 `asof_extend_202610/calendar.parquet`。事件样本路径本来就指向全量包里的那个 parquet。`promotion_approved` 仍为 false。
 
 ## Release 补件（2026-11-01 19:50，无账户）
 

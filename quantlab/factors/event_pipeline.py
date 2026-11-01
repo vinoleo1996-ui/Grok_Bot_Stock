@@ -175,6 +175,58 @@ def inventory_data(repo_root: Path | None = None) -> dict[str, Any]:
     }
 
 
+def _accept_landed_event_columns(
+    frame: pd.DataFrame,
+    instrument_col: str,
+    event_type_col: str,
+    available_at_col: str,
+    polarity_col: str,
+) -> tuple[pd.DataFrame, tuple[str, ...]]:
+    """Alias announcement columns in memory. A file with no clock still fails closed."""
+    notes: list[str] = []
+    out = frame
+    changed = False
+
+    def ensure() -> None:
+        nonlocal out, changed
+        if not changed:
+            out = out.copy()
+            changed = True
+
+    if instrument_col not in out.columns and "instrument_id" in out.columns:
+        ensure()
+        out[instrument_col] = out["instrument_id"].astype(str)
+        notes.append("instrument_from_instrument_id")
+    clock_src = None
+    if available_at_col not in out.columns:
+        if "announcement_time" in out.columns:
+            clock_src = "announcement_time"
+        elif "announcement_time_ms" in out.columns:
+            clock_src = "announcement_time_ms"
+    if clock_src is not None:
+        ensure()
+        if clock_src == "announcement_time_ms":
+            out[available_at_col] = pd.to_datetime(out[clock_src], unit="ms", utc=True).dt.tz_convert("Asia/Shanghai")
+        else:
+            out[available_at_col] = out[clock_src]
+        notes.append(f"available_at_from_{clock_src}")
+    recognized = clock_src is not None or "announcement_id" in frame.columns
+    if recognized:
+        if event_type_col not in out.columns:
+            ensure()
+            out[event_type_col] = "cninfo_periodic_announcement"
+            notes.append("event_type_unclassified")
+        if polarity_col not in out.columns:
+            ensure()
+            out[polarity_col] = 0.0
+            notes.append("polarity_unclassified")
+        if "event_id" not in out.columns and "announcement_id" in out.columns:
+            ensure()
+            out["event_id"] = out["announcement_id"].astype(str)
+            notes.append("event_id_from_announcement_id")
+    return out, tuple(notes)
+
+
 def load_events_parquet(
     path: Path | str | None,
     *,
@@ -187,6 +239,10 @@ def load_events_parquet(
 
     Expected minimal columns (see output/alpha/DATA_SCHEMA_EVENT_CAPITAL_ZH.md):
       instrument, event_type, available_at, polarity [, event_id, meta...]
+
+    The cninfo sample uses ``instrument_id`` and ``announcement_time`` and has no
+    polarity. Those names are aliased in memory. Polarity stays 0 until a
+    classification column exists. The parquet is not rewritten.
     """
     todos: list[str] = []
     if path is None:
@@ -197,6 +253,10 @@ def load_events_parquet(
         todos.append(f"TODO: missing parquet {p}")
         return [], tuple(todos)
     df = pd.read_parquet(p)
+    df, notes = _accept_landed_event_columns(
+        df, instrument_col, event_type_col, available_at_col, polarity_col
+    )
+    todos.extend(notes)
     required = {instrument_col, event_type_col, available_at_col, polarity_col}
     missing_cols = sorted(required - set(df.columns))
     if missing_cols:
