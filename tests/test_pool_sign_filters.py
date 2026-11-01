@@ -42,6 +42,12 @@ def test_raw_open_return_adds_cash_and_share_ratio_without_adj_close():
     assert abs(pool.period_return(10.0, 10.0, 0.0, 0.1) - 0.1) < 1e-12
 
 
+def test_same_day_0900_is_visible_at_the_close_and_1900_is_not():
+    session = pd.Timestamp("2024-06-03")
+    assert pool.visible_at_close(pd.Timestamp("2024-06-03 09:00", tz="Asia/Shanghai"), session)
+    assert not pool.visible_at_close(pd.Timestamp("2024-06-03 19:00", tz="Asia/Shanghai"), session)
+
+
 def test_primary_cost_uses_strategy_v1_rates_and_5bp_is_separate():
     primary, extra = pool.traded_cost({}, {"sh.600000": 1.0}, commission=0.00025, stamp=0.0005)
     assert primary == 0.00025 + 0.00025

@@ -12,7 +12,7 @@
 
 1. 后排宽篮：决策日前 60 日成交额为正、先按成交额排名、第 3001 到第 5000 名，均额至少 500 万元。规则仍是 `quantlab/smallcap/universe.py` 的名次带。不足 3001 只则当日不买。然后去掉 `bj.`，去掉当日 `is_st_at_open` 为真的名字，去掉退市整理已经可见的名字。不再按代码序截 60 只。
 2. Mandate 中大盘：上市满 120 个交易日、当日不是 ST、20 日成交额中位数至少 3000 万元、在这些名字里剔除流通市值最低的 30%。流通市值用 `float_mktcap_daily_tushare_pit.parquet`，决策按开盘可知，只用前一会话。同样去掉 `bj.` 和已经可见的退市整理。不调用会把缺失 ST 当成非 ST 的旧掩码。
-3. 纸面 mid-large：`data/v2/universe/mid_large_members_pit.parquet`。`available_at` 的上海日期必须早于决策日。表不在则该臂失败，不用另两臂的名单顶上。再去掉 `bj.`、当日 ST 和已经可见的退市整理。
+3. 纸面 mid-large：`data/v2/universe/mid_large_members_pit.parquet`。决策在当日 18:00 Asia/Shanghai 做出、下一交易日开盘成交，所以 `available_at` 不晚于 `quantlab/data/contracts.py` 的 `decision_time` 才可见。这张表的时钟是决策日 09:00，早于 18:00，当日行可以进入名单。不把申万那种「上海日期必须早于决策日」套到这张表上。表不在则该臂失败，不用另两臂的名单顶上。再去掉 `bj.`、当日 ST 和已经可见的退市整理。
 
 ST 表是 `data/v2/st_flags/is_st_daily_2018_2026.parquet`，只收录 `is_st_at_open` 为真的行。某个决策日在这张表里没有任何行时，该日记缺口，不把缺失当成非 ST。退市整理用 `data/v2/ref/stock_delisted_v2.parquet` 里 `entered_delisting_period_v2` 为真、且 `available_at` 早于决策日、决策日又落在整理期起止之间的 `instrument_id`。不新建 `delist_events_v1.parquet`。
 

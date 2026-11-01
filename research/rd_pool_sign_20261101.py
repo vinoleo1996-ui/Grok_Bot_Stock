@@ -512,6 +512,16 @@ def shanghai_date_ok(previous: pd.Timestamp, decision: pd.Timestamp) -> bool:
     return previous.date() < decision.date()
 
 
+def visible_at_close(available, session: pd.Timestamp) -> bool:
+    """True when the timestamp is at or before 18:00 Asia/Shanghai on the session."""
+    from quantlab.data.contracts import decision_time, timestamp
+
+    published = timestamp(available)
+    if pd.isna(published):
+        return False
+    return published <= decision_time(session.date())
+
+
 def _mid_pools(grid) -> tuple[dict | None, dict]:
     if not MID_PATH.is_file():
         return None, {"status": "failed_data", "reason": "mid_large file missing"}
@@ -523,16 +533,15 @@ def _mid_pools(grid) -> tuple[dict | None, dict]:
     visible = 0
     for record in frame.itertuples(index=False):
         session = pd.Timestamp(record.session).normalize()
-        published = shanghai_date(record.available_at)
-        if published is None or published >= session.date():
+        if not visible_at_close(record.available_at, session):
             continue
         visible += 1
         books[session].append(str(record.instrument_id))
     return books, {
         "status": "ok",
         "rows_on_grid": int(len(frame)),
-        "rows_with_available_date_before_session": visible,
-        "clock": "available_at Shanghai date must be strictly before the session",
+        "rows_visible_at_close": visible,
+        "clock": "available_at <= decision_time 18:00 Asia/Shanghai",
     }
 
 
@@ -565,7 +574,7 @@ def _summarize(grid, wide, d1, mid, wide_gap, d1_gap, mid_gap, sessions, config,
             "tradable_cagr": None,
             "tradable_reason": "full eligible set is not a 30-60 name account",
         }
-    if mid_meta.get("rows_on_grid") and mid_meta.get("rows_with_available_date_before_session") == 0:
+    if mid_meta.get("rows_on_grid") and mid_meta.get("rows_visible_at_close") == 0:
         arms["mid_large"]["status"] = "empty_after_available_at_date_rule"
     pair_names = (("wide", "d1_midlarge"), ("wide", "mid_large"), ("d1_midlarge", "mid_large"))
     overlaps = {}

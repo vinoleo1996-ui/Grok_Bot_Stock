@@ -1,6 +1,12 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 21:50 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+更新时间：2026-11-01 22:08 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## 三组诊断超额同号，停（2026-11-01 22:08，无账户）
+
+mid-large 改用 `decision_time`：`available_at` 不晚于决策日 18:00 Asia/Shanghai。表内时钟是当日 09:00，网格上 126944 行都可见。申万那种「日期必须早于决策日」不再套到这张表上。
+
+重算后三组相对 510300 的等权诊断超额都为正，5bp 敏感性没有翻号。宽篮中位 1824 只，中大盘 3277 只，mid-large 2489 只。这不是可交易年化。同号则停。没有改专家、宽篮名次或构造器帽，也没有补 30–60 只截断。`strategy_promotion_approved` 仍为 false。没有重跑密封窗。记录在 `docs/rd/experiments/run_pool_sign_20261101.md`。
 
 ## 探索窗三组符号对照（2026-11-01 21:50，无账户）
 
