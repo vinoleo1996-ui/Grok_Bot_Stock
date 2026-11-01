@@ -221,12 +221,25 @@ def sw_l1_asof(
     if missing:
         raise ValueError(f"sw_l1_columns_missing:{','.join(sorted(missing))}")
     sess = pd.Timestamp(session).date()
+    sess_ts = pd.Timestamp(sess)
     out: dict[str, SWL1AsOfAssignment] = {}
     sub = members[members["instrument_id"].isin(list(instrument_ids))].copy()
-    sub["in_date"] = pd.to_datetime(sub["in_date"]).dt.date
-    sub["out_date"] = pd.to_datetime(sub["out_date"], errors="coerce").dt.date
+    sub["in_date"] = pd.to_datetime(sub["in_date"]).dt.normalize()
+    sub["out_date"] = pd.to_datetime(sub["out_date"], errors="coerce").dt.normalize()
+
+    def _published_before_session(value) -> bool:
+        stamp = pd.Timestamp(value)
+        if pd.isna(stamp):
+            return False
+        if stamp.tzinfo is None:
+            stamp = stamp.tz_localize("Asia/Shanghai")
+        else:
+            stamp = stamp.tz_convert("Asia/Shanghai")
+        return stamp.date() < sess
+
+    sub = sub[sub["available_at"].map(_published_before_session)]
     for iid, g in sub.groupby("instrument_id"):
-        cand = g[(g["in_date"] <= sess) & (g["out_date"].isna() | (g["out_date"] > sess))]
+        cand = g[(g["in_date"] <= sess_ts) & (g["out_date"].isna() | (g["out_date"] > sess_ts))]
         if cand.empty:
             out[iid] = SWL1AsOfAssignment(
                 instrument_id=iid,

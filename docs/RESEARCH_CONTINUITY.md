@@ -1,6 +1,16 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 16:44 CST。本次检出在 `/workspace`，分支 `cursor/wire-core-runtime-5dc3`。
+更新时间：2026-11-01 17:13 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## 研发台账与下一阶段设计（2026-11-01 17:13，无账户）
+
+岗位结论写在 `docs/rd/messages.jsonl`。只读页是 `quantlab/webapp/app.py` 的 `GET /rd`，由 `quantlab/rd_board.py` 按岗位分线程，未关闭意见和三份实验设计放在前面。页面没有表单，不下单，不改策略。
+
+三份消融设计在 `docs/rd/experiments/universe.md`、`factors.md`、`portfolio.md`。每份三条对照，没有年化承诺。总监记录为可等待数据，不授权改宽篮、专家或 B4 的选股公式，也不授权改组合构造器的默认帽。测试规格在 `docs/rd/tasks/test_spec.md`，样例在 `tests/test_rd_contracts.py`。
+
+`quantlab/data/v2_readers.py` 在文件存在时按 `docs/v2/ASOF_EXTEND_PANEL_MERGE.md` 拼接 D0 与 extend，文件不在时抛 `FileNotFoundError`。读取器不算收益。返回值的 `promotion_approved` 保持 false。`quantlab/universe/d1_masks.py` 的 `sw_l1_asof` 丢掉 `available_at` 上海日期不早于决策日的行。`quantlab/smallcap/panel.py` 第 94 行的复权 `bfill` 仍在，对应测试是预期失败。`quantlab/v2_eng_smoke.py` 第 224 行要求日频流通市值视图的 `promotion_approved` 为 true；没有 `output/d1/ENG_PING_PATHS.json`，这个标志不写 true。
+
+需要你传达的 parquet 在 `docs/rd/tasks/data_request.md`。这次检出仍没有这些文件。没有生成替代行情，没有编 7–10 月月度盈亏，没有跑密封窗。`tests/test_skeleton_oneclick.py::test_live_dryrun_gates_only` 仍因缺少 `data/v2/tushare_raw/trade_cal.parquet` 失败。`tests/test_rd_contracts.py` 与 `tests/test_rd_board.py` 通过，其中复权回填是预期失败。`strategy_promotion_approved` 仍为 false。
 
 ## 接线：补回被 gitignore 挡住的 quantlab/data（2026-11-01 16:44，无账户）
 

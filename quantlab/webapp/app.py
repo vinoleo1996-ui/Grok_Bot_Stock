@@ -27,7 +27,6 @@ from zoneinfo import ZoneInfo
 from quantlab.config import CONFIG
 from quantlab.portfolio.current import snapshot, summary, ytd_return
 from quantlab.portfolio.grok_paper import PAPER_STATUS, load_grok_paper_ledger
-from quantlab.data.public_desk import cached_observe, search_a_shares
 from quantlab.portfolio.market_observatory import (
     local_panel_fallback,
     parse_ths_revenue_forecast,
@@ -116,6 +115,7 @@ LEGACY_PAGE = """<!doctype html>
       <a class="is-current" href="/dashboard" aria-current="page">决策看板</a>
       <a href="/portfolio">账户行情</a>
       <a href="/research">研究裁决</a>
+      <a href="/rd">研发台账</a>
     </nav>
     <div class="header-right">
       <span class="chip hide-sm" id="chipStatus"><span class="dot warn"></span><span>研究账户</span><b>—</b></span>
@@ -346,6 +346,14 @@ def research_hub():
     """Serve the separate evidence-only research decision surface."""
 
     return render_template_string(PAGE)
+
+
+@app.get("/rd")
+def rd_board():
+    """Read-only role thread. Does not trade or change strategy."""
+    from quantlab.rd_board import render_html
+
+    return Response(render_html(), mimetype="text/html")
 
 
 @app.get("/api/research/decision")
@@ -1825,6 +1833,8 @@ def api_portfolio_search():
     """Look up any A-share by code, name or pinyin.  This does not create a position."""
 
     query = request.args.get("q") or ""
+    from quantlab.data.public_desk import search_a_shares
+
     rows = search_a_shares(query)
     return jsonify(_json_safe({
         "available": bool(rows),
@@ -1839,6 +1849,8 @@ def api_portfolio_industry_top3():
     code = _public_security_code(request.args.get("code"))
     if code is None:
         return jsonify({"available": False, "industry_top3_1m": {"status": "invalid_code", "top": []}}), 400
+    from quantlab.data.public_desk import cached_observe
+
     return jsonify(_json_safe(cached_observe(code)))
 
 
