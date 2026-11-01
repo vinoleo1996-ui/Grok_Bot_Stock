@@ -1,6 +1,11 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:25 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:40 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## 81% 对照的核对（2026-11-01 19:40，无账户）
+
+`research/rd_ablation_20261101.py` 的 `stable_book` 是 `sorted(pool)[:60]`。宽篮当天约 2000 只。2024-06-03 与 2025-06-16 按这个规则买入的 60 只全部是 `bj.`；2026-06-26 池内没有北交所，60 只变成 `sh.600*`。81.66% 是这条代码序账，经过 `strategy_v1` 的佣金、印花税和冲击，滑点仍为 0。同一引擎的 mid-large 是 −1.79%。没有重跑，`strategy_promotion_approved` 仍为 false。
+
 
 ## v2 分卷补齐（2026-11-01 19:25，无账户）
 
