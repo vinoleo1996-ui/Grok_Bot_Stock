@@ -1,7 +1,43 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 16:44 CST。本次检出在 `/workspace`，分支 `cursor/wire-core-runtime-5dc3`。
+更新时间：2026-11-01 19:45 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
 
+## 北交所账作废（2026-11-01 19:45，无账户）
+
+用户不买北交所。Mandate 第 69 行也写明默认剔除北交所。`stable_book` 的代码序在 2024-06-03 与 2025-06-16 把 60 个位子全部给了 `bj.`。因此 60 万 CAGR 81.66% 不是可引用的收益，代码序也不能再当「不打分」基线。2026-06-26 换成 `sh.600*` 仍是同一种排序，同样不作数。没有用新规则重跑。`strategy_promotion_approved` 仍为 false。
+
+## 81% 对照的核对（2026-11-01 19:40，无账户）
+
+`research/rd_ablation_20261101.py` 的 `stable_book` 是 `sorted(pool)[:60]`。宽篮当天约 2000 只。2024-06-03 与 2025-06-16 按这个规则买入的 60 只全部是 `bj.`；2026-06-26 池内没有北交所，60 只变成 `sh.600*`。81.66% 是这条代码序账，经过 `strategy_v1` 的佣金、印花税和冲击，滑点仍为 0。同一引擎的 mid-large 是 −1.79%。没有重跑，`strategy_promotion_approved` 仍为 false。
+
+
+## v2 分卷补齐（2026-11-01 19:25，无账户）
+
+Release `quantlab-data-2026-11-01` 的 `v2.tar.gz` 现为 part000–469，共 470 片，无缺号，合计约 9.84 GB。part349 不是新的 gzip 头，后 121 片接在先前 part000–348 的同一条压缩流上。`data/v2/etf/etf_daily_adj.parquet` 1,576,797 行，`available_at` 空值 0，含 510300 的 2,869 行。`data/v2/float_mktcap/float_mktcap_daily_tushare.parquet` 9,756,821 行，`trade_date` 2018-01-02 至 2026-10-09，没有 `available_at`，文件内 `promotion_approved` 全为 false。`ENG_PING_PATHS.json` 与 `dividends.parquet` 仍不在。没有密钥文件名。没有把这些 parquet 提交进 git，没有重跑探索窗，没有把晋升写成 true。
+
+
+## Release 验收与探索窗消融（2026-11-01 18:40，无账户）
+
+GitHub Release `quantlab-data-2026-11-01` 的分卷已下载到 git 忽略的 `data/_release/`。契约核对在 `docs/rd/tasks/release_audit_20261101.md`。交易日历、D0、申万、财务宽表、E/P、mid-large 在。流通市值日频、`etf_daily_adj.parquet`、`ENG_PING_PATHS.json` 不在。E/P 没有 `available_at` 列。非行情笔记在 `data/_quarantine_nondata/`，没有并进 `quantlab/`。`Stock-patches` 不在本机，也不在 Release 清单里，这一轨停止。
+
+探索窗 2024-06-03 至 2026-06-30 的消融在 `docs/rd/experiments/run_20261101.md`，数字来自 `output/rd_ablation_20261101/summary.json`。宽篮与 mid-large 的名单分开，超额不同号。宽篮按代码取 60 只的 60 万 CAGR 是 81.66%，MDD −29.85%，差于 −28% 门。五专家和净利润都低于这份不打分账。构造器仍接近等权。没有重跑密封窗，`strategy_promotion_approved` 仍为 false。
+
+接线：`V2DataRoots.sw_l1_path`、日历的 `first_session` / `n_sessions` / `d0_asof_cutoff`、extend 按目录名回退、D1 的 `asset_type` 过滤。缺文件仍失败。`allocation.py` 在未知行业行写入前把暴露矩阵转成 float。
+
+
+## 接线审阅写回台账（2026-11-01 17:20，无账户）
+
+架构和测试的逐行结论已核对当前源码后写入 `docs/rd/messages.jsonl`。`resolve_sw_l1_research_path`、`DEFAULT_ASOF_EXTEND_DIR`、`dividend_path` 和申万空 `out_date` 的比较已经在当前代码里，对应意见标成 answered。仍开放的是：extend 目录不按标的回退、缺面板会中断调用方、显式流通市值路径缺失不会落到面板推算、申万整表空 `available_at` 会在 as-of 之前抛错、`describe_strategy_feed` 读了日历视图和 `sw_l1_path` 上不存在的字段、510300 的模块图路径与 `etf_daily_adj.parquet` 不一致、多袖套 `Data` 在可转债文件缺失时停掉、D1 没有按 `asset_type` 过滤。`quantlab/v2_schemas.py` 第 68 行的决策时点与 `sw_l1_asof` 的按日过滤不一致。`quantlab/promotion_gate.py` 第 32 行的总闸是 `None`，会跟随 ENG_PING。没有改选股公式，没有把缺文件改成空表。
+
+## 研发台账与下一阶段设计（2026-11-01 17:13，无账户）
+
+岗位结论写在 `docs/rd/messages.jsonl`。只读页是 `quantlab/webapp/app.py` 的 `GET /rd`，由 `quantlab/rd_board.py` 按岗位分线程，未关闭意见和三份实验设计放在前面。页面没有表单，不下单，不改策略。
+
+三份消融设计在 `docs/rd/experiments/universe.md`、`factors.md`、`portfolio.md`。每份三条对照，没有年化承诺。总监记录为可等待数据，不授权改宽篮、专家或 B4 的选股公式，也不授权改组合构造器的默认帽。测试规格在 `docs/rd/tasks/test_spec.md`，样例在 `tests/test_rd_contracts.py`。
+
+`quantlab/data/v2_readers.py` 在文件存在时按 `docs/v2/ASOF_EXTEND_PANEL_MERGE.md` 拼接 D0 与 extend，文件不在时抛 `FileNotFoundError`。读取器不算收益。返回值的 `promotion_approved` 保持 false。`quantlab/universe/d1_masks.py` 的 `sw_l1_asof` 丢掉 `available_at` 上海日期不早于决策日的行。`quantlab/smallcap/panel.py` 第 94 行的复权 `bfill` 仍在，对应测试是预期失败。`quantlab/v2_eng_smoke.py` 第 224 行要求日频流通市值视图的 `promotion_approved` 为 true；没有 `output/d1/ENG_PING_PATHS.json`，这个标志不写 true。
+
+需要你传达的 parquet 在 `docs/rd/tasks/data_request.md`。这次检出仍没有这些文件。没有生成替代行情，没有编 7–10 月月度盈亏，没有跑密封窗。`tests/test_skeleton_oneclick.py::test_live_dryrun_gates_only` 仍因缺少 `data/v2/tushare_raw/trade_cal.parquet` 失败。`tests/test_rd_contracts.py` 与 `tests/test_rd_board.py` 通过，其中复权回填是预期失败。`strategy_promotion_approved` 仍为 false。
 ## 接线：补回被 gitignore 挡住的 quantlab/data（2026-11-01 16:44，无账户）
 
 `.gitignore` 里的 `data/` 会匹配任意名为 data 的目录，所以 `quantlab/data` 源码包没有进入 `6ecab69`。已改为只忽略仓库根的 `/data/`。补回的模块按现有测试写：`contracts`、`exchange_rules`、`market`、`industry`、`qualification`、`local_adapter`、`store`、`sources`、`sina`，以及 `v2_readers` 的导入面。行情 parquet 仍不在检出里。`v2_readers.load_merged_panel` 等在文件缺失时抛 `FileNotFoundError`，不编净值。
