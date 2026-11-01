@@ -1,6 +1,11 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:45 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:50 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## 流通市值公布时点（2026-11-01 19:50，无账户）
+
+原表 `float_mktcap_daily_tushare.parquet` 仍没有 `available_at`，读取它继续失败。新文件 `data/v2/float_mktcap/float_mktcap_daily_tushare_pit.parquet` 把 `available_at` 写成 `trade_date` 当天 18:00 Asia/Shanghai，`revision=tushare_daily_basic_eod18_proxy`，`promotion_approved=false`。这是收盘后可知的研究代理，不是申报钟。收盘决策可以用当日行；开盘决策传 `known_by="open"`，只用前一会话。没有重跑 U30，没有晋升。
+
 
 ## 北交所账作废（2026-11-01 19:45，无账户）
 

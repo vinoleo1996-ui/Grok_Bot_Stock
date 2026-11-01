@@ -21,6 +21,8 @@ DEFAULT_EP_TUSHARE_ASOF = ROOT / "data" / "v2" / "ep" / "ep_tushare_asof_2026063
 DEFAULT_EP_RESEARCH_FALLBACK = ROOT / "data" / "v2" / "financials_pit" / "ep_research_asof_20260630.parquet"
 DEFAULT_ETF_PANEL = ROOT / "data" / "v2" / "etf" / "etf_daily_adj.parquet"
 DEFAULT_FLOAT_MKTCAP = ROOT / "data" / "v2" / "float_mktcap" / "float_mktcap_daily_tushare.parquet"
+DEFAULT_FLOAT_MKTCAP_PIT = ROOT / "data" / "v2" / "float_mktcap" / "float_mktcap_daily_tushare_pit.parquet"
+FLOAT_MKTCAP_EOD18_REVISION = "tushare_daily_basic_eod18_proxy"
 DEFAULT_D0 = ROOT / "data" / "local_market" / "1c85fd9aceaa03c3c4863bec"
 DEFAULT_ASOF_EXTEND_DIR = ROOT / "data" / "v2" / "asof_extend_tushare_202610"
 DEFAULT_SW_L1_PATH = ROOT / "data" / "v2" / "sw_l1_pit" / "industry_members_sw_l1_tushare.parquet"
@@ -67,7 +69,7 @@ class V2DataRoots:
     etf_panel_path: Path
     financials_pit_path: Path = DEFAULT_FINANCIALS_PIT_TUSHARE
     ep_pit_path: Path = DEFAULT_EP_PIT
-    float_mktcap_path: Path = DEFAULT_FLOAT_MKTCAP
+    float_mktcap_path: Path = DEFAULT_FLOAT_MKTCAP_PIT
     dividend_path: Path = DEFAULT_DIVIDENDS
     sw_l1_path: Path = DEFAULT_SW_L1_PATH
 
@@ -528,19 +530,78 @@ def financials_metric_asof(frame: pd.DataFrame, session: date, instrument_ids, m
     return out
 
 
-def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = None, instrument_ids=None, prefer_daily: bool = True) -> FloatMktcapLookup:
-    path = Path(asof_path) if asof_path is not None else DEFAULT_FLOAT_MKTCAP
+def materialize_float_mktcap_daily_pit(source: Path | None = None, dest: Path | None = None) -> Path:
+    """Write a new PIT file. The source parquet is left unchanged.
+
+    ``available_at`` is 18:00 Asia/Shanghai on ``trade_date``. That is the
+    research proxy for a daily_basic figure known after the close, not an
+    exchange filing clock. ``promotion_approved`` stays false.
+    """
+    source_path = Path(source) if source is not None else DEFAULT_FLOAT_MKTCAP
+    dest_path = Path(dest) if dest is not None else DEFAULT_FLOAT_MKTCAP_PIT
+    if source_path.resolve() == dest_path.resolve():
+        raise ValueError("float_mktcap_pit_would_overwrite_source")
+    frame = pd.read_parquet(_require_file(source_path))
+    if "trade_date" not in frame.columns:
+        raise ValueError("trade_date_missing")
+    if "available_at" in frame.columns:
+        raise ValueError("source_already_has_available_at")
+    traded = pd.to_datetime(frame["trade_date"].astype(str))
+    frame = frame.copy()
+    frame["available_at"] = traded.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=18)
+    frame["revision"] = FLOAT_MKTCAP_EOD18_REVISION
+    frame["quality_status"] = "research"
+    frame["promotion_approved"] = False
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(dest_path, index=False)
+    return dest_path
+
+
+def _float_decision_cutoff(session: date, known_by: str) -> pd.Timestamp:
+    from quantlab.data.contracts import decision_time
+
+    if known_by == "close":
+        return decision_time(session)
+    if known_by == "open":
+        # Last legal print is the prior session's 18:00 proxy. A calendar gap
+        # still qualifies because those rows are dated before this session.
+        return decision_time(session).normalize() - pd.Timedelta(nanoseconds=1)
+    raise ValueError(f"float_mktcap_known_by:{known_by}")
+
+
+def _filter_float_visible(frame: pd.DataFrame, session: date, known_by: str) -> pd.DataFrame:
+    if "available_at" not in frame.columns:
+        raise ValueError("available_at_missing")
+    cutoff = _float_decision_cutoff(session, known_by)
+    stamps = pd.to_datetime(frame["available_at"])
+    if getattr(stamps.dt, "tz", None) is None:
+        stamps = stamps.dt.tz_localize("Asia/Shanghai")
+    else:
+        stamps = stamps.dt.tz_convert("Asia/Shanghai")
+    visible = frame.loc[(stamps <= cutoff).to_numpy()].copy()
+    if "instrument_id" in visible.columns and not visible.empty:
+        visible = visible.sort_values("available_at").drop_duplicates("instrument_id", keep="last")
+    return visible
+
+
+def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = None, instrument_ids=None, prefer_daily: bool = True, known_by: str = "close") -> FloatMktcapLookup:
+    if asof_path is not None:
+        path = Path(asof_path)
+    elif DEFAULT_FLOAT_MKTCAP_PIT.is_file():
+        path = DEFAULT_FLOAT_MKTCAP_PIT
+    else:
+        path = DEFAULT_FLOAT_MKTCAP
     if not path.is_file():
-        if asof_path is not None:
+        if asof_path is not None or path == DEFAULT_FLOAT_MKTCAP_PIT:
             raise FileNotFoundError(str(path))
         return FloatMktcapLookup(notes=(f"float_mktcap_file_missing:{path}",))
-    frame = _drop_unpublished(pd.read_parquet(path), session)
-    if "trade_date" in frame.columns:
-        frame = frame[pd.to_datetime(frame["trade_date"].astype(str)).dt.date <= session]
+    frame = _filter_float_visible(pd.read_parquet(path), session, known_by)
     wanted = None if instrument_ids is None else {str(item) for item in instrument_ids}
     values: dict[str, float] = {}
     source: dict[str, str] = {}
     column = "float_mktcap" if "float_mktcap" in frame.columns else None
+    proxy = _frame_is_eod18_proxy(frame, path)
+    label = "v2_daily_eod18_proxy" if proxy else ("v2_daily" if prefer_daily else "v2_parquet")
     if column and "instrument_id" in frame.columns:
         for row in frame.itertuples(index=False):
             iid = str(getattr(row, "instrument_id"))
@@ -549,25 +610,42 @@ def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = N
             number = getattr(row, column)
             if pd.notna(number):
                 values[iid] = float(number)
-                source[iid] = "v2_daily" if prefer_daily else "v2_parquet"
-    return FloatMktcapLookup(values, source, "v2_daily" if values else "none", ())
+                source[iid] = label
+    notes = (FLOAT_MKTCAP_EOD18_REVISION,) if proxy else ()
+    return FloatMktcapLookup(values, source, "v2_daily_eod18_proxy" if notes else ("v2_daily" if values else "none"), notes)
+
+
+def _frame_is_eod18_proxy(frame: pd.DataFrame, path: Path) -> bool:
+    if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name:
+        return True
+    return "revision" in frame.columns and bool(frame["revision"].astype(str).eq(FLOAT_MKTCAP_EOD18_REVISION).any())
+
+
+def _float_promotable(path: Path, frame: pd.DataFrame) -> bool:
+    if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name:
+        return False
+    if "revision" in frame.columns and frame["revision"].astype(str).eq(FLOAT_MKTCAP_EOD18_REVISION).any():
+        return False
+    return _dataset_promotable(path, frame)
 
 
 def load_float_mktcap_asof(*, roots: V2DataRoots | None = None) -> TabularView:
     path = _require_file(Path((roots or default_v2_roots()).float_mktcap_path))
     frame = pd.read_parquet(path)
     return TabularView(
-        frame, str(path), _variant(path), _dataset_promotable(path, frame), False,
+        frame, str(path), _variant(path), _float_promotable(path, frame), False,
         n_rows=len(frame), n_non_null=_n_non_null(frame),
+        quality_label=FLOAT_MKTCAP_EOD18_REVISION if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name else "",
     )
 
 
-def load_float_mktcap_daily(*, roots: V2DataRoots | None = None, session: date | None = None) -> TabularView:
+def load_float_mktcap_daily(*, roots: V2DataRoots | None = None, session: date | None = None, known_by: str = "close") -> TabularView:
     view = load_float_mktcap_asof(roots=roots)
     if session is not None:
-        view.frame = _drop_unpublished(view.frame, session)
+        view.frame = _filter_float_visible(view.frame, session, known_by)
         view.session = session
         view.n_rows = len(view.frame)
+        view.available_at_rule = "available_at_le_close_18:00" if known_by == "close" else "available_at_before_session_open"
     return view
 
 
