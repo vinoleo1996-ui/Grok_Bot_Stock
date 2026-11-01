@@ -20,3 +20,14 @@
 `Stock-patches` 在三份清单里都是 0 条。
 
 探索窗用 2024-06-03 至 2026-06-30，停在 D0 面板的最后一天。没有重跑 2018-01-02 至 2024-05-31 的密封窗。
+
+## 全量分卷（2026-11-01 19:25 CST）
+
+`v2.tar.gz` 现为 part000–469，共 470 片，没有缺号。最后一片 5,384,992 字节，其余每片 20,971,520 字节，合计约 9.84 GB。part000 以 gzip 头 `1f8b` 开始，part349 不是新的 gzip 头，所以后 121 片是同一条压缩流的后半段。加上此前的 `local_market` 94 片和 `data_small.tar.gz`，Release 共 565 个资产。没有 `.py`、`.sh`、`.env`，新增文件名里也没有 secret、token、password。
+
+这次多出来的契约文件：
+
+- `data/v2/etf/etf_daily_adj.parquet`：1,576,797 行。`trade_date` 2015-01-05 至 2026-10-27。`available_at` 空值 0。其中 `ts_code` 以 510300 开头的 2,869 行。列里有 `close` 和 `close_hfq`，读取器不把后复权价改名为 `close`。
+- `data/v2/float_mktcap/float_mktcap_daily_tushare.parquet`：9,756,821 行。`trade_date` 2018-01-02 至 2026-10-09。有 `instrument_id`、`float_mktcap`。没有 `available_at`。文件内 `promotion_approved` 全是 false，`quality_status` 全是 `research`。按决策日读取时，现有读取器会因缺列失败，不用 `trade_date` 冒充公布时点。
+
+`output/d1/ENG_PING_PATHS.json` 和 `data/v2/dividends/dividends.parquet` 仍然不在。`Stock-patches` 仍然是 0 条。E/P 仍只有 `e_available_at`。先前探索窗把 U30 记为缺文件、把基准指到 D0 的 `sh.510300`，对应的是当时只下到 part348 的包；ETF 日表现在已经在，U30 仍缺公布时点列。没有为这两张新表重跑消融，也没有把晋升写成 true。

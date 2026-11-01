@@ -23,3 +23,9 @@
 - `data/baostock/have_cash_flow.txt`
 
 `NOT_PROMOTION_GRADE.md` 写的是免费重建的申万表不能当晋升级。它没有把 `strategy_promotion_approved` 设成 true。财务笔记写明 D0 财务的 `available_at` 曾经整列为空；这次抽出的 tushare 财务宽表 `available_at` 不是整列为空。这两份笔记只作隔离记录，不改读取器。
+
+part349–469 里新增、同样只隔离的笔记：
+
+- `data/v2/corporate_actions/EXRIGHTS_RECONCILE_LIMITS.md`
+- `data/v2/corporate_actions/GAP_CLOSURE_PLAN.md`
+- `data/v2/free_hunt/github/SKILL.md`

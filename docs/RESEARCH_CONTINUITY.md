@@ -1,6 +1,11 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 18:40 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:25 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## v2 分卷补齐（2026-11-01 19:25，无账户）
+
+Release `quantlab-data-2026-11-01` 的 `v2.tar.gz` 现为 part000–469，共 470 片，无缺号，合计约 9.84 GB。part349 不是新的 gzip 头，后 121 片接在先前 part000–348 的同一条压缩流上。`data/v2/etf/etf_daily_adj.parquet` 1,576,797 行，`available_at` 空值 0，含 510300 的 2,869 行。`data/v2/float_mktcap/float_mktcap_daily_tushare.parquet` 9,756,821 行，`trade_date` 2018-01-02 至 2026-10-09，没有 `available_at`，文件内 `promotion_approved` 全为 false。`ENG_PING_PATHS.json` 与 `dividends.parquet` 仍不在。没有密钥文件名。没有把这些 parquet 提交进 git，没有重跑探索窗，没有把晋升写成 true。
+
 
 ## Release 验收与探索窗消融（2026-11-01 18:40，无账户）
 
