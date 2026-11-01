@@ -1,0 +1,23 @@
+--- a/research/b4_paper_extend.py	2026-10-25 01:16:02.056072532 -0400
++++ b/research/b4_paper_extend.py	2026-10-26 19:22:22.292129207 -0400
+@@ -269,6 +269,8 @@
+         if bp is not None:
+             W, booked = splice_booked(W, bp)
+             if booked["deferred_rebalance_day"]: LEG_CHG.add(booked["deferred_rebalance_day"])
++            # Option A (Arch APPROVE 20261026): booked-window realized change days stay in LEG_CHG across re-extends
++            LEG_CHG |= set(change_days(pd.read_parquet(bp, columns=["session", "instrument", "weight"])))
+         last = W.session.max(); c = check(W, aum)
+         fp = OUT / f"B_B4_50_25_25_topN_{aum // 10000}w_{last.replace('-', '')}_{REV}.parquet"
+         res = dict(info, aum=aum, last_session=last, check=c, file=str(fp.relative_to(ROOT)), frozen_script_sha256=script_shas(TRACK_SCRIPTS),
+---
+--- a/research/s6_paper_extend.py	2026-10-25 01:16:07.168072186 -0400
++++ b/research/s6_paper_extend.py	2026-10-26 19:22:22.292129207 -0400
+@@ -124,6 +124,8 @@
+         if bp is not None:
+             W, booked = B.splice_booked(W, bp)
+             if booked["deferred_rebalance_day"]: leg_chg = leg_chg | {booked["deferred_rebalance_day"]}
++            # Option A (Arch APPROVE 20261026): same semantics as b4 — booked realized change days ∪ into leg_chg
++            leg_chg |= set(B.change_days(pd.read_parquet(bp, columns=["session", "instrument", "weight"])))
+         last = W.session.max(); c = check(W, aum, leg_chg)
+         fp = OUT / f"S6_cap50_ee25_eq25_topN_{aum // 10000}w_{last.replace('-', '')}.parquet"
+         res = dict(info, aum=aum, last_session=last, check=c, file=str(fp.relative_to(ROOT)), frozen_script_sha256=B.script_shas(TRACK_SCRIPTS),

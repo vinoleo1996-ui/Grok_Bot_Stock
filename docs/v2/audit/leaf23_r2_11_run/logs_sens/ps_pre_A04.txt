@@ -1,0 +1,18 @@
+Sun Oct 18 07:25:37 EDT 2026
+     53       7 Ss   Sun Oct 18 01:05:59 2026 /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S    Sun Oct 18 01:05:59 2026 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+    323      53 S    Sun Oct 18 01:05:59 2026 bash /usr/local/bin/supervise-exec-daemon 1337 /usr/local/bin/start-exec-daemon
+    324      53 S    Sun Oct 18 01:05:59 2026 bash /usr/local/bin/supervise-egress-tunnel 8790 /usr/local/bin/start-egress-tunnel
+  26762   26627 Sl   Sun Oct 18 01:14:42 2026 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=593e2e5f-6b43-4a86-bb64-a8a4bc69fbbe,no_channel --user-data-dir=/home/box/.config/orca --standard-schemes=orca-preview,orca-media --secure-schemes=orca-preview,orca-media --cors-schemes=orca-preview --fetch-schemes=orca-preview --streaming-schemes=orca-preview,orca-media --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,4798019459902702605,6824676083144334604,262144 --enable-features=EarlyEstablishGpuChannel,EstablishGpuChannelAsync,GlobalShortcutsPortalPreferredTrigger,PdfUseShowSaveFilePicker --disable-features=DirectSockets,DirectSocketsInServiceWorkers,DirectSocketsInSharedWorkers,DropInputEventsWhilePaintHolding,FedCm,IntensiveWakeUpThrottling,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7,i,1093890293600097732,3130111451012626359,4 --trace-process-track-uuid=3190708989122997041
+  27167      53 Ss   Sun Oct 18 01:14:45 2026 bash /usr/local/bin/supervise-sand-supervisor /tmp/sand-supervisor/status.json /tmp/sand-supervisor.log /exec-daemon/node /usr/local/bin/sand-supervisor.mjs
+  27366      53 Ss   Sun Oct 18 01:14:45 2026 /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  27390   27383 S    Sun Oct 18 01:14:45 2026 /usr/local/libexec/sand/sand-daemon-supervisor __supervise orbitd
+  27427   27186 S    Sun Oct 18 01:14:45 2026 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  94322   94319 Tsl  Sun Oct 18 01:22:39 2026 python3 scripts/acquire/remaining_after_stk_surv.py
+ 758615      53 Ss   Sun Oct 18 07:25:28 2026 /bin/bash ./supervise.sh
+ 758619  758615 Sl   Sun Oct 18 07:25:28 2026 python3 -X utf8 server.py
+ 758620      53 Ss   Sun Oct 18 07:25:29 2026 /bin/bash ./deploy_supervise.sh
+ 758625  758624 SN   Sun Oct 18 07:25:29 2026 python3 export_static.py
+ 758898  758619 ZN   Sun Oct 18 07:25:31 2026 [python3] <defunct>
+ 759314  758625 RNl  Sun Oct 18 07:25:36 2026 /usr/bin/python3 /workspace/quantlab-web/kline.py sh.601919
+ 759349     204 S    Sun Oct 18 07:25:36 2026 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081

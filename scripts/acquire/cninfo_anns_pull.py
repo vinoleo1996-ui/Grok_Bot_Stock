@@ -1,0 +1,82 @@
+"""巨潮 hisAnnouncement 按股票补 2018-01-01→2024-05-31 公告（不走 relay）。
+Universe: 各年末（2017..2023 最后交易日）流通市值前1500 的并集（用上一年年末排名覆盖下一年，避免前视）。
+礼貌限速：WORKERS(默认2) 线程，每请求后 sleep CNINFO_SLEEP(默认0.8s)，失败指数退避。已落股票跳过。"""
+import os, sys, time, json, random, threading, pathlib, requests, pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+ROOT=pathlib.Path("/workspace/QuantLab"); OUT=ROOT/"data/v2/announcements/cninfo/by_stock"; OUT.mkdir(parents=True,exist_ok=True)
+LOG=open(ROOT/"logs/cninfo_anns.log","a"); SE=os.environ.get("SE","2018-01-01~2024-05-31")
+SLEEP=float(os.environ.get("CNINFO_SLEEP",0.8)); W=int(os.environ.get("WORKERS",2)); TOPN=int(os.environ.get("TOPN",1500))
+H={"User-Agent":"Mozilla/5.0","X-Requested-With":"XMLHttpRequest","Referer":"https://www.cninfo.com.cn/new/commonUrl/pageOfSearch?url=disclosure/list/search"}
+def universe():
+    f=ROOT/"data/v2/announcements/cninfo/universe_top1500_yearend.csv"
+    if f.exists(): return pd.read_csv(f,dtype=str)
+    m=pd.read_parquet(ROOT/"data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet",columns=["instrument_id","trade_date","float_mktcap"])
+    m=m[(m.trade_date>="2017-01-01")&(m.trade_date<="2023-12-31")]
+    ye=m.groupby(m.trade_date.dt.year).trade_date.max()
+    rows=[]
+    for y,d in ye.items():
+        s=m[m.trade_date==d].nlargest(TOPN,"float_mktcap")
+        rows+= [(i,y) for i in s.instrument_id]
+    u=pd.DataFrame(rows,columns=["instrument_id","rank_year"]).groupby("instrument_id").rank_year.apply(lambda s:",".join(map(str,sorted(s)))).reset_index()
+    u.to_csv(f,index=False); return u.astype(str)
+def orgmap():
+    f=ROOT/"data/v2/announcements/cninfo/szse_stock.json"
+    if not f.exists(): f.write_text(requests.get("https://www.cninfo.com.cn/new/data/szse_stock.json",headers=H,timeout=30).text)
+    return {d["code"]:d["orgId"] for d in json.load(open(f))["stockList"]}
+S=threading.local(); import collections; WIN=collections.deque(maxlen=40); WL=threading.Lock()
+def note(ok):
+    global SLEEP
+    with WL:
+        WIN.append(ok)
+        if len(WIN)>=20 and WIN.count(False)/len(WIN)>0.2:
+            SLEEP=min(5,SLEEP*2); LOG.write(f"BACKOFF sleep={SLEEP}\n"); LOG.flush(); WIN.clear(); time.sleep(120)
+def sess():
+    if not hasattr(S,"s"): S.s=requests.Session(); S.s.headers.update(H)
+    return S.s
+def page(stock,n):
+    data=dict(pageNum=n,pageSize=30,column="szse",tabName="fulltext",plate="",stock=stock,searchkey="",secid="",category="",trade="",seDate=SE,sortName="",sortType="",isHLtitle="false")
+    for i in range(7):
+        try:
+            r=sess().post("https://www.cninfo.com.cn/new/hisAnnouncement/query",data=data,timeout=30)
+            time.sleep(SLEEP+random.random()*0.3)
+            note(r.status_code==200)
+            if r.status_code==200: return r.json()
+            LOG.write(f"HTTP {r.status_code} {stock} p{n}\n")
+        except Exception as e: note(False); LOG.write(f"ERR {stock} p{n} {str(e)[:100]}\n")
+        LOG.flush(); time.sleep(min(300,5*2**i))
+    raise RuntimeError(f"giveup {stock} p{n}")
+def one(args):
+    iid,org=args; fn=OUT/f"{iid}.parquet"
+    if fn.exists(): return 0
+    code=iid.split(".")[1]; rows=[]; n=1
+    try:
+        while True:
+            d=page(f"{code},{org}",n); a=d.get("announcements") or []
+            rows+=a
+            if not d.get("hasMore") or not a or n>200: break
+            n+=1
+    except Exception as e:
+        LOG.write(f"FAIL {iid} {e}\n"); LOG.flush(); return 1
+    df=pd.DataFrame(rows)
+    keep=[c for c in["secCode","secName","orgId","announcementId","announcementTitle","announcementTime","adjunctUrl","columnId","pageColumn"] if c in df]
+    df=df[keep] if len(df) else pd.DataFrame(columns=keep)
+    df["instrument"]=iid; df.astype({c:str for c in keep if c!="announcementTime"}).to_parquet(fn,index=False)
+    return 0
+if __name__=="__main__":
+    u=universe(); om=orgmap(); jobs=[]
+    # 优先队列：沪深300/中证500 2020-01→2024-05 曾为成分股者（含不在 top1500 名单者），其余按原顺序；已存在文件在 one() 内跳过
+    pf=ROOT/"data/v2/announcements/cninfo/priority_csi300_500.txt"; ids=list(u.instrument_id)
+    if pf.exists():
+        pr=[f"{c.split('.')[1].lower()}.{c.split('.')[0]}" for c in pf.read_text().split()]
+        ids=pr if os.environ.get("PRIORITY_ONLY")=="1" else pr+[i for i in ids if i not in set(pr)]
+    for iid in ids:
+        ex,c=iid.split(".")  # instrument_id like sh.600345
+        org=om.get(c) or {"sh":"gssh0","sz":"gssz0","bj":"gfbj0"}.get(ex.lower(),"gssz0")+c
+        jobs.append((iid,org))
+    print(f"START universe={len(jobs)} workers={W} sleep={SLEEP}",flush=True)
+    t0=time.time(); done=0; fail=0
+    with ThreadPoolExecutor(W) as ex:
+        for k,r in enumerate(ex.map(one,jobs)):
+            fail+=r
+            if k%25==0: print(time.strftime("%H:%M:%S"),f"{k+1}/{len(jobs)} fail={fail} files={len(list(OUT.glob('*.parquet')))}",flush=True)
+    print("DONE",fail,flush=True)

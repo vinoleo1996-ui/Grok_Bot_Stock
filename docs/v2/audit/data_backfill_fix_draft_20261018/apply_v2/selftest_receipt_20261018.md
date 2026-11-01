@@ -1,0 +1,28 @@
+# 补数 step_status 单测回执（2026-10-18 ET，QuantLab Data）
+- 依据：output/data/ARCH_RUN_AUTH_SELFTEST_BACKFILL_STEP_STATUS.ok，sha 199d520f4e6f5949832cbaba4a03b3716b1463beb441b918290e797f87b2f0de。
+  - scope=selftest，allow_real_data=false，out_dir=mkdtemp，run_niceness=10；signed_et 05:09:39，没有晚于当前时间；expires_et 2026-10-19T05:09:39-04:00，未过期。
+  - run_after 条件（替换已完成、三处 sha 已核对）满足。
+- pin 核对：
+  - runner test_relay_outage_backfill_step_status.py 为 7916a7ff…，dep relay_outage_backfill.py 为 8d836412…，都与工作区文件相同；
+  - gate 文件 scripts_eng/ok_runner_pin.py 为 c7805d9a78e4f5478fa4c9e3becda48e76453ee0889b4f7027009a676c3e2485，与 .ok 相同。
+  - 门禁 enforce() 本身也会在导入被测模块之前校验这些 pin，校验通过。
+- 运行前 MemAvailable 为 11,357,532 kB。
+- 命令：`cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 python3 scripts/acquire/test_relay_outage_backfill_step_status.py`，外层套 subprocess + getrusage。
+- 时间：开始 05:10:44.195 EDT，结束 05:10:44.263 EDT；exit 0。
+- stdout：selftest_stdout_20261018.txt，sha256 cba63cd5320ec7b0d850556d862aeab47408d3adde0f6cd9c4316f9b049507a0，内容为 "ALL SYNTHETIC TESTS PASS"，后面是 wrapper 打印的行。
+- 用例：14 条 assert，分 8 组注释场景：
+  - fresh ok、fresh partial、fresh fail
+  - stale：finished < t0
+  - stale：log mtime < t0 或为 None
+  - unreadable / bad steps / no entry / finished 无法解析
+  - RELAY_DOWN：skipped 含 RELAY_DOWN、partial 且 sec 0（换了文案）、新文案中含 RELAY_DOWN
+  - rc != 0 而 status 为 ok 时不记 done
+- 峰值 RSS：18,968 KB（约 18.5 MB）。
+- cwd 证据：
+  - wrapper 前后打印的都是 /workspace/QuantLab（WRAPPER_CWD_BEFORE 和 WRAPPER_CWD_AFTER 两行）。
+  - 单测第 16 行和第 18 行在导入前保存 cwd、导入后还原。被测模块第 8 行的 chdir 目标是 /workspace/QuantLab，与启动目录相同，所以本次的 chdir 实际没有改变目录。
+  - 子进程内部导入之后的 cwd 没有单独打印。单测文件已被 pin，不能改。
+- 零写入证据：`find data/v2 output logs -newer <T0 标记，05:10:44>`
+  - output：0 个文件；logs：0 个文件；scripts：0 个文件，也没有新的 __pycache__。
+  - data/v2：只有 tushare_raw/fund_portfolio_dh 下的 3 个文件（20240630/000370000、000371000、000372000.parquet），写入者是 94322（基金持仓拉取，已获准继续运行），与单测无关。
+- Arch P3-16（summary 过期时仍返回 relay_down=True 的用例）还没有补：补用例会改变单测 sha，需要下一版重签 .ok。

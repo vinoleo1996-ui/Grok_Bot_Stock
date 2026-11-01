@@ -1,0 +1,124 @@
+--- a/tests/test_alpha_v1_2_equiv_selftest.py
++++ b/tests/test_alpha_v1_2_equiv_selftest_r2.py
+@@ -1,4 +1,14 @@
+-"""Alpha CMC v1.2 ≡ v1.1 equivalence selftest (Arch→Alpha 2026-10-18 v1.2 spec: memory-only, numerics unchanged). SYNTHETIC DATA ONLY:
++"""r2 of tests/test_alpha_v1_2_equiv_selftest.py (6f6895b3, unchanged; its single run 2026-10-18 09:44 ET, log
++output/alpha/selftest_v1_2/run_20261018.log 4654d320: 12 passed, 2 failed on per-tool tmp-dir path strings). r2 changes ONLY the output-JSON
++comparison (Arch ruling 2026-10-18): the 7 path-valued fields listed in PATH_WHITELIST (exact JSON paths, derived from cmc() in both scripts)
++are compared after a placeholder substitution that is applied only after asserting the two strings are identical except for the
++'<OUT_DIR>/v1_1/' vs '<OUT_DIR>/v1_2/' segment; no keyword / regex / wildcard stripping; float bit and byte comparison unchanged. The full
++diff list (raw and after placeholder, plus ±0 list) is written to <OUT_DIR>/equiv_diffs.json; its count and sha256 are printed and put in
++any failure message. After the placeholder the remaining diffs must be exactly 0 and the serialised JSON byte-identical.
++Gate: output/alpha/ARCH_RUN_AUTH_SELFTEST_CMC_V1_2_R2.ok must pin runner_sha256_test_alpha_v1_2_equiv_selftest_r2 + the same 9 dep_sha256.
++Run alone: PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python -m pytest tests/test_alpha_v1_2_equiv_selftest_r2.py -q -p no:cacheprovider
++---- original docstring (r1) ----
++Alpha CMC v1.2 ≡ v1.1 equivalence selftest (Arch→Alpha 2026-10-18 v1.2 spec: memory-only, numerics unchanged). SYNTHETIC DATA ONLY:
+ pandas.read_parquet is wrapped and refuses any path outside the mkdtemp out_dir; ADG.bench / ADG._close (cache-through, like the real one) and
+ leaf_selfcheck_common._ret (book nav) are monkeypatched; the SW member table / to_panel_id come from in-memory stub modules
+ (research.g1g5_nontextbook_weights / research.g1g5_x2_panel_stitch / research.hiliq_v1_universe are NOT imported). The v1.1 selftest file
+@@ -32,6 +42,8 @@
+ 
+ import atexit
+ import contextlib
++import copy
++import difflib
+ import hashlib
+ import io
+ import json
+@@ -45,7 +57,7 @@
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-TEST_OK = ROOT / "output/alpha/ARCH_RUN_AUTH_SELFTEST_CMC_V1_2.ok"
++TEST_OK = ROOT / "output/alpha/ARCH_RUN_AUTH_SELFTEST_CMC_V1_2_R2.ok"
+ TEST_DEPS = {
+     "combo_v1_1": "research/alpha_combo_marginal_v1_1.py",
+     "combo_v1_2": "research/alpha_combo_marginal_v1_2.py",
+@@ -333,18 +345,80 @@
+     assert CMC2.TOOL_VERSION == "v1.2" and CMC1.TOOL_VERSION == "v1.1"
+ 
+ 
+-def test_output_json_values_equal(RUN):
++# r2: exact JSON paths of path-valued fields in cmc() output (same in v1_1 L336-337/L361 and v1_2 L423-424/L448):
++#   leaf_file=str(wf); b0_legs={k: str(v) for k in LEGS_BY_UNIVERSE[UNIVERSE]} (3 legs); universe_mask=ctx()["mask"]=_rel(mask path) (outside
++#   ROOT → str(path)); tiers[tier]["base_track"]=str(trk) for tier in V3.NT ("60w", "100w").
++PATH_WHITELIST = ("$.leaf_file", "$.universe_mask", "$.b0_legs.capacity_adv", "$.b0_legs.earnings_event", "$.b0_legs.insider_increase",
++                  "$.tiers.60w.base_track", "$.tiers.100w.base_track")
++PLACEHOLDER = "<TMP>/"
++DIFF_FILE = OUT_DIR / "equiv_diffs.json"
++
++
++def _jp_parent(o: dict, jp: str):
++    keys = jp.split(".")[1:]
++    for k in keys[:-1]: o = o[k]
++    return o, keys[-1]
++
++
++def _placeholder(o1: dict, o2: dict) -> tuple[dict, dict]:
++    """Deep copies with the whitelisted path strings replaced by PLACEHOLDER + common tail, only after asserting that v1_1's value is exactly
++    '<OUT_DIR>/v1_1/<tail>' and v1_2's exactly '<OUT_DIR>/v1_2/<tail>' (same tail). Nothing else is touched."""
++    n1, n2 = copy.deepcopy(o1), copy.deepcopy(o2)
++    p1, p2 = f"{OUT_DIR}/v1_1/", f"{OUT_DIR}/v1_2/"
++    for jp in PATH_WHITELIST:
++        (c1, k1), (c2, k2) = _jp_parent(n1, jp), _jp_parent(n2, jp)
++        a, b = c1[k1], c2[k2]
++        assert isinstance(a, str) and isinstance(b, str), (jp, a, b)
++        assert a.startswith(p1) and b.startswith(p2) and a[len(p1):] == b[len(p2):] and a.replace(p1, p2, 1) == b, \
++            f"{jp}: values differ in more than the v1_1/ vs v1_2/ segment: {a!r} vs {b!r}"
++        c1[k1] = c2[k2] = PLACEHOLDER + a[len(p1):]
++    for n in (n1, n2):
++        assert str(OUT_DIR) not in _dump(n), "a tmp-dir path remains outside PATH_WHITELIST"
++    return n1, n2
++
++
++def _diff_report(RUN) -> dict:
+     o1, o2 = _strip(RUN["v1_1"]["out"]), _strip(RUN["v1_2"]["out"])
+-    diffs, _ = _walk(o1, o2)
+-    assert not diffs, diffs[:20]
++    raw, raw_z = _walk(o1, o2); ph_err = None
++    try:
++        n1, n2 = _placeholder(o1, o2)
++    except AssertionError as e:                                                    # still write the full report, then fail
++        ph_err, n1, n2 = str(e), o1, o2
++    after, after_z = _walk(n1, n2)
++    rep = dict(whitelist=list(PATH_WHITELIST), placeholder_error=ph_err, raw_count=len(raw), raw_diffs=raw, raw_signed_zero=raw_z,
++               after_placeholder_count=len(after), after_placeholder_diffs=after, after_placeholder_signed_zero=after_z,
++               bytes_identical_after_placeholder=_dump(n1) == _dump(n2))
++    if not rep["bytes_identical_after_placeholder"]:
++        rep["unified_diff"] = list(difflib.unified_diff(_dump(n1).splitlines(), _dump(n2).splitlines(), "v1_1", "v1_2", lineterm=""))
++    DIFF_FILE.write_text(json.dumps(rep, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
++    rep["file"], rep["file_sha256"] = str(DIFF_FILE), hashlib.sha256(DIFF_FILE.read_bytes()).hexdigest()
++    print(f"EQUIV_DIFFS raw={len(raw)} after_placeholder={len(after)} signed_zero_after={len(after_z)} "
++          f"bytes_identical={rep['bytes_identical_after_placeholder']} file={DIFF_FILE} sha256={rep['file_sha256']}")
++    return rep
++
++
++def _full(rep: dict) -> str:
++    return (f"after_placeholder_count={rep['after_placeholder_count']} raw_count={rep['raw_count']} file={rep['file']} sha256={rep['file_sha256']}\n"
++            + json.dumps({k: rep[k] for k in rep if k not in ("file", "file_sha256")}, ensure_ascii=False, indent=2, default=str))
++
++
++def test_output_json_values_equal(RUN):
++    rep = _diff_report(RUN)
++    assert {d[0] for d in rep["raw_diffs"]} <= set(PATH_WHITELIST), _full(rep)   # before placeholder: only whitelisted path fields may differ
++    if rep["placeholder_error"]:
++        pytest.fail("placeholder precondition failed: " + rep["placeholder_error"] + "\n" + _full(rep), pytrace=False)
++    if rep["after_placeholder_count"] != 0:
++        pytest.fail(_full(rep), pytrace=False)                                    # full list, untruncated
++    o1 = _strip(RUN["v1_1"]["out"])
+     assert o1["tiers"] and o1["B0_ic"]["n"] > 252 and o1["B1_ic"]["icir_roll252_median"] is not None, "synthetic run must reach every branch"
+ 
+ 
+ def test_output_json_signed_zero_and_bytes(RUN):
+-    o1, o2 = _strip(RUN["v1_1"]["out"]), _strip(RUN["v1_2"]["out"])
+-    _, zsign = _walk(o1, o2)
+-    assert not zsign, f"values equal but sign of zero differs (reported separately per spec): {zsign}"
+-    assert _dump(o1) == _dump(o2), "serialised output JSON (metadata removed) not byte-identical"
++    rep = _diff_report(RUN)
++    if rep["after_placeholder_signed_zero"]:
++        pytest.fail("values equal but sign of zero differs (reported separately per spec)\n" + _full(rep), pytrace=False)
++    if not rep["bytes_identical_after_placeholder"]:
++        pytest.fail("serialised output JSON (metadata removed, whitelisted paths placeholdered) not byte-identical\n" + _full(rep), pytrace=False)
+ 
+ 
+ # ======================= intermediates (ctx, sig) =======================

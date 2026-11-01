@@ -1,0 +1,56 @@
+--- /workspace/QuantLab/scripts/acquire/relay_outage_backfill.py	2026-10-18 01:13:37.360683904 -0400
++++ relay_outage_backfill.py	2026-10-18 05:07:04.621122197 -0400
+@@ -30,6 +30,36 @@
+     today = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
+     c = pd.read_parquet(ROOT / "data/v2/calendar/trade_cal_sse_pit.parquet")
+     return max(d for d in c[c.is_open == 1].cal_date.astype(str) if d <= today)
++def step_status(summary, step, t0, log_mtime):
++    """PURE (no I/O). summary: parsed logs/nightly/<date>_summary.json dict or None (missing/unreadable).
++    t0: epoch seconds taken before nightly_update was started; log_mtime: epoch mtime of the step log or None.
++    Returns (status, reason, relay_down). status 'ok' only for a fresh entry written by this run."""
++    if not isinstance(summary, dict) or not isinstance(summary.get("steps"), dict):
++        return "pending", "summary_unreadable", False
++    e = summary["steps"].get(step)
++    if not isinstance(e, dict) or "status" not in e:
++        return "pending", "no_step_entry", False
++    st = str(e.get("status")); sk = str(e.get("skipped") or ""); sec = e.get("sec")
++    relay_down = "RELAY_DOWN" in sk or (st.startswith("partial") and sec in (0, 0.0))   # P3-1
++    try:
++        fin = datetime.fromisoformat(str(summary.get("finished"))).timestamp()
++    except Exception:
++        return "pending", "stale_summary: finished unparsable", relay_down
++    if fin < t0:
++        return "pending", "stale_summary: finished < t0", relay_down
++    # P2-1: entry must be from this run: a fast-fail skip writes no log (sec==0); otherwise the step log must be touched after t0
++    if not relay_down and (log_mtime is None or log_mtime < t0):
++        return "pending", "stale_summary: step log mtime < t0", relay_down
++    if st == "ok": return "ok", "ok", False
++    return "pending", f"step_status={st}" + (f" skipped={sk}" if sk else ""), relay_down
++def read_step_status(item, t0):
++    """thin I/O wrapper around step_status."""
++    try: d = item["params"]["date"]; k = item["params"]["step"]
++    except Exception: return "pending", "summary_unreadable: item has no date/step", False
++    try: summ = json.loads((ROOT / f"logs/nightly/{d}_summary.json").read_text())
++    except Exception: summ = None
++    lp = ROOT / f"logs/nightly/{d}_{k}.log"
++    return step_status(summ, k, t0, lp.stat().st_mtime if lp.exists() else None)
+ def save(q): Q.write_text(json.dumps(q, ensure_ascii=False, indent=1))
+ def run(name, cmd, env_extra):
+     env = dict(os.environ, **env_extra); t = time.time()
+@@ -57,8 +87,15 @@
+             for i in ev: i["status"] = "done" if ok else "retry"; i["last_try"] = datetime.now(ET).isoformat(timespec="seconds")
+             q["events_last"] = dict(rc=rc, n_fails=sm.get("n_fails")); save(q)
+         for i in [i for i in q.get("extra", []) if i["status"] != "done" and i.get("retry_cmd")]:
++            t0 = time.time()   # P2-1: freshness reference taken BEFORE nightly_update starts
+             rc = run(i["api"], i["retry_cmd"].split(), {})
+-            i["status"] = "done" if rc == 0 else "retry"; i["last_rc"] = rc; save(q)
++            # 2026-10-18 fix v2 (draft): nightly_update exits 0 even when the step failed/was skipped -> judge by fresh summary entry
++            status, reason, relay_down = read_step_status(i, t0)
++            i["last_rc"] = rc; i["last_step_status"] = status; i["last_try"] = datetime.now(ET).isoformat(timespec="seconds")
++            if rc == 0 and status == "ok": i["status"] = "done"; i.pop("false_done_reason", None)
++            else: i["status"] = "pending"; i["false_done_reason"] = f"rc={rc} {reason}"
++            save(q)
++            if relay_down: log(f"relay down ({i['id']}: {reason}), back off"); break   # P3-1: no hammering; outer loop sleeps 900
+         hs = [i for i in q.get("extra", []) if i["status"] != "done" and not i.get("retry_cmd")]
+         if hs:
+             rc = 2

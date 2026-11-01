@@ -1,0 +1,386 @@
+{
+  "checked_at": "2026-10-10T14:43:21.987009-04:00",
+  "results": {
+    "sw_l1_pit_tushare": {
+      "pass": true,
+      "blockers": [],
+      "metrics": {
+        "listed_cover_frac": 1.0,
+        "listed_n": 5573,
+        "current_members_n": 5914,
+        "asof_20260630_agree_vs_prefix": 0.9923,
+        "asof_overlap_n": 5465,
+        "rows": 7920,
+        "n_l1": 31,
+        "n_instruments": 5914,
+        "available_at_nulls": 0,
+        "in_date_min": "1984-05-09",
+        "in_date_max": "2026-09-24"
+      }
+    },
+    "float_mktcap_daily": {
+      "pass": true,
+      "blockers": [],
+      "metrics": {
+        "rows": 9756821,
+        "n_instruments": 5820,
+        "date_min": "2018-01-02",
+        "date_max": "2026-10-09",
+        "asof_window_days": 68,
+        "asof_window_median_inst": 5540,
+        "asof_window_min_inst": 5508,
+        "vs_asof0630_n": 5184,
+        "vs_asof0630_within_1pct": 0.9954,
+        "vs_asof0630_within_5pct": 0.9977,
+        "vs_asof0630_median_abs_rel": 1e-05,
+        "vs_asof_within_5pct": 0.9977,
+        "vs_asof_within_1pct": 0.9954,
+        "vs_asof_n": 5184,
+        "vs_asof_median_abs_rel": 1e-05,
+        "vs_asof1009_n": 955,
+        "vs_asof1009_within_1pct": 0.9267,
+        "vs_asof1009_within_5pct": 0.9759,
+        "vs_asof1009_median_abs_rel": 0.0,
+        "tencent_validate": {
+          "built_at": "2026-10-10T11:22:45.498820-04:00",
+          "promotion_approved": false,
+          "n_asof": 955,
+          "n_tencent_spot": 955,
+          "n_merged": 955,
+          "session_asof": "2026-10-09",
+          "note": "Data float_mktcap_asof_2026-10-09 vs Tencent qt circ_mv (field44 * 1e8 CNY)",
+          "stats": {
+            "ratio_median": 0.9999988431414116,
+            "ratio_mean": 0.99280903342602,
+            "abs_rel_median": 2.9993079584899616e-05,
+            "within_1pct": 0.9267015706806283,
+            "within_5pct": 0.9759162303664921,
+            "within_10pct": 0.9842931937172775
+          },
+          "data_coverage_note": "Data daily after 2026-06-30 sparse (~956 names/session); asof_2026-10-09 has only 955 rows vs 5184 on 2026-06-30"
+        }
+      }
+    },
+    "daily_panels_asof_extend": {
+      "pass": true,
+      "blockers": [],
+      "metrics": {
+        "n_panels": 5578,
+        "sample_n": 50,
+        "amount_nn_frac_mean": 1.0,
+        "limit_up_nn_frac_mean": 1.0,
+        "tradestatus_panels": 50
+      }
+    },
+    "financials_available_at": {
+      "pass": false,
+      "blockers": [
+        "CORRECTION: earlier PASS was timing-only (no value columns); superseded by financials_pit_tushare"
+      ],
+      "metrics": {
+        "rows": 422129,
+        "n_instruments": 5910,
+        "available_at_nulls": 0,
+        "has_f_ann": true,
+        "disclosure_raw_files": 35,
+        "update_flag_nonzero": 164630,
+        "restatement_policy": "available_at from f_ann_date||ann_date @18:00; no as-filed value chain"
+      },
+      "corrected_at": "2026-10-11T09:32:40.086506+08:00"
+    },
+    "dividend_exrights": {
+      "pass": true,
+      "blockers": [],
+      "metrics": {
+        "rows": 283482,
+        "n_instruments": 6175,
+        "actions_cols": [
+          "action_id",
+          "instrument_id",
+          "record_date",
+          "ex_date",
+          "pay_date",
+          "share_date",
+          "cash_per_share",
+          "share_ratio",
+          "available_at",
+          "source",
+          "revision",
+          "quality_status",
+          "tax_policy",
+          "action_type",
+          "ingested_at",
+          "availability_basis"
+        ],
+        "actions_rows": 36442,
+        "reconcile_date_col": "ex_date",
+        "keys_tushare": 14843,
+        "keys_1c85": 11419,
+        "intersection": 11419,
+        "only_1c85": 0,
+        "only_tushare": 3424,
+        "explain_frac_1c85": 1.0
+      }
+    },
+    "financials_pit_tushare": {
+      "pass": true,
+      "blockers": [],
+      "gate": "net_profit & eps non-null >=95% of listed (latest period 2026-06-30, report_type=1) AND no fina_indicator truncation (no stock at 100-row cap)",
+      "metrics": {
+        "rows": 422129,
+        "n_instruments": 5910,
+        "cov_2026-06-30": {
+          "period": "2026-06-30",
+          "listed": 5479,
+          "net_profit": 0.9998,
+          "basic_eps": 0.9996,
+          "total_revenue": 0.9998,
+          "eps": 0.9896,
+          "roe": 0.9814,
+          "profit_dedt": 0.9681,
+          "bps": 0.9901
+        },
+        "truncation": {
+          "old_at_100": 284,
+          "fixed_now_gt100": 273,
+          "still_exactly_100": 0,
+          "new_max": 234,
+          "old_rows": 311077,
+          "new_rows": 544402,
+          "new_empty": 52
+        },
+        "ep_crosscheck_20260630": {
+          "old_rows": 5464,
+          "old_ep_nonnull": 5154,
+          "new_rows": 5910,
+          "new_ep_latest_nonnull": 5508,
+          "new_ep_ttm_nonnull": 5419,
+          "overlap_both_nonnull": 5154,
+          "pearson_ep_latest_vs_old(sane)": 0.9908,
+          "spearman_ep_latest_vs_old": 0.9988,
+          "spearman_ep_ttm_vs_old": 0.7988,
+          "same_report_period_share": 0.9978,
+          "net_profit_exact_match_share(rel<1e-4)": 0.9978
+        }
+      },
+      "dataset_status": "gate PASS (values) — research grade, promotion_approved=false pending Leo review",
+      "promotion_approved": false,
+      "checked_at": "2026-10-11T09:32:40.086506+08:00",
+      "caveats": [
+        "fina_indicator joined as latest snapshot per (ts_code,end_date), no as-filed indicator chain",
+        "total equity not available (balancesheet not pulled); bps only",
+        "52 stocks return no fina_indicator rows"
+      ]
+    }
+  },
+  "promotion_approved_overall": true,
+  "approved_by": "Leo",
+  "approved_at": "2026-10-11T09:35:17.449101+08:00",
+  "revert_note": "Leo 退回 false（2026-10-11T09:00:20.566603+08:00）：财务表仅时点列，待带数值 PIT 重建重验后再翻",
+  "acceptance_all_pass_note": "financials_available_at timing-only PASS retracted; financials_pit_tushare value gate PASS",
+  "approve_note": "Leo 明确批准翻回 true（2026-10-11T09:35:17.449101+08:00）：财务数值 PIT 重建并重验通过",
+  "results_detail": {
+    "ep_pit_daily_tushare": {
+      "path": "/workspace/QuantLab/data/v2/ep/ep_pit_daily_tushare.parquet",
+      "metrics": {
+        "rows": 9754901,
+        "dates": 2125,
+        "date_min": "2018-01-02",
+        "date_max": "2026-10-09",
+        "instruments": 5820,
+        "ep_nonnull": 9752450,
+        "coverage_overall": 0.9997487416837957,
+        "coverage_daily_min": 0.9972972972972973,
+        "coverage_daily_median": 0.9997897834769813,
+        "coverage_last": 1.0,
+        "future_leak_rows": 0,
+        "no_future_pct": 1.0,
+        "vs_old_20260630": {
+          "n": 5154,
+          "pearson": 0.4655082464786902,
+          "spearman": 0.7861402027862747,
+          "sign_agree": 0.8445867287543656
+        },
+        "vs_daily_basic_inv_pe_ttm": {
+          "2018-06-29": {
+            "n": 3058,
+            "pearson": 0.9859906812938185,
+            "rank": 0.9874260483319263,
+            "median_ratio": 0.999999999881936
+          },
+          "2020-06-30": {
+            "n": 3147,
+            "pearson": 0.9973989025863187,
+            "rank": 0.9926572754816272,
+            "median_ratio": 1.0000000175222796
+          },
+          "2022-06-30": {
+            "n": 3969,
+            "pearson": 0.9952699451808238,
+            "rank": 0.9947065661003044,
+            "median_ratio": 1.0000000208394204
+          },
+          "2024-06-28": {
+            "n": 4119,
+            "pearson": 0.9956434688403503,
+            "rank": 0.9939544485489634,
+            "median_ratio": 1.0000000008423615
+          },
+          "2025-06-30": {
+            "n": 3960,
+            "pearson": 0.999919662614733,
+            "rank": 0.9998602882404646,
+            "median_ratio": 0.9999999869825654
+          },
+          "2026-06-30": {
+            "n": 3971,
+            "pearson": 0.9998606520919144,
+            "rank": 0.9992450194676701,
+            "median_ratio": 0.9999999988222124
+          },
+          "2026-10-09": {
+            "n": 3926,
+            "pearson": 0.999815241094765,
+            "rank": 0.9994245479197084,
+            "median_ratio": 1.000000002391125
+          }
+        },
+        "ep_median": 0.0218184033434178,
+        "built_at": "2026-10-11T10:34:38.949578",
+        "coverage_by_year": {
+          "2018": 0.9993,
+          "2019": 0.9995,
+          "2020": 0.9997,
+          "2021": 0.9998,
+          "2022": 0.9997,
+          "2023": 0.9998,
+          "2024": 0.9998,
+          "2025": 1.0,
+          "2026": 1.0
+        }
+      },
+      "definition": "e_ttm=归母净利润(n_income_attr_p)累计值TTM(年报直接用；季报=当期累计+上年年报-上年同期累计)，每个 available_at 时点按当时可见版本(含重述)取可算TTM的最新报告期；mv=daily_basic.total_mv(元)；trade_date d 只用 available_at<=d 15:00 CST 的 E（18:00 公告当日不可见，次日起生效）",
+      "asof_usage": "df[df.trade_date==d] 即 d 日 PIT 截面；替代 ep_research_asof_20260630",
+      "pass": true,
+      "range": "2018-01-02~2026-10-09"
+    },
+    "ocf_to_profit_pit_tushare": {
+      "path": "/workspace/QuantLab/data/v2/financials_pit/ocf_to_profit_pit_tushare.parquet",
+      "daily_path": "/workspace/QuantLab/data/v2/financials_pit/ocf_to_profit_pit_daily_tushare.parquet",
+      "metrics": {
+        "versions_rows": 228450,
+        "instruments": 5867,
+        "end_date_min": "2014-03-31",
+        "end_date_max": "2026-09-30",
+        "latest_period_20260630_cover_listed": 0.9923747276688453,
+        "listed_n": 5508,
+        "denom_small_share": 0.009420004377325455,
+        "np_negative_share": 0.17601225651127161,
+        "ocf_to_profit_quantiles": {
+          "0.01": -30.854024630876612,
+          "0.25": -0.48253588958847426,
+          "0.5": 0.699696262111116,
+          "0.75": 1.6729293297862597,
+          "0.99": 27.91256399292793
+        },
+        "daily_rows": 9754991,
+        "daily_dates": 2125,
+        "daily_coverage": 0.9901469924472508,
+        "daily_future_leak_rows": 0,
+        "vs_legacy": {
+          "n": 147318,
+          "legacy_instruments": 5453,
+          "within_1pct": 0.9535901926444834,
+          "within_5pct": 0.967600700525394,
+          "sign_agree": 0.99613760708128,
+          "pearson_clip20": 0.9903887890777336,
+          "rank": 0.9916284593497876
+        },
+        "built_at": "2026-10-11T10:37:50.125971",
+        "daily_coverage_by_year": {
+          "2018": 0.9905,
+          "2019": 0.9897,
+          "2020": 0.99,
+          "2021": 0.992,
+          "2022": 0.9924,
+          "2023": 0.9892,
+          "2024": 0.9896,
+          "2025": 0.9901,
+          "2026": 0.9878
+        }
+      },
+      "definition": "ocf_to_profit=cashflow.n_cashflow_act/income.n_income（YTD 累计口径，与旧 baostock CFOToNP 一致）；另给 ocf_to_profit_attr=/n_income_attr_p；available_at=两表当时可见版本的较晚公告时点(18:00 CST)；版本表每次任一侧更新(含重述)出一行",
+      "denominator_rule": "|net_profit|<1e6 元 → ocf_to_profit=NaN，denom_small=True；净利润为负保留数值并标 np_negative=True（因子侧建议剔除或单独处理）",
+      "asof_usage": "版本表：df[df.available_at<=t].sort_values('available_at').groupby('instrument_id').tail(1) 取最新报告期；或直接用 daily 表 trade_date==d",
+      "pass": true,
+      "daily_range": "2018-01-02~2026-10-09"
+    },
+    "delisted_d3": {
+      "delisted_n": 339,
+      "with_daily": 338,
+      "with_adj": 338,
+      "with_mv": 338,
+      "daily_rows_full": 1241374,
+      "daily_rows_from2015": 426473,
+      "date_min": "1990-12-19",
+      "date_max": "2026-07-29",
+      "from2015_date_min": "2015-01-05",
+      "mv_nonnull_from2015": 0.9972823601963079,
+      "adj_nonnull_from2015": 1.0,
+      "last_trade_and_price_n": 338,
+      "delist_reason_counts": {
+        "强制退市(进入退市整理期)": 150,
+        "强制退市(退市前1年内ST/*ST)": 129,
+        "疑似主动/吸收合并/私有化退市(退市前非ST)": 60
+      },
+      "st_intervals_rows": 792,
+      "st_intervals_instruments": 282,
+      "was_st_within_1y_share": 0.7935103244837758,
+      "B3_window_201506_201601": {
+        "candidates_listed_then": 232,
+        "with_bars_in_window": 228,
+        "cover_frac": 0.9827586206896551,
+        "median_sessions": 141.5
+      },
+      "skip_note": "T600018.SH 无任何 tushare 返回（历史临时码），已跳过",
+      "paths": {
+        "master": "/workspace/QuantLab/data/v2/delisted/delisted_master_tushare.parquet",
+        "daily_full": "/workspace/QuantLab/data/v2/delisted/delisted_daily_tushare.parquet",
+        "daily_from2015": "/workspace/QuantLab/data/v2/delisted/delisted_daily_from2015_tushare.parquet",
+        "st_intervals": "/workspace/QuantLab/data/v2/delisted/delisted_st_intervals_namechange.parquet"
+      }
+    },
+    "audit_band3001_5000": {
+      "gaps_prior_year_annual": {
+        "2024-06-28": {
+          "band": 2000,
+          "missing": 0,
+          "ids": []
+        },
+        "2025-06-30": {
+          "band": 2000,
+          "missing": 1,
+          "ids": [
+            "sh.603210"
+          ]
+        },
+        "2026-06-30": {
+          "band": 2000,
+          "missing": 1,
+          "ids": [
+            "sh.688781"
+          ]
+        }
+      },
+      "any_annual_missing_all_zero": true
+    }
+  },
+  "ep_ocf_update": {
+    "time": "2026-10-11T10:22:52.746254+08:00",
+    "note": "新增 PIT EP 日表与 ocf_to_profit PIT 表，验收 PASS；Eng 可切默认：EP→ep_pit_daily_tushare，应计→ocf_to_profit_pit_tushare（替换 legacy_research_ocf_to_profit）。promotion_approved_overall 保持 true。"
+  },
+  "ep_ocf_extend_2018": {
+    "time": "2026-10-10T22:42:46.377378-04:00",
+    "note": "两张逐日表已前延至 2018-01-02，重验 PASS（未来数据 0）；daily_basic total_mv 2018 起已全，无需补拉"
+  }
+}

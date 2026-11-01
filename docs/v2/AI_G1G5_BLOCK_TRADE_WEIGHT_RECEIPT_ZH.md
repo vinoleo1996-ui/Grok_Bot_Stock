@@ -1,0 +1,13 @@
+# G1G5 叶7 权重回执：g1g5_ashare_block_trade_v1（研究级，promotion=false，live=false，未跑 Book-Smoke）
+- 预注册（FROZEN 2026-10-13 18:58 ET）：docs/v2/AI_G1G5_BLOCK_TRADE_WHO_PAYS_PREREG_ZH.md；脚本 research/g1g5_block_trade_weights.py（BT_HOLD=40，BT_AMT_SCALE=10000）
+- 权重：output/ai_factory/g1g5_block_trade_daily_weights_20261014_065149.parquet（36740 行/668 日/55 名；与已有包计数不重复）；meta 同目录 run_meta_20261014_065149.json。文件名是 box 时钟，实际约 10-13 19:00 ET 运行。
+- 合规：Σw≡1；最小权 0；无 stub；单名 max 4%；行业 max 8%；600519/002371 恒 0；mid_large PIT top300
+- 事件：149 条（2023Q4:24 / 2024:66 / 2025:45 / 2026:14），剔除减持窗口 11 条；日均 5.1 名
+- 压舱 510300：均值 79.6%（48%–96%），超过 60% 软线
+- 逐日 Jaccard vs 18 个前包：max 0.333（vs earnings_event），无同构硬拒；G6 pass；peak RSS 646MB
+- 去β自检（无成本、未复权）：毛 CAGR 10.12%（510300 9.45%，capacity_adv 12.07%）；MDD −17.63%；β 0.98；残差 α +0.80%/年；ρ_excess vs capacity_adv 0.07
+- 分年残差 α：2024 +4.17%｜2025 −0.20%｜2026 −1.36%（逐年衰减，2026 事件仅 14 条）
+- 换手：单边日均 0.83%，年化约 2.1 倍
+- 判定：形式上满足 ρ<0.5 且 α>0，但 α 接近 0、逐年转负、压舱 80%、毛 CAGR 远低于主干 → 建议 WATCH，不送 ACCEPT。按预注册不调参重跑。
+- 债券/可转债核实（2026-10-13 ~19:25 ET，代码计数）：原表中 1 开头 6 位代码（债券/可转债）213524 行；脚本第 71 行 `bt[bt["ts_code"].isin(universe)]` 先限定 mid_large 股票池：池内 1 开头代码 0 个，入池事件 149 条中债券代码 0 条，权重表中债券代码 0 行。结论：债券行不影响本叶。
+- 台账：已登记 WATCH 至 docs/v2/AI_LEAF_LEDGER_ZH.md。

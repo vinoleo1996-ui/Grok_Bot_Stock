@@ -1,0 +1,12 @@
+peak_check pool_benchmarks fulla_carry year 2018 rss_kb=760412 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2019 rss_kb=767772 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2020 rss_kb=781120 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2021 rss_kb=787912 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2022 rss_kb=792484 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2023 rss_kb=790092 hwm_kb=1166720
+peak_check pool_benchmarks fulla_carry year 2024 rss_kb=848832 hwm_kb=1204336
+peak_check pool_benchmarks fulla_carry year 2025 rss_kb=907296 hwm_kb=1204336
+peak_check pool_benchmarks fulla_carry year 2026 rss_kb=970216 hwm_kb=1204336
+FULLA eval done rss=1176
+peak_check eval FULLA rss_kb=490812 hwm_kb=1204336
+STAMP 20261018_073557

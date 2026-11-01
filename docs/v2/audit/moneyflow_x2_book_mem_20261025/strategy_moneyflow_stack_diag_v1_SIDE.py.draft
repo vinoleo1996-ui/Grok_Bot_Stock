@@ -1,0 +1,115 @@
+# SIDE DRAFT ONLY — do NOT copy over research/strategy_moneyflow_stack_diag_v1.py
+# await Arch code_change. live=false. 禁抬帽.
+"""Illustrative fragments for moneyflow diag lowmem mix-stage (Eng P2)."""
+from __future__ import annotations
+
+import gc
+import hashlib
+import os
+import shutil
+from pathlib import Path
+from typing import Optional
+
+
+def file_sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def reuse_blended_or_none(
+    reuse_path: Optional[Path],
+    expected_sha: Optional[str],
+    dst: Path,
+) -> bool:
+    """If reuse_path sha MATCH expected, link/copy to dst and return True."""
+    if not reuse_path or not expected_sha:
+        return False
+    p = Path(reuse_path)
+    if not p.is_file():
+        return False
+    got = file_sha256(p)
+    if got != expected_sha:
+        raise SystemExit(
+            f"mf_stack_diag blocked: reuse_blended sha mismatch got={got} expected={expected_sha}"
+        )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    try:
+        os.link(p, dst)
+    except OSError:
+        shutil.copy2(p, dst)
+    return True
+
+
+def load_weights_lean(path: Path):
+    """Prefer column prune + weight>0 pushdown; never keep dense zero rows."""
+    import pandas as pd
+
+    path = Path(path)
+    # Prefer sibling pos_weights if caller passes dense calendar table path by convention.
+    pos = path.with_name(path.name.replace("_daily_weights_", "_pos_weights_").replace(
+        "daily_weights", "pos_weights"
+    ))
+    # Only auto-switch when explicit marker file exists and path looks like capacity_adv dense table.
+    read_path = path
+    if (
+        "capacity_adv" in path.name
+        and "daily_weights" in path.name
+        and pos.is_file()
+        and pos.resolve() != path.resolve()
+    ):
+        read_path = pos
+
+    cols_want = None  # resolved after schema-less best-effort try
+    try:
+        import pyarrow.parquet as pq
+
+        names = set(pq.ParquetFile(read_path).schema_arrow.names)
+        sess = "session" if "session" in names else ("date" if "date" in names else None)
+        inst = (
+            "instrument"
+            if "instrument" in names
+            else ("instrument_id" if "instrument_id" in names else None)
+        )
+        wcol = "weight" if "weight" in names else ("target_weight" if "target_weight" in names else None)
+        if not (sess and inst and wcol):
+            raise SystemExit(f"mf_stack_diag blocked: lean columns missing in {read_path}")
+        cols_want = [sess, inst, wcol]
+        d = pd.read_parquet(
+            read_path,
+            columns=cols_want,
+            filters=[(wcol, ">", 0)],
+        )
+    except Exception:
+        # Fallback: column prune only (still better than full wide schema if many cols).
+        d = pd.read_parquet(read_path, columns=cols_want) if cols_want else pd.read_parquet(read_path)
+        w = "weight" if "weight" in d.columns else "target_weight"
+        d = d[d[w].notna() & (d[w] > 0)].copy()
+    return d
+
+
+def release_mix_frames(*objs) -> None:
+    for o in objs:
+        del o  # noqa: F841 — explicit drop before gc
+    gc.collect()
+
+
+def _selftest_sha_roundtrip(tmp: Path) -> None:
+    p = tmp / "x.bin"
+    p.write_bytes(b"abc")
+    assert file_sha256(p) == hashlib.sha256(b"abc").hexdigest()
+    dst = tmp / "y.bin"
+    assert reuse_blended_or_none(p, file_sha256(p), dst) is True
+    assert dst.is_file()
+
+
+if __name__ == "__main__":
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        _selftest_sha_roundtrip(Path(td))
+    print("SIDE draft selftest OK (no market data)")

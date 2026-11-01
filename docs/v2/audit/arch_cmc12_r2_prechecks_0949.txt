@@ -1,0 +1,17 @@
+date: 2026-10-18T09:49:55-04:00
+== ps 94322
+    PID STAT     ELAPSED
+  94322 Tsl     08:26:14
+== lock
+b5e780699e479955f39920078546893111f2421bfea561e71c041fd924ed8d9c  output/loop/RESEARCH_QUIET.lock
+== pgrep -P 2905775 (rc follows)
+rc=1
+== ps 2905775 2859825
+    PID STAT     ELAPSED COMMAND
+2859825 S          22:31 /bin/bash ./deploy_loop.sh
+2905775 SNl        14:13 python3 -X utf8 server.py
+== pgrep -aP 2859825
+3011548 sleep 60
+rc=0
+== healthz
+{"ok": true, "ts": "2026-10-18T09:49:55-04:00", "live": false, "quiet": true, "quiet_reason": "lock:/workspace/QuantLab/output/loop/RESEARCH_QUIET.lock", "snapshot_pending": true, "gen_running": false}

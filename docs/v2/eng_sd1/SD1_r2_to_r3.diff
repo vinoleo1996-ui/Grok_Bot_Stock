@@ -1,0 +1,1026 @@
+--- a/quantlab/platform/execution_sd1.py(r2)
++++ b/quantlab/platform/execution_sd1.py(r3)
+@@ -752,8 +752,9 @@
+ 
+     Returns dict: nav, nav_open (Series), costs breakdown, requested/filled
+     notional, fill_ratio, events (list), fills (optional), and (when
+-    ``record_weights``) ``target_weights`` / ``actual_weights`` float32
+-    DataFrames (session x code). target_weights: the latest signal's weights,
++    ``record_weights``) ``target_weights`` / ``actual_weights`` DataFrames (session x code): float32 for exec_SD0
++    (pristine execution.py 373fed30 L718-720/L882/L940 store them as float32 diagnostics; kept bit-identical), float64
++    for exec_SD1 (r3, Arch ruling 3: bookkeeping-grade weights; cash/shares/NAV were always float64). target_weights: the latest signal's weights,
+     carried forward until the next signal (0 before the first signal).
+     actual_weights: post-fill holdings at that session's close mark / nav.
+ 
+@@ -870,9 +871,10 @@
+     requested = filled = 0.0
+     events, fills = [], []
+     impact_missing = 0
+-    TW = np.zeros((len(dates), len(codes)), dtype=np.float32) if record_weights else None
+-    AW = np.zeros((len(dates), len(codes)), dtype=np.float32) if record_weights else None
+-    cur_tw = np.zeros(len(codes), dtype=np.float32)
++    WDT = np.float32 if cfg.engine_version == "exec_SD0" else np.float64   # r3: SD0 = pristine float32; SD1 float64
++    TW = np.zeros((len(dates), len(codes)), dtype=WDT) if record_weights else None
++    AW = np.zeros((len(dates), len(codes)), dtype=WDT) if record_weights else None
++    cur_tw = np.zeros(len(codes), dtype=WDT)
+     reserve = [0.0]   # cash encumbered as futures margin (stock buys cannot use it)
+     from quantlab.platform.futures import FuturesBook, cash_rate_per_session
+     RATE = cash_rate_per_session(dates, cfg.cash_rate, cfg.cash_rate_convention, cfg.cash_rate_kind,
+@@ -1239,7 +1241,7 @@
+             if SD1_HALT:
+                 sig_state["tgt"] = dict(tgt); sig_state["fresh"] = True
+             if record_weights:
+-                cur_tw = np.zeros(len(codes), dtype=np.float32)
++                cur_tw = np.zeros(len(codes), dtype=WDT)
+                 for j, x in tgt.items():
+                     cur_tw[j] = x
+             # Stable code order (not set/hash or column-index order) so full vs schedule-only
+@@ -1297,7 +1299,7 @@
+         if record_weights:
+             TW[t] = cur_tw
+             if nav_out[t] > 0:
+-                AW[t] = (shares * np.nan_to_num(Cm[t]) / nav_out[t]).astype(np.float32)
++                AW[t] = (shares * np.nan_to_num(Cm[t]) / nav_out[t]).astype(WDT)
+     if cash_hold:
+         _close_cash_hold(len(dates), "end_of_run")
+     sd1_summary = None
+--- a/quantlab/platform/tradability.py(r2)
++++ b/quantlab/platform/tradability.py(r3)
+@@ -23,6 +23,12 @@
+     raw limit prices FE switches back to open_touch and the affected leaves are recomputed (disclosure only).
+     ADG keeps the frozen-prereg close fills.
+   * ``track`` and ``delist_source`` are required in every adapter (Arch P2-2 / P2-4).
++  * r3 (Arch P2-R2 / probe 9b81bff1): the FE resume-day entry gate defaults to ``resume_gate='require_announced'``:
++    the gate column is ``resume_announced`` (t 09:00 PIT, suspend_d R record), taken from cs_panel_v2 when Data adds it,
++    else joined from Data's suspend_flags_v2 at a PINNED sha256 (``resume_flags_sha256``); with neither the FE adapter
++    refuses. ``'is_resume_day_fallback'`` (disclosure only) keeps the r2 behaviour and discloses the mild look-ahead;
++    ``'off'`` is the gate-off sensitivity. Every FE result carries ``summary['resume_gate']`` with per-year counts of
++    blocked new entries (and how many of them are is_resume_day cells without an R record, when both are known).
+ Research-grade; live=false; promotion_approved=false. Real-data use needs an Arch .ok.
+ """
+ from __future__ import annotations
+@@ -37,6 +43,12 @@
+ LIMIT_EPS = 0.005
+ ROOT = Path(__file__).resolve().parents[2]
+ CS_PANEL_DIR = ROOT / "output/ai_factory/panel_cache"
++SUSPEND_FLAGS_V2 = ROOT / "data/v2/suspend_flags/suspend_flags_v2.parquet"   # Data D-2 (same path as delist_accounting)
++RESUME_GATES = ("require_announced", "is_resume_day_fallback", "off")
++IS_RESUME_DAY_LOOKAHEAD_NOTE = (
++    "is_resume_day is derived from same-day (t 16:00, post-close) trading info (vol/amount): a mild look-ahead. It is "
++    "used ONLY to block new buys on t (never to buy, sell, size or score), so it can only remove entries "
++    "(conservative). The PIT gate is resume_announced (t 09:00, suspend_d R record).")
+ 
+ 
+ @dataclass
+@@ -356,15 +368,106 @@
+         raise ValueError("delist_source is required (Arch P2-4): src_events_v1 | src_table_v2 | src_table_v1_d3rule")
+ 
+ 
++def _sha256(path) -> str:
++    import hashlib
++    h = hashlib.sha256()
++    with open(path, "rb") as fh:
++        for b in iter(lambda: fh.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
++def load_resume_flags(codes, years, *, path=None, sha256: str) -> pd.DataFrame:
++    """r3 (Arch P2-R2 (a)): (date, instrument, resume_announced, is_resume_day) from Data's suspend_flags_v2 for
++    ``codes`` (ts_code, e.g. '000001.SZ' = cs_panel 'instrument') and ``years``. The file must exist and match the
++    pinned full sha256 (no unpinned read). Absent row = normal trading day (both False). Read by year chunks."""
++    import re
++    import pyarrow as pa
++    import pyarrow.parquet as pq
++    f = Path(path or SUSPEND_FLAGS_V2)
++    if not (isinstance(sha256, str) and re.fullmatch(r"[0-9a-f]{64}", sha256)):
++        raise ValueError("resume_flags_sha256 must be the full 64-hex sha256 of suspend_flags_v2 (pinned by Arch)")
++    if not f.exists():
++        raise FileNotFoundError(f"{f} missing: the FE resume gate needs Data's suspend_flags_v2 (D-2) or cs_panel_v2.resume_announced")
++    got = _sha256(f)
++    if got != sha256:
++        raise ValueError(f"{f} sha256={got} != pinned {sha256}")
++    names = set(pq.read_schema(f).names)
++    miss = {"ts_code", "trade_date", "resume_announced", "is_resume_day"} - names
++    if miss:
++        raise ValueError(f"{f} lacks {sorted(miss)}")
++    td = pq.read_schema(f).field("trade_date").type
++    if pa.types.is_integer(td):
++        bounds = lambda y: (y * 10000 + 101, y * 10000 + 1231)
++    elif pa.types.is_timestamp(td) or pa.types.is_date(td):
++        bounds = lambda y: (pd.Timestamp(f"{y}-01-01"), pd.Timestamp(f"{y}-12-31 23:59:59"))
++    else:
++        bounds = lambda y: (f"{y}0101", f"{y}1231")
++    want = sorted(set(map(str, codes))); parts = []
++    for y in years:
++        lo, hi = bounds(int(y))
++        x = pd.read_parquet(f, columns=["ts_code", "trade_date", "resume_announced", "is_resume_day"],
++                            filters=[("trade_date", ">=", lo), ("trade_date", "<=", hi), ("ts_code", "in", want)])
++        if not x.empty:
++            parts.append(x)
++    cols = ["date", "instrument", "resume_announced", "is_resume_day"]
++    if not parts:
++        return pd.DataFrame({"date": pd.Series(dtype="datetime64[ns]"), "instrument": pd.Series(dtype=object),
++                             "resume_announced": pd.Series(dtype=bool), "is_resume_day": pd.Series(dtype=bool)})
++    x = pd.concat(parts)
++    if pa.types.is_integer(td) or pa.types.is_string(td) or pa.types.is_large_string(td):
++        x["date"] = pd.to_datetime(x.trade_date.astype(str).str[:8], format="%Y%m%d")
++    else:
++        x["date"] = pd.to_datetime(x.trade_date)
++    x["date"] = x["date"].astype("datetime64[ns]")
++    x["instrument"] = x.ts_code.astype(str)
++    for c in ("resume_announced", "is_resume_day"):
++        x[c] = x[c].astype("boolean").fillna(False).astype(bool)
++    return x[cols].drop_duplicates(["date", "instrument"]).reset_index(drop=True)
++
++
++def _gate_counts(events: pd.DataFrame, ird: pd.DataFrame | None, ann: pd.DataFrame | None) -> dict:
++    """Per-year blocked NEW entries (RESUME_DAY_ENTRY_GATE) and how many sit on is_resume_day cells without an R record."""
++    if events is None or events.empty or "type" not in events:
++        g = pd.DataFrame(columns=["date", "code"])
++    else:
++        g = events.loc[events.type == "RESUME_DAY_ENTRY_GATE", ["date", "code"]]
++    by, wo = {}, {}
++    both = ird is not None and ann is not None
++    for d, c in zip(pd.to_datetime(g["date"]), g["code"].astype(str)):
++        y = int(d.year); by[y] = by.get(y, 0) + 1
++        if both:
++            a = bool(ann.at[d, c]) if (d in ann.index and c in ann.columns) else False
++            r = bool(ird.at[d, c]) if (d in ird.index and c in ird.columns) else False
++            if r and not a:
++                wo[y] = wo.get(y, 0) + 1
++    out = dict(blocked_new_entries_by_year={k: by[k] for k in sorted(by)}, blocked_new_entries_total=int(sum(by.values())))
++    if both:
++        out["of_which_is_resume_day_without_R_by_year"] = {k: wo.get(k, 0) for k in sorted(by)}
++        out["of_which_is_resume_day_without_R_total"] = int(sum(wo.values()))
++    else:
++        out["of_which_is_resume_day_without_R_by_year"] = None
++        out["note_without_R"] = "not computable: needs both is_resume_day and resume_announced"
++    return out
++
++
+ def fe_book_ret_sd1(W_long: pd.DataFrame, start, end, *, cost: float, bal: str, bal_open: pd.Series, bal_close: pd.Series,
+-                    panel_dir: Path | None = None, allow_cs_panel_v1: bool = False, track: str, delist_source: str):
++                    panel_dir: Path | None = None, allow_cs_panel_v1: bool = False, track: str, delist_source: str,
++                    resume_gate: str = "require_announced", resume_flags_sha256: str | None = None,
++                    resume_flags_path: Path | None = None):
+     """FE.book_ret wb_SD1: yearly-chunk read of cs_panel_v2_{y}.parquet (resumption-day rows, D-1 / ruling 4).
+     P1-6: no NEW position on a resumption session (B = RESUME_DAY_ENTRY_GATE; gate column = ``resume_announced``
+     (t 09:00 PIT) when the panel has it, else ``is_resume_day`` (t 16:00, booking-only -> used only to BLOCK entry,
+     conservative, flagged)); ``hiliq_carry`` held-through-halt cells are checked (resumption gap booked) and a
+     mismatch refuses the output. E-2: tagged OPTIMISTIC_NO_LIMIT (no limit prices in cs_panel yet).
++    r3 ``resume_gate`` (Arch P2-R2): 'require_announced' (default, the only basis for a real FE run): gate =
++    resume_announced from cs_panel_v2 if present, else from suspend_flags_v2 at ``resume_flags_sha256`` (pinned;
++    ``resume_flags_path`` overrides the path for synthetic tests); neither -> refuse. 'is_resume_day_fallback':
++    r2 behaviour, disclosure only, look-ahead note. 'off': gate-off sensitivity (disclosure only).
+     Returns (ret Series without the 2 warm-up rows, one-sided mean turnover, full result dict)."""
+     _need(track, delist_source)
++    if resume_gate not in RESUME_GATES:
++        raise ValueError(f"bad resume_gate {resume_gate!r}: one of {RESUME_GATES}")
+     import pyarrow.parquet as pq
+     pdir = Path(panel_dir or CS_PANEL_DIR)
+     years = range(int(str(start)[:4]), int(str(end)[:4]) + 1)
+@@ -386,14 +489,35 @@
+             cols_ += ["is_resume_day", "hiliq_carry"] + (["resume_announced"] if "resume_announced" in names else [])
+         parts.append(pd.read_parquet(f, columns=cols_, filters=[("instrument", "in", want)]))
+     X = pd.concat(parts); del parts
+-    gate_col = "resume_announced" if "resume_announced" in X.columns else ("is_resume_day" if "is_resume_day" in X.columns else None)
+-    gate = carry = None
+-    if gate_col is not None:
+-        X[gate_col] = X[gate_col].astype("boolean").fillna(False).astype(bool)
++    X["date"] = pd.to_datetime(X["date"]).astype("datetime64[ns]")   # one resolution for the merge below (pandas 3)
++    v2_cols = "is_resume_day" in X.columns
++    gate_src = None; flags_sha = None
++    if resume_gate == "require_announced" and v2_cols and "resume_announced" not in X.columns:
++        if resume_flags_sha256 is None:
++            raise ValueError("resume_gate='require_announced': cs_panel_v2 has no resume_announced column, so "
++                             "resume_flags_sha256 (pinned sha of Data's suspend_flags_v2) is required (Arch P2-R2)")
++        fl = load_resume_flags(want, years, path=resume_flags_path, sha256=resume_flags_sha256)
++        flags_sha = resume_flags_sha256
++        X = X.merge(fl[["date", "instrument", "resume_announced"]], on=["date", "instrument"], how="left")
++        gate_src = f"suspend_flags_v2@{resume_flags_sha256}"
++    elif "resume_announced" in X.columns:
++        gate_src = "cs_panel_v2.resume_announced"
++    if v2_cols and resume_gate == "require_announced" and "resume_announced" not in X.columns:
++        raise ValueError("resume_gate='require_announced' but no resume_announced column available")
++    gate_col = None
++    if v2_cols:
++        gate_col = {"require_announced": "resume_announced", "is_resume_day_fallback": "is_resume_day", "off": None}[resume_gate]
++    gate = carry = ird = ann = None
++    if v2_cols:
+         X["hiliq_carry"] = X["hiliq_carry"].astype("boolean").fillna(False).astype(bool)
+-        gate = X.pivot_table(index="date", columns="instrument", values=gate_col, aggfunc="max").fillna(False).astype(bool)
++        X["is_resume_day"] = X["is_resume_day"].astype("boolean").fillna(False).astype(bool)
+         carry = X.pivot_table(index="date", columns="instrument", values="hiliq_carry", aggfunc="max").fillna(False).astype(bool)
+-        gate.index = pd.to_datetime(gate.index); carry.index = pd.to_datetime(carry.index)
++        ird = X.pivot_table(index="date", columns="instrument", values="is_resume_day", aggfunc="max").fillna(False).astype(bool)
++        if "resume_announced" in X.columns:
++            X["resume_announced"] = X["resume_announced"].astype("boolean").fillna(False).astype(bool)
++            ann = X.pivot_table(index="date", columns="instrument", values="resume_announced", aggfunc="max").fillna(False).astype(bool)
++        if gate_col is not None:
++            gate = ird if gate_col == "is_resume_day" else ann
+     rr = X.pivot_table(index="date", columns="instrument", values="ret")
+     on = X.pivot_table(index="date", columns="instrument", values="ret_on"); del X
+     rr.index = pd.to_datetime(rr.index); on = on.reindex(rr.index); on.index = rr.index
+@@ -410,21 +534,47 @@
+                    blocked_buy_budget=sd1_blocked_buy_budget(track), limit_policy="off")
+     res = weight_book_returns(P, WBPanels(close=close, open=open_, entry_block=gate), pol,
+                               delist_events=_events_for(want, delist_source))
+-    if gate_col is None:
++    if not v2_cols:
+         res["flags"].append(dict(flag="NO_RESUME_DAY_GATE", note="cs_panel v1 has no resumption columns (D-1 gap)"))
+     else:
+-        if gate_col == "is_resume_day":
++        if resume_gate == "is_resume_day_fallback":
+             res["flags"].append(dict(flag="ENTRY_GATE_IS_RESUME_DAY_T1600",
+                                      note="is_resume_day is t-16:00 info: used only to block new entries (conservative)"))
++            res["flags"].append(dict(flag="IS_RESUME_DAY_MILD_LOOKAHEAD", note=IS_RESUME_DAY_LOOKAHEAD_NOTE))
++        elif resume_gate == "off":
++            res["flags"].append(dict(flag="RESUME_GATE_OFF_SENSITIVITY",
++                                     note="resume-day entry gate disabled: sensitivity, disclosure only"))
+         chk = check_hiliq_carry(close, res["executed"], carry)
+         res["summary"]["hiliq_carry_check"] = chk
+         if chk["n_mismatch"]:
+             raise RuntimeError(f"hiliq_carry check failed (P1-6): {chk}")
++    rg = dict(mode=resume_gate, gate_column=gate_col if v2_cols else None,
++              source=(gate_src if gate_col == "resume_announced" else ("cs_panel_v2.is_resume_day" if gate_col else None)),
++              resume_flags_sha256=flags_sha,
++              basis="main" if resume_gate == "require_announced" else "sensitivity_disclosure_only",
++              is_resume_day_lookahead_note=IS_RESUME_DAY_LOOKAHEAD_NOTE)
++    rg.update(_gate_counts(res["events"], ird, ann))
++    res["summary"]["resume_gate"] = rg
+     _tag_optimistic(res)
+     to = res["turnover"]
+     return res["ret"].iloc[2:], float(to.iloc[2:].mean() / 2), res
+ 
+ 
++def fe_resume_gate_sensitivity(W_long: pd.DataFrame, start, end, **kw) -> dict:
++    """r3 (Arch P2-R2): main (``resume_gate`` as given, default 'require_announced') vs gate 'off' (disclosure only).
++    Returns {'main': result, 'gate_off': result, 'diff': per-year sum of (main - gate_off) daily returns, n_blocked}."""
++    kw = dict(kw); main_gate = kw.pop("resume_gate", "require_announced")
++    if main_gate == "off":
++        raise ValueError("main resume_gate must not be 'off'")
++    r0, to0, a = fe_book_ret_sd1(W_long, start, end, resume_gate=main_gate, **kw)
++    r1, to1, b = fe_book_ret_sd1(W_long, start, end, resume_gate="off", **kw)
++    d = (r0 - r1.reindex(r0.index)).fillna(0.0)
++    by = {int(y): float(v) for y, v in d.groupby(d.index.year).sum().items()}
++    return dict(main=a, gate_off=b, turnover=dict(main=to0, gate_off=to1),
++                diff=dict(sum_ret_diff_by_year=by, n_blocked_main=a["summary"]["resume_gate"]["blocked_new_entries_total"],
++                          basis="sensitivity_disclosure_only"))
++
++
+ def lc_ret_sd1(W_long: pd.DataFrame, px_fn, raw_fn, *, cost: float, net: bool = True, track: str, delist_source: str,
+                etf=lambda i: False):
+     """LC._ret wb_SD1. px_fn(i) -> (adj_open, adj_close); raw_fn(i) -> DataFrame(open, close, volume,
+--- a/research/wb_sd1_books.py(r2)
++++ b/research/wb_sd1_books.py(r3)
+@@ -11,6 +11,9 @@
+ 主 Agent E-2 (01:53 ET): FE and ADG outputs carry OPTIMISTIC_NO_LIMIT (no limit-up/down yet) and cannot serve as a
+ gate on their own; book_smoke takes precedence. Use ``*_full`` variants to get the result dict with flags/summary
+ (E-1 write-off categories + G2 combined weight).
++r3 (Arch P2-R2): FE's resume-day entry gate defaults to resume_gate='require_announced' (resume_announced from
++cs_panel_v2, else Data's suspend_flags_v2 at the pinned ``resume_flags_sha256``; neither -> refuse). 'off' is the
++gate-off sensitivity (book_ret_sd1_gate_sensitivity); 'is_resume_day_fallback' is disclosure only.
+ 
+ Same return shapes as the legacy functions. They reuse the legacy modules' constants and price loaders read-only and
+ route the book through quantlab.platform.tradability.weight_book_returns. FE needs cs_panel_v2 (D-1; Data P0 per
+@@ -26,19 +29,37 @@
+ sys.path.insert(0, str(ROOT))
+ 
+ 
+-def book_ret_sd1_full(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False):
++def book_ret_sd1_full(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False,
++                      resume_gate: str = "require_announced", resume_flags_sha256: str | None = None):
+     import research.g1g5_fund_resid_alpha as FE
+     import quantlab.platform.tradability as TB
+     e = pd.read_parquet(FE.R / "data/v2/etf/etf_daily_adj.parquet", columns=["trade_date", "open_hfq", "close_hfq"],
+                         filters=[("ts_code", "==", FE.BAL)])
+     e.index = pd.to_datetime(e.trade_date, format="%Y%m%d"); e = e.sort_index()
+     r, to, res = TB.fe_book_ret_sd1(W, start, end, cost=FE.COST, bal=FE.BAL, bal_open=e.open_hfq, bal_close=e.close_hfq,
+-                                    panel_dir=FE.PC, allow_cs_panel_v1=allow_cs_panel_v1, track=track, delist_source=delist_source)
++                                    panel_dir=FE.PC, allow_cs_panel_v1=allow_cs_panel_v1, track=track, delist_source=delist_source,
++                                    resume_gate=resume_gate, resume_flags_sha256=resume_flags_sha256)
+     return r, to, res
+ 
+ 
+-def book_ret_sd1(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False):
+-    r, to, _ = book_ret_sd1_full(W, start, end, track=track, delist_source=delist_source, allow_cs_panel_v1=allow_cs_panel_v1)
++def book_ret_sd1_gate_sensitivity(W, start, end, *, track: str, delist_source: str, resume_flags_sha256: str | None = None,
++                                  allow_cs_panel_v1: bool = False):
++    """Arch P2-R2: main (require_announced) vs resume gate off; per-year blocked entries in each result's
++    summary['resume_gate']. Disclosure only."""
++    import research.g1g5_fund_resid_alpha as FE
++    import quantlab.platform.tradability as TB
++    e = pd.read_parquet(FE.R / "data/v2/etf/etf_daily_adj.parquet", columns=["trade_date", "open_hfq", "close_hfq"],
++                        filters=[("ts_code", "==", FE.BAL)])
++    e.index = pd.to_datetime(e.trade_date, format="%Y%m%d"); e = e.sort_index()
++    return TB.fe_resume_gate_sensitivity(W, start, end, cost=FE.COST, bal=FE.BAL, bal_open=e.open_hfq, bal_close=e.close_hfq,
++                                         panel_dir=FE.PC, allow_cs_panel_v1=allow_cs_panel_v1, track=track,
++                                         delist_source=delist_source, resume_flags_sha256=resume_flags_sha256)
++
++
++def book_ret_sd1(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False,
++                 resume_gate: str = "require_announced", resume_flags_sha256: str | None = None):
++    r, to, _ = book_ret_sd1_full(W, start, end, track=track, delist_source=delist_source, allow_cs_panel_v1=allow_cs_panel_v1,
++                                 resume_gate=resume_gate, resume_flags_sha256=resume_flags_sha256)
+     return r, to   # OPTIMISTIC_NO_LIMIT (E-2): see book_ret_sd1_full()[2]['flags']
+ 
+ 
+--- a/tests/test_sd1_suspend_delist.py(r2)
++++ b/tests/test_sd1_suspend_delist.py(r3)
+@@ -172,11 +172,10 @@
+     return hashlib.sha256("".join(lines).encode()).hexdigest()
+ 
+ 
+-sys.path.insert(0, str(ROOT / "scripts_eng"))
+-import ok_runner_pin as _PIN  # noqa: E402  (the gate itself is a pinned dep)
+-
+-if not sys.flags.dont_write_bytecode:
++if not sys.flags.dont_write_bytecode:          # r3 (Arch P3-5): checked BEFORE the gate module is imported
+     _refuse("run with PYTHONDONTWRITEBYTECODE=1 (no __pycache__ in the repo)")
++sys.path.insert(0, str(ROOT / "scripts_eng"))
++import ok_runner_pin as _PIN  # noqa: E402  (the gate itself is a pinned dep; still v1 c7805d9a)
+ _GATE = _PIN.enforce(__file__, [TEST_OK], modes=["selftest", "real_data"] if REAL_DATA else ["selftest"],
+                      deps={k: ROOT / v for k, v in TEST_DEPS.items()})
+ OUT_DIR = _selftest_selfcheck(TEST_OK, REAL_DATA)
+@@ -185,6 +184,7 @@
+ # ---- gate passed: only now import the modules under test
+ import numpy as np  # noqa: E402
+ import pandas as pd  # noqa: E402
++import pytest  # noqa: E402  (exact-type exception checks, Arch ruling 2)
+ 
+ sys.path.insert(0, str(ROOT))
+ from quantlab.platform import execution_sd1 as E      # noqa: E402  (SD1 side engine; execution.py untouched)
+@@ -243,22 +243,64 @@
+ 
+ 
+ class T1HaltResumeGap(unittest.TestCase):
++    """r3 diagnosis (selftest 02:26 ET failure; Eng SD1 r3 receipt): NOT an engine bug, in CFG0 or CFG1. The r2 fixture
++    builds limit_down from the previous valid close (``_panels``: LD = C.ffill().shift(1) * 0.9), so on the resumption
++    day d[6] LD = 10 * 0.9 = 9.0 while the open is 8.0. Under open_touch (spec 3.4 default; pristine execution.py
++    373fed30 L754-755, execution_sd1 L913-914) an open at/below limit-down cannot sell -> the carried order
++    (unfilled='carry') waits and fills at d[7] (LD = 8 * 0.9 = 7.2). A -20% open on a 10%-limit stock is only possible
++    on a no-limit resumption session, which Data encodes as NaN limits. Both readings are now tested, per engine."""
+     def setUp(self):
+         nan = np.nan
+         self.c = [10, 10, 10, nan, nan, nan, 8, 8]
+         self.p = _panels({X: self.c}, 8, open_={X: [10, 10, 10, nan, nan, nan, 8, 8]})
+         self.d = _dates(8)
++        self.sched = {self.d[0]: {X: 1.0}, self.d[3]: {X: 0.5}}   # target cut ON the halt day d[3]
+ 
+-    def test_main_engine(self):
+-        sched = {self.d[0]: {X: 1.0}, self.d[3]: {X: 0.5}}
+-        for cfg in (CFG0, CFG1):
+-            r = _run(self.p, sched, cfg)
+-            nav = r["nav"].to_numpy()
+-            self.assertEqual(nav[3], nav[2]); self.assertEqual(nav[4], nav[2]); self.assertEqual(nav[5], nav[2])
+-            self.assertAlmostEqual(nav[6] - nav[5], 1e5 * (8 - 10), places=6)
+-            halt_days = {str(x.date()) for x in self.d[3:6]}
+-            self.assertFalse([f for f in r["fills"] if f["date"] in halt_days])
+-            self.assertTrue([f for f in r["fills"] if f["date"] == str(self.d[6].date()) and f["side"] < 0])
++    def _no_limit_resume(self):
++        p = _panels({X: self.c}, 8, open_={X: [10, 10, 10, np.nan, np.nan, np.nan, 8, 8]})
++        p.limit_down.loc[self.d[6], X] = np.nan   # Data: no price limit on this resumption session
++        p.limit_up.loc[self.d[6], X] = np.nan
++        return p
++
++    def _common(self, r):
++        nav = r["nav"].to_numpy()
++        self.assertEqual(nav[3], nav[2]); self.assertEqual(nav[4], nav[2]); self.assertEqual(nav[5], nav[2])
++        self.assertAlmostEqual(nav[6] - nav[5], 1e5 * (8 - 10), places=6)   # full gap booked on the resumption day
++        halt_days = {str(x.date()) for x in self.d[3:6]}
++        self.assertFalse([f for f in r["fills"] if f["date"] in halt_days])
++
++    def _sells(self, r, i):
++        return [f for f in r["fills"] if f["date"] == str(self.d[i].date()) and f["side"] < 0 and f["code"] == X]
++
++    def _resume_sell_executes(self, cfg):
++        r = _run(self._no_limit_resume(), self.sched, cfg)
++        self._common(r)
++        s6 = self._sells(r, 6)
++        self.assertEqual(len(s6), 1)
++        self.assertEqual(s6[0]["qty"], 50000.0)          # 0.5 * NAV_sig(1e6) / mark(10) - 100000 held
++        self.assertEqual(s6[0]["ref_price"], 8.0)        # sold at the actual resumption open, not the pre-halt close
++
++    def _resume_limit_down_carries(self, cfg):
++        r = _run(self.p, self.sched, cfg)
++        self._common(r)
++        self.assertEqual(self._sells(r, 6), [])
++        d6 = str(self.d[6].date())
++        self.assertTrue(any(e.get("reason") == "limit_down" and e.get("code") == X and e.get("date") == d6
++                            for e in r["events"]))
++        s7 = self._sells(r, 7)
++        self.assertEqual(len(s7), 1); self.assertEqual(s7[0]["qty"], 50000.0)
++
++    def test_cfg0_resume_sell_executes(self):        # SD0 semantics = pristine 373fed30
++        self._resume_sell_executes(CFG0)
++
++    def test_cfg1_resume_sell_executes(self):        # SD1 (freeze_renorm + sd1 delist)
++        self._resume_sell_executes(CFG1)
++
++    def test_cfg0_open_below_limit_down_carries(self):
++        self._resume_limit_down_carries(CFG0)
++
++    def test_cfg1_open_below_limit_down_carries(self):
++        self._resume_limit_down_carries(CFG1)
+ 
+     def test_weight_engine_same(self):
+         P = pd.DataFrame({X: [1.0]}, index=self.d[:1])
+@@ -313,12 +355,20 @@
+         return _run(p, s, replace(CFG1, blocked_buy_budget=mode))
+ 
+     def test_renorm_vs_cash(self):
+-        for mode, want_y, want_cash in (("renorm", 50000, 0.0), ("cash", 30000, 4e5)):
++        # r3: the r2 gap 0.0238418579 = 1e6 * (0.4 - float32(1 - (float32(0.3) + float32(0.3)))) exactly: weights were
++        # stored float32. SD1 weights are float64 now (SD0 stays float32 = pristine); tolerance stays absolute 1e-6.
++        # Expected cash (spec 3.2, no costs, lots off): renorm -> 0 (blocked X budget re-spread over Y/Z);
++        # cash -> NAV_open(d3) * w_X(0.4) (blocked X budget held as cash).
++        for mode, want_y in (("renorm", 50000), ("cash", 30000)):
+             r = self.run_mode(mode)
+             aw = r["actual_weights"].iloc[3]; nav = r["nav"].iloc[3]
++            self.assertEqual(r["actual_weights"].to_numpy().dtype, np.float64)
++            nav_open = float(r["nav_open"].iloc[3])
++            want_cash = 0.0 if mode == "renorm" else nav_open * 0.4
+             self.assertEqual(round(float(aw[Y] * nav / 10)), want_y)
+             self.assertEqual(round(float(aw[X] * nav / 10)), 0)
+-            self.assertAlmostEqual(float(nav * (1 - aw.sum())), want_cash, delta=1e-3)
++            self.assertAlmostEqual(float(nav * (1 - aw.sum())), want_cash, delta=1e-6)
++            self.assertAlmostEqual(float(r["cash"]), want_cash, delta=1e-6)      # engine float64 ledger cash (end = d5)
+             ev = r["sd1_events"]
+             self.assertTrue(((ev.type == "HALT_BLOCKED") & (ev.code == X) & (ev.budget == mode)).any())
+ 
+@@ -496,17 +546,46 @@
+                 self.assertEqual(a["final_shares"], b["final_shares"]); self.assertEqual(a["fills"], b["fills"])
+                 self.assertEqual(a["events"], b["events"])
+                 self.assertTrue(np.array_equal(a["actual_weights"].to_numpy(), b["actual_weights"].to_numpy()))
++                self.assertEqual(a["actual_weights"].to_numpy().dtype, b["actual_weights"].to_numpy().dtype)   # r3
++                self.assertEqual(a["target_weights"].to_numpy().dtype, b["target_weights"].to_numpy().dtype)
+                 self.assertNotIn("sd1_events", a)
+ 
+ 
+-PLANTED = "from quantlab.platform.delist_accounting import load_delist_events\nload_delist_events()\n"
++PLANTED = "from quantlab.platform.delist_accounting import load_delist_events\nload_delist_events(source='src_events_v1')\n"
++PLANTED_NOSRC = "from quantlab.platform.delist_accounting import load_delist_events\nload_delist_events()\n"
++FAKE_CALLERS = ("research/_sd1_planted_strategy.py", "quantlab/strategy/_planted.py", "scripts/_optimizer_planted.py")
++
++
++def _no_real_sources():
++    """Point every delist source at a non-existent file under OUT_DIR, so a broken guard cannot read real data
++    (it would raise FileNotFoundError, which the exact-type checks below reject)."""
++    saved = dict(DA.DELIST_SOURCES)
++    for k in list(DA.DELIST_SOURCES):
++        DA.DELIST_SOURCES[k] = OUT_DIR / f"_absent_{k}.parquet"
++    return saved
+ 
+ 
+ class T10PitGuard(unittest.TestCase):
++    def setUp(self):
++        self.saved = _no_real_sources()
++
++    def tearDown(self):
++        DA.DELIST_SOURCES.clear(); DA.DELIST_SOURCES.update(self.saved)
++
+     def test_strategy_caller_raises(self):
+-        for fake in ("research/_sd1_planted_strategy.py", "quantlab/strategy/_planted.py", "scripts/_optimizer_planted.py"):
+-            with self.assertRaises(PermissionError):
++        # r3: the planted strategy call passes a valid source, so only the PIT guard can stop it -> exactly PermissionError
++        for fake in FAKE_CALLERS:
++            with pytest.raises(PermissionError) as ei:
+                 exec(compile(PLANTED, str(ROOT / fake), "exec"), {})
++            self.assertIs(type(ei.value), PermissionError)
++
++    def test_no_source_is_type_error(self):
++        # r3: a call without source fails at argument binding -> exactly TypeError (for strategy and allowed callers)
++        for fake in FAKE_CALLERS + ("tests/test_sd1_suspend_delist.py",):
++            with pytest.raises(TypeError) as ei:
++                exec(compile(PLANTED_NOSRC, str(ROOT / fake), "exec"), {})
++            self.assertIs(type(ei.value), TypeError)
++            self.assertIn("source", str(ei.value))
+ 
+     def test_allowed_caller(self):
+         self.assertEqual(DA.guard_accounting_caller(), "tests/test_sd1_suspend_delist.py")
+@@ -529,11 +608,18 @@
+         code = "\n".join([
+             "import sys", f"sys.path.insert(0, {str(ROOT)!r})",
+             "print('debug', __debug__)",
++            "from quantlab.platform import delist_accounting as DA",
++            f"for _k in list(DA.DELIST_SOURCES): DA.DELIST_SOURCES[_k] = __import__('pathlib').Path({str(OUT_DIR)!r}) / ('_absent_' + _k)",
+             "try:",
+             f"    exec(compile({PLANTED!r}, {str(ROOT / 'research/_sd1_planted_strategy.py')!r}, 'exec'), {{}})",
+             "    print('GUARD_NO_RAISE')",
+-            "except PermissionError:",
+-            "    print('GUARD_RAISED')",
++            "except BaseException as e:",
++            "    print('GUARD_EXC', type(e).__name__)",
++            "try:",
++            f"    exec(compile({PLANTED_NOSRC!r}, {str(ROOT / 'research/_sd1_planted_strategy.py')!r}, 'exec'), {{}})",
++            "    print('NOSRC_NO_RAISE')",
++            "except BaseException as e:",
++            "    print('NOSRC_EXC', type(e).__name__)",
+             "from quantlab.platform import execution_sd1 as E",
+             "try:",
+             "    E.ExecConfig(halt_policy='bogus'); print('CFG_NO_RAISE')",
+@@ -549,8 +635,11 @@
+         out = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True, cwd=str(ROOT),
+                              env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1")).stdout
+         self.assertIn("debug False", out)
+-        for k in ("GUARD_RAISED", "CFG_RAISED", "DL_RAISED"):
+-            self.assertIn(k, out)
++        lines = out.splitlines()
++        self.assertIn("GUARD_EXC PermissionError", lines)     # exact type names (Arch ruling 2)
++        self.assertIn("NOSRC_EXC TypeError", lines)
++        for k in ("CFG_RAISED", "DL_RAISED"):
++            self.assertIn(k, lines)
+ 
+ 
+ class T12WeightEngineDelistTail(unittest.TestCase):
+@@ -800,17 +889,78 @@
+             self.assertIn("OPTIMISTIC_NO_LIMIT", fl); self.assertIn("NO_RESUME_DAY_GATE", fl)
+             self.assertFalse(res["summary"]["gate_eligible_alone"])
+ 
+-    def test_resume_gate_and_carry(self):
++    W2 = property(lambda self: pd.DataFrame(dict(date=[self.d[1], self.d[4]], instrument=[X, Y], target_weight=[1.0, 0.5])))
++
++    def _fe(self, td, **kw):
++        return TB.fe_book_ret_sd1(self.W2, "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal, bal_open=self.bo,
++                                  bal_close=self.bc, panel_dir=td, track="leaf_test", delist_source="src_table_v2", **kw)
++
++    def _flags_file(self, td, announced: bool):
++        """Synthetic suspend_flags_v2 (ts_code, trade_date, resume_announced, is_resume_day) under OUT_DIR."""
++        f = Path(td) / "suspend_flags_v2.parquet"
++        pd.DataFrame(dict(ts_code=[Y], instrument_id=["sh.600002"], trade_date=[self.d[5]],
++                          resume_announced=[announced], is_resume_day=[True])).to_parquet(f, index=False)
++        return f, __import__("hashlib").sha256(f.read_bytes()).hexdigest()
++
++    def test_resume_gate_fallback_disclosed(self):     # r2 behaviour, now explicit + disclosure only (Arch P2-R2)
+         with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
+             _write_panel(Path(td), "cs_panel_v2_2024.parquet", self._rows(True), v2=True)
+-            W2 = pd.DataFrame(dict(date=[self.d[1], self.d[4]], instrument=[X, Y], target_weight=[1.0, 0.5]))
+-            r, to, res = TB.fe_book_ret_sd1(W2, "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal, bal_open=self.bo,
+-                                            bal_close=self.bc, panel_dir=td, track="leaf_test", delist_source="src_table_v2")
++            r, to, res = self._fe(td, resume_gate="is_resume_day_fallback")
+             ev = res["events"]
+             self.assertTrue(((ev.type == "RESUME_DAY_ENTRY_GATE") & (ev.code == Y) & (ev.date == str(self.d[5].date()))).any())
+-            self.assertIn("ENTRY_GATE_IS_RESUME_DAY_T1600", {f["flag"] for f in res["flags"]})
++            fl = {f["flag"] for f in res["flags"]}
++            self.assertIn("ENTRY_GATE_IS_RESUME_DAY_T1600", fl); self.assertIn("IS_RESUME_DAY_MILD_LOOKAHEAD", fl)
+             self.assertEqual(res["summary"]["hiliq_carry_check"]["n_mismatch"], 0)
+-            self.assertIn("OPTIMISTIC_NO_LIMIT", {f["flag"] for f in res["flags"]})
++            self.assertIn("OPTIMISTIC_NO_LIMIT", fl)
++            rg = res["summary"]["resume_gate"]
++            self.assertEqual(rg["blocked_new_entries_by_year"], {2024: 1})
++            self.assertEqual(rg["basis"], "sensitivity_disclosure_only")
++            self.assertIsNone(rg["of_which_is_resume_day_without_R_by_year"])   # no resume_announced known here
++
++    def test_resume_gate_requires_announced(self):    # default: no resume_announced source -> refuse
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            _write_panel(Path(td), "cs_panel_v2_2024.parquet", self._rows(True), v2=True)
++            with pytest.raises(ValueError):
++                self._fe(td)                                          # no resume_flags_sha256
++            with pytest.raises(FileNotFoundError):
++                self._fe(td, resume_flags_sha256="0" * 64, resume_flags_path=Path(td) / "absent.parquet")
++            f, sha = self._flags_file(td, announced=True)
++            with pytest.raises(ValueError):
++                self._fe(td, resume_flags_sha256="0" * 64, resume_flags_path=f)   # sha mismatch
++            with pytest.raises(ValueError):
++                self._fe(td, resume_gate="auto")
++
++    def test_resume_gate_joins_suspend_flags(self):
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            _write_panel(Path(td), "cs_panel_v2_2024.parquet", self._rows(True), v2=True)
++            f, sha = self._flags_file(td, announced=True)
++            r, to, res = self._fe(td, resume_flags_sha256=sha, resume_flags_path=f)
++            ev = res["events"]
++            self.assertTrue(((ev.type == "RESUME_DAY_ENTRY_GATE") & (ev.code == Y) & (ev.date == str(self.d[5].date()))).any())
++            rg = res["summary"]["resume_gate"]
++            self.assertEqual((rg["mode"], rg["gate_column"], rg["basis"]), ("require_announced", "resume_announced", "main"))
++            self.assertEqual(rg["source"], f"suspend_flags_v2@{sha}")
++            self.assertEqual(rg["blocked_new_entries_by_year"], {2024: 1})
++            self.assertEqual(rg["of_which_is_resume_day_without_R_by_year"], {2024: 0})
++            self.assertNotIn("ENTRY_GATE_IS_RESUME_DAY_T1600", {f_["flag"] for f_ in res["flags"]})
++            # is_resume_day without an R record: announced gate does not block; the fallback counts it as without_R
++            f2, sha2 = self._flags_file(td, announced=False)
++            _, _, res2 = self._fe(td, resume_flags_sha256=sha2, resume_flags_path=f2)
++            self.assertEqual(res2["summary"]["resume_gate"]["blocked_new_entries_total"], 0)
++
++    def test_resume_gate_off_sensitivity(self):
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            _write_panel(Path(td), "cs_panel_v2_2024.parquet", self._rows(True), v2=True)
++            f, sha = self._flags_file(td, announced=True)
++            out = TB.fe_resume_gate_sensitivity(self.W2, "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal,
++                                                bal_open=self.bo, bal_close=self.bc, panel_dir=td, track="leaf_test",
++                                                delist_source="src_table_v2", resume_flags_sha256=sha, resume_flags_path=f)
++            off = out["gate_off"]
++            self.assertFalse((off["events"].type == "RESUME_DAY_ENTRY_GATE").any())
++            self.assertIn("RESUME_GATE_OFF_SENSITIVITY", {f_["flag"] for f_ in off["flags"]})
++            self.assertEqual(off["summary"]["resume_gate"]["basis"], "sensitivity_disclosure_only")
++            self.assertEqual(out["diff"]["n_blocked_main"], 1)
++            self.assertEqual(set(out["diff"]["sum_ret_diff_by_year"]), {2024})
+ 
+     def test_carry_checker_detects_mismatch(self):
+         d = self.d
+--- a/scripts_eng/sd0_parity_runner.py(r2)
++++ b/scripts_eng/sd0_parity_runner.py(r3)
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""SD0 parity runner r2 (Eng, 2026-10-18 02:xx ET; Arch SD1 review ARCH_SD1_IMPL_REVIEW_ZH.md 7f0b4819 §8 + addendum B).
++"""SD0 parity runner r3 (Eng, 2026-10-18; Arch SD1 review 7f0b4819 §8 + addendum B; r2 review 73cb88ac P2-R1/P3-2/P3-7).
+ 
+ Proves the SD1 side engine quantlab/platform/execution_sd1.py with every SD1 switch at its default (exec_SD0)
+ reproduces the untouched quantlab/platform/execution.py (373fed30…486c) bit-for-bit on real books: each case is
+@@ -24,15 +24,19 @@
+   plus runner-side checks: allow_smoke=false written explicitly; out_root=output/_sd0_parity; out_tag ends with this
+   runner's sha256[:8]; exec_serial=true; exec_nice=10; rss_cap_mb<=1536. Output dir <out_root>/<suite>_<out_tag>
+   created with mkdir(exist_ok=False); every report/JSON written with open(..., "x").
+-Process guards: os.nice(10) at start; one child at a time; parent polls /proc/<pid>/status VmRSS every second and
+-  kills a child above rss_cap_mb (FAIL_RSS); refuses within 16:40–18:40 ET (paper routine 17:40 ET ±1h), while
+-  another parity runner or a Data scripts/fix_sd1 rebuild is running; book_smoke HASH_FILES (full sha256) recorded
+-  before and after — a change voids the run. No paper CLI, no writes outside the out dir. live=false; promotion=false.
++Process guards: os.nice(10) at start; one child at a time; parent polls /proc/<pid>/status VmRSS and VmHWM every
++  0.2 s and kills a child whose VmRSS or VmHWM exceeds rss_cap_mb (FAIL_RSS); after each child, the child's own
++  ru_maxrss (worker JSON) and the parent's RUSAGE_CHILDREN ru_maxrss are checked against the cap too (r3, Arch P3-2:
++  over cap -> FAIL_RSS). Refuses within 16:40–18:40 ET (paper routine 17:40 ET ±1h), while another parity runner or a
++  Data scripts/fix_sd1 rebuild is running — checked at start AND again before EVERY child process (r3, Arch P2-R1;
++  a guard hit stops the run cleanly: case REFUSED_GUARD, report all_pass=false). Start before 14:00 ET.
++  book_smoke HASH_FILES (full sha256) recorded before and after — a change voids the run. Parquet comparison includes
++  the index (values, dtype, names; r3 Arch P3-7). No paper CLI, no writes outside the out dir. live=false; promotion=false.
+ 
+   python3 scripts_eng/sd0_parity_runner.py --suite paper --out-tag <tag ending in runner sha8>
+ """
+ from __future__ import annotations
+-import argparse, ast, datetime, hashlib, json, os, re, signal, subprocess, sys, time
++import argparse, ast, datetime, hashlib, json, os, re, resource, signal, subprocess, sys, time
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+@@ -159,10 +163,11 @@
+                 out_tag=tag)
+ 
+ 
+-def _process_guards():
+-    now = datetime.datetime.now()
++def _guard_reason() -> str | None:
++    """Why no child may start now (None = OK). Called at start and before every child (Arch P2-R1)."""
++    now = datetime.datetime.now()                 # box clock = America/New_York
+     if datetime.time(16, 40) <= now.time() <= datetime.time(18, 40):
+-        _refuse("inside the paper-routine window 16:40–18:40 ET (17:40 ET ± 1h)")
++        return "inside the paper-routine window 16:40–18:40 ET (17:40 ET ± 1h)"
+     mine, pid = set(), os.getpid()            # this process and its ancestors (the launching shell) are exempt
+     while pid > 1 and pid not in mine:
+         mine.add(pid)
+@@ -178,9 +183,16 @@
+         except OSError:
+             continue
+         if "sd0_parity_runner.py" in cmd and "python" in cmd:
+-            _refuse(f"another parity runner is running (pid {d.name})")
++            return f"another parity runner is running (pid {d.name})"
+         if "scripts/fix_sd1/" in cmd:
+-            _refuse(f"a Data fix_sd1 rebuild is running (pid {d.name}: {cmd[:120]})")
++            return f"a Data fix_sd1 rebuild is running (pid {d.name}: {cmd[:120]})"
++    return None
++
++
++def _process_guards():
++    why = _guard_reason()
++    if why:
++        _refuse(why)
+ 
+ 
+ def _hash_files() -> dict:
+@@ -227,32 +239,46 @@
+ ''' % SLEEVES
+ 
+ 
+-def _vmrss_mb(pid) -> float | None:
++def _vm_mb(pid) -> tuple[float | None, float | None]:
++    """(VmRSS, VmHWM) in MB from /proc/<pid>/status; VmHWM covers peaks between polls."""
++    rss = hwm = None
+     try:
+         for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+             if line.startswith("VmRSS:"):
+-                return int(line.split()[1]) / 1024
++                rss = int(line.split()[1]) / 1024
++            elif line.startswith("VmHWM:"):
++                hwm = int(line.split()[1]) / 1024
+     except OSError:
+-        return None
+-    return None
++        pass
++    return rss, hwm
+ 
+ 
+ def _run_child(cmd, log: Path, cap_mb: int, env=None) -> dict:
++    why = _guard_reason()                         # r3 (Arch P2-R1): re-check before EVERY child process
++    if why:
++        return dict(exit=None, refused_guard=why, killed_rss=False, over_cap_rusage=False)
+     with open(log, "x", encoding="utf-8") as fh:
+         p = subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, env=env)
+-        peak, killed = 0.0, False
++        peak, hwm_peak, killed = 0.0, 0.0, False
+         while p.poll() is None:
+-            r = _vmrss_mb(p.pid)
++            r, h = _vm_mb(p.pid)
+             if r is not None:
+                 peak = max(peak, r)
+-                if r > cap_mb:
+-                    p.send_signal(signal.SIGKILL); killed = True; p.wait(); break
+-            time.sleep(1.0)
++            if h is not None:
++                hwm_peak = max(hwm_peak, h)
++            if (r is not None and r > cap_mb) or (h is not None and h > cap_mb):
++                p.send_signal(signal.SIGKILL); killed = True; p.wait(); break
++            time.sleep(0.2)
++    children_maxrss_mb = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024   # cumulative max so far
+     info = {}
+     for line in reversed(log.read_text(encoding="utf-8", errors="replace").splitlines()):
+         if line.startswith("PARITY_WORKER_JSON "):
+             info = json.loads(line[len("PARITY_WORKER_JSON "):]); break
+-    return dict(exit=p.returncode, killed_rss=killed, peak_rss_mb_polled=round(peak, 1), **info)
++    self_mb = info.get("peak_rss_mb_self")
++    over = bool((self_mb is not None and self_mb > cap_mb) or children_maxrss_mb > cap_mb)   # r3 (Arch P3-2)
++    return dict(exit=p.returncode, killed_rss=killed, over_cap_rusage=over, peak_rss_mb_polled=round(peak, 1),
++                peak_vmhwm_mb_polled=round(hwm_peak, 1), parent_children_maxrss_mb_cum=round(children_maxrss_mb, 1),
++                **info)
+ 
+ 
+ _DROP = {"run_id", "timestamp", "generated_at", "started_et", "finished_et"}
+@@ -280,6 +306,8 @@
+         if x.suffix == ".parquet":
+             X, Y = pd.read_parquet(x), pd.read_parquet(y)
+             eq = list(X.columns) == list(Y.columns) and X.shape == Y.shape and list(X.dtypes) == list(Y.dtypes)
++            # r3 (Arch P3-7): the index too — values (NaN-aware via equals), dtype, names
++            eq = eq and X.index.equals(Y.index) and X.index.dtype == Y.index.dtype and list(X.index.names) == list(Y.index.names)
+             if eq:
+                 for c in X.columns:
+                     if pd.api.types.is_float_dtype(X[c]):
+@@ -335,8 +363,10 @@
+         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+         cmd = [UNIT_PY, "-m", "pytest", str(ROOT / TEST_FILE), "-q", "-p", "no:cacheprovider"]
+         r = _run_child(cmd, root / "pytest.log", cap, env=env)
+-        report.update(cmd=cmd, run=r, all_pass=(r["exit"] == 0 and not r["killed_rss"]),
+-                      status="FAIL_RSS" if r["killed_rss"] else ("PASS" if r["exit"] == 0 else "FAIL"))
++        rss_fail = r["killed_rss"] or r["over_cap_rusage"]
++        report.update(cmd=cmd, run=r, all_pass=(r["exit"] == 0 and not rss_fail),
++                      status=("REFUSED_GUARD" if r.get("refused_guard") else
++                              "FAIL_RSS" if rss_fail else ("PASS" if r["exit"] == 0 else "FAIL")))
+         report["finished_et"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+         _xwrite(root / "SD1_UNIT_REPORT.json", report)
+         print(json.dumps(dict(suite="unit", status=report["status"], out=str(root.relative_to(ROOT)))))
+@@ -345,7 +375,10 @@
+     weights = _weights(a.suite)
+     cases = PAPER_CASES if a.suite == "paper" else RESEARCH_CASES
+     pins = gate["runner_pin"]["deps"]
++    aborted = None
+     for name, wkey, aum, windows, ref in cases:
++        if aborted:
++            report["cases"].append(dict(name=name, status="NOT_RUN_ABORTED", why=aborted)); continue
+         wpath = weights[wkey]
+         w_sha = sha_file(wpath)
+         rec = dict(name=name, weights=wpath, weights_sha256=w_sha, aum=aum, windows=windows)
+@@ -365,10 +398,14 @@
+             r["engine_sha_ok"] = r.get("engine_sha256") == want
+             r["co_filename_ok"] = r.get("co_filename") == str((ROOT / ENGINE_FILES[engine]).resolve())
+             runs[engine] = r
+-            if r["exit"] != 0 or r["killed_rss"] or not (r["engine_sha_ok"] and r["co_filename_ok"]):
++            if r.get("refused_guard"):
++                aborted = r["refused_guard"]; break
++            if r["exit"] != 0 or r["killed_rss"] or r["over_cap_rusage"] or not (r["engine_sha_ok"] and r["co_filename_ok"]):
+                 break
+         rec["runs"] = runs
+-        if any(r.get("killed_rss") for r in runs.values()):
++        if any(r.get("refused_guard") for r in runs.values()):
++            rec["status"] = "REFUSED_GUARD"
++        elif any(r.get("killed_rss") or r.get("over_cap_rusage") for r in runs.values()):
+             rec["status"] = "FAIL_RSS"
+         elif len(runs) == 2 and all(r["exit"] == 0 and r["engine_sha_ok"] and r["co_filename_ok"] for r in runs.values()):
+             rec["parity"] = _compare(root / name / "pristine", root / name / "sd0")
+@@ -383,7 +420,8 @@
+     report["hash_files_after"] = _hash_files()
+     report["hash_files_stable"] = report["hash_files_before"] == report["hash_files_after"]
+     report["finished_et"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+-    report["all_pass"] = (bool(report["cases"]) and report["hash_files_stable"]
++    report["aborted"] = aborted
++    report["all_pass"] = (bool(report["cases"]) and report["hash_files_stable"] and not aborted
+                           and all(c.get("status") == "PASS_BIT_IDENTICAL" for c in report["cases"]))
+     _xwrite(root / "SD0_PARITY_REPORT.json", report)
+     print(json.dumps(dict(report=str((root / "SD0_PARITY_REPORT.json").relative_to(ROOT)), all_pass=report["all_pass"],
+--- a/scripts_eng/ok_runner_pin_v2.py(r2)
++++ b/scripts_eng/ok_runner_pin_v2.py(r3)
+@@ -9,22 +9,29 @@
+   5. some listed .ok pins this script (runner_sha256_<stem> or runner_sha256[<rel path|name>]) and every pin matches;
+   6. each requested mode has allow_<mode>=true in every pinning .ok and is not allow_<mode>=false in any listed .ok;
+   7. each dep declared by the runner is pinned (dep_sha256_<key>) in every pinning .ok and matches the file now.
+-Added in v2 (docs/v2/ARCH_RUN_AUTH_SELFTEST_SPEC_ZH.md 1aa43bdd §2/§3/§9):
++Added in v2 (docs/v2/ARCH_RUN_AUTH_SELFTEST_SPEC_ZH.md 1aa43bdd §2/§3/§9). r3 (Arch r2 review 73cb88ac P2-V1): checks 8–15
++apply ONLY to the "strict" .ok set = the designated ``primary_ok`` when given (it must pin this script), else every .ok
++that pins this script. Every other listed .ok (frozen .oks without expires_et, co-listed .oks of multi-.ok runners)
++gets exactly the v1 c7805d9a semantics (1, 2, 4, 6-not-false), parsed like v1 (CR tolerated).
+   8. encoding: refuse a UTF-8 BOM, any CR (LF only), non-UTF-8 bytes, and inline comments (a value containing '#');
+   9. format must be in ALLOWED_FORMATS (allowlist, currently {'quantlab_run_auth_v1'}) and signed_by=arch;
+      ok_revision is optional; when present it must be a positive integer ('3') or r<N> ('r3'), N>=1, else refuse;
+  10. signed_et present, ISO8601 with an explicit UTC offset, not in the future (5 min skew); expires_et REQUIRED in
+-     every .ok for every mode/scope (r2), same format, and not yet passed;
++     every strict-set .ok for every mode/scope (r2; r3: strict set only), same format, and not yet passed;
+  11. scope: when ``scope`` is passed, the .ok scope must equal it; mode 'selftest' implies scope=selftest;
+  12. allow_*: every allow_<x> written in the .ok that is not a requested mode must be exactly 'false'; every name in
+      ``known_allow`` (the runner's vocabulary) must be written explicitly;
+- 13. allow_real_data: must be written and equal 'false' unless 'real_data' is a requested mode (then 'true' via 6);
++ 13. allow_real_data (r3, Arch P2-V2: only when the scope is selftest): must be written and equal 'false' unless
++     'real_data' is a requested mode (then 'true' via 6);
+  14. out_dir (required when 'selftest' is requested; checked whenever present): 'mkdtemp' or /tmp/<tag>; never under
+      output/ or inside the repo. The gate only validates; the caller creates it (mkdtemp / mkdir(exist_ok=False)).
+  15. selftest scope (requested scope 'selftest', mode 'selftest', or scope=selftest written in the .ok): the .ok must
+      carry gate_ok_runner_pin_sha256=<64 hex> equal to the full sha256 of THIS gate file, computed at call time from
+      __file__ (so a selftest .ok binds the exact gate that checks it).
+ r2 (Eng, 2026-10-18 ~02:1x ET, Arch P3): items 9 (allowlist + ok_revision), 10 (expires_et always required), 15.
++r3 (Eng, 2026-10-18 ~02:4x ET): P2-V1 strict set (above); P2-V2 (13 only for scope=selftest); P3-8: in the strict set a
++requested mode needs allow_<mode> exactly 'true' (as false must be exactly 'false'), ANY duplicate key is refused
++(spec §3), and ``scope`` must be written even when the runner passes none.
+ There is deliberately no bypass flag, argv switch or environment variable.
+ """
+ from __future__ import annotations
+@@ -38,7 +45,7 @@
+ TMP_TAG = re.compile(r"^/tmp/[A-Za-z0-9._-]+$")
+ OK_REVISION = re.compile(r"^(r?)[1-9][0-9]*$")
+ ALLOWED_FORMATS = frozenset({"quantlab_run_auth_v1"})
+-VERSION = "ok_runner_pin_v2-draft-r2-20261018"
++VERSION = "ok_runner_pin_v2-draft-r3-20261018"
+ 
+ 
+ def sha256_file(p: str | Path) -> str:
+@@ -71,6 +78,21 @@
+         k, v = t.split("=", 1); k = k.strip(); v = v.strip()
+         if "#" in v:
+             _refuse(f"{path}: inline comment in value of {k!r} (put comments on their own '#' line)")
++        if k in kv:
++            _refuse(f"{path}: duplicate key {k!r} (spec §3: keys must be unique)")
++        kv[k] = v
++    return kv
++
++
++def parse_ok_v1(path: Path) -> dict:
++    """v1 c7805d9a parsing for non-strict .oks: utf-8 text, splitlines, '#' lines skipped, duplicate key with a
++    different value refused."""
++    kv: dict[str, str] = {}
++    for raw in path.read_text(encoding="utf-8").splitlines():
++        line = raw.strip()
++        if not line or line.startswith("#") or "=" not in line:
++            continue
++        k, v = line.split("=", 1); k = k.strip(); v = v.strip()
+         if k in kv and kv[k] != v:
+             _refuse(f"{path}: duplicate key {k!r} with different values")
+         kv[k] = v
+@@ -125,8 +147,50 @@
+     return v
+ 
+ 
++def _strict_checks(o: Path, kv: dict, modes: list, want_scope, known_allow, now, gate_path: Path, gate_sha: str):
++    """Checks 8–15 (8 = strict parse, done by the caller) on one strict-set .ok."""
++    selftest = "selftest" in modes
++    if kv.get("format") not in ALLOWED_FORMATS:
++        _refuse(f"{o}: format must be one of {sorted(ALLOWED_FORMATS)} (got {kv.get('format')!r})")
++    if "ok_revision" in kv and not OK_REVISION.fullmatch(kv["ok_revision"]):
++        _refuse(f"{o}: ok_revision={kv['ok_revision']!r} must be a positive integer or r<N> (N>=1)")
++    if kv.get("signed_by") != "arch":
++        _refuse(f"{o}: signed_by must be arch (got {kv.get('signed_by')!r})")
++    signed = _ts(o, "signed_et", kv.get("signed_et"), True)
++    if signed > now + _dt.timedelta(minutes=5):
++        _refuse(f"{o}: signed_et {kv['signed_et']} is in the future")
++    exp = _ts(o, "expires_et", kv.get("expires_et"), True)
++    if exp <= now:
++        _refuse(f"{o}: expired at {kv['expires_et']}")
++    if not kv.get("scope"):
++        _refuse(f"{o}: scope must be written")
++    if want_scope is not None and kv.get("scope") != want_scope:
++        _refuse(f"{o}: scope must be {want_scope!r} (got {kv.get('scope')!r})")
++    for k, v in kv.items():
++        if k.startswith("allow_") and k[len("allow_"):] not in modes and v != "false":
++            _refuse(f"{o}: {k}={v!r}; every allow_* that is not a requested mode must be exactly 'false'")
++    for m in known_allow:
++        if f"allow_{m}" not in kv:
++            _refuse(f"{o}: allow_{m} must be written explicitly (true or false)")
++    st_scope = want_scope == "selftest" or kv.get("scope") == "selftest"
++    if st_scope and "real_data" not in modes and kv.get("allow_real_data") != "false":   # P2-V2: selftest scope only
++        _refuse(f"{o}: allow_real_data must be written as false for a selftest that does not request real_data")
++    check_out_dir(o, kv.get("out_dir"), selftest)
++    if st_scope:
++        g = kv.get("gate_ok_runner_pin_sha256")
++        if g is None:
++            _refuse(f"{o}: selftest scope requires gate_ok_runner_pin_sha256=<64 hex of {_rel(gate_path)}>")
++        if not HEX64.fullmatch(g):
++            _refuse(f"{o}: gate_ok_runner_pin_sha256 must be full 64-hex lowercase (got {g!r})")
++        if g != gate_sha:
++            _refuse(f"{o}: gate_ok_runner_pin_sha256={g} != running gate {_rel(gate_path)} sha256={gate_sha}")
++    for m in modes:                                   # P3-8: symmetric with 'false'
++        if kv.get(f"allow_{m}") != "true":
++            _refuse(f"{o}: mode {m!r} needs allow_{m}=true exactly (got {kv.get(f'allow_{m}')!r})")
++
++
+ def enforce(script: str | Path, ok_paths, modes=(), deps: dict | None = None, *, scope: str | None = None,
+-            known_allow=(), now: _dt.datetime | None = None) -> dict:
++            known_allow=(), primary_ok: str | Path | None = None, now: _dt.datetime | None = None) -> dict:
+     script = Path(script).resolve(); sha = sha256_file(script)
+     modes = list(modes)
+     now = now or _dt.datetime.now().astimezone()
+@@ -137,11 +201,11 @@
+     if not oks:
+         _refuse(f"{script.name}: no .ok listed")
+     parsed = {}
+-    for o in oks:
++    for o in oks:                                    # v1 semantics for EVERY listed .ok (1, 2, 4, 6-not-false)
+         if not o.exists():
+             _refuse(f"{script.name}: listed .ok missing: {o}")
+         try:
+-            kv = parse_ok(o)
++            kv = parse_ok_v1(o)
+         except SystemExit:
+             raise
+         except Exception as e:  # unreadable
+@@ -149,55 +213,37 @@
+         for flag in ("live", "promotion"):
+             if not _is_false(kv.get(flag)):
+                 _refuse(f"{o}: requires {flag}=false (found {kv.get(flag)!r})")
+-        if kv.get("format") not in ALLOWED_FORMATS:
+-            _refuse(f"{o}: format must be one of {sorted(ALLOWED_FORMATS)} (got {kv.get('format')!r})")
+-        if "ok_revision" in kv and not OK_REVISION.fullmatch(kv["ok_revision"]):
+-            _refuse(f"{o}: ok_revision={kv['ok_revision']!r} must be a positive integer or r<N> (N>=1)")
+-        if kv.get("signed_by") != "arch":
+-            _refuse(f"{o}: signed_by must be arch (got {kv.get('signed_by')!r})")
+-        signed = _ts(o, "signed_et", kv.get("signed_et"), True)
+-        if signed > now + _dt.timedelta(minutes=5):
+-            _refuse(f"{o}: signed_et {kv['signed_et']} is in the future")
+-        exp = _ts(o, "expires_et", kv.get("expires_et"), True)
+-        if exp <= now:
+-            _refuse(f"{o}: expired at {kv['expires_et']}")
+-        if want_scope is not None and kv.get("scope") != want_scope:
+-            _refuse(f"{o}: scope must be {want_scope!r} (got {kv.get('scope')!r})")
+         for m in modes:
+             if _is_false(kv.get(f"allow_{m}")):
+                 _refuse(f"{o}: allow_{m}=false")
+-        for k, v in kv.items():
+-            if k.startswith("allow_") and k[len("allow_"):] not in modes and v != "false":
+-                _refuse(f"{o}: {k}={v!r}; every allow_* that is not a requested mode must be exactly 'false'")
+-        for m in known_allow:
+-            if f"allow_{m}" not in kv:
+-                _refuse(f"{o}: allow_{m} must be written explicitly (true or false)")
+-        if "real_data" not in modes and kv.get("allow_real_data") != "false":
+-            _refuse(f"{o}: allow_real_data must be written as false for a run that does not request real_data")
+-        check_out_dir(o, kv.get("out_dir"), selftest)
+-        if want_scope == "selftest" or kv.get("scope") == "selftest":
+-            g = kv.get("gate_ok_runner_pin_sha256")
+-            if g is None:
+-                _refuse(f"{o}: selftest scope requires gate_ok_runner_pin_sha256=<64 hex of {_rel(gate_path)}>")
+-            if not HEX64.fullmatch(g):
+-                _refuse(f"{o}: gate_ok_runner_pin_sha256 must be full 64-hex lowercase (got {g!r})")
+-            if g != gate_sha:
+-                _refuse(f"{o}: gate_ok_runner_pin_sha256={g} != running gate {_rel(gate_path)} sha256={gate_sha}")
+         parsed[o] = kv
+     pinning = {}
+-    for o, kv in parsed.items():
++    for o, kv in parsed.items():                     # 3, 5
+         for k, v in _pins(kv, script):
+             if not HEX64.fullmatch(v):
+                 _refuse(f"{o}: {k} must be a full 64-hex lowercase sha256 (got {v!r})")
+             if v != sha:
+                 _refuse(f"{script.name} sha256={sha} != pinned {v} ({k} in {o})")
+-            pinning[str(o)] = v
++            pinning[o] = v
+     if not pinning:
+         _refuse(f"{script.name} sha256={sha} not pinned in any of {[str(o) for o in oks]}; "
+                 f"Arch must add runner_sha256_{script.stem}=<64 hex>")
++    if primary_ok is not None:                       # P2-V1: strict set
++        prim = Path(primary_ok)
++        match = [o for o in pinning if o.resolve() == prim.resolve()]
++        if not match:
++            _refuse(f"primary_ok {prim} is not a listed .ok that pins {script.name}")
++        strict = match[:1]
++    else:
++        strict = list(pinning)
++    for o in strict:                                 # 8 (strict re-parse) + 9–15
++        kv = parse_ok(o)
++        if kv != parsed[o]:
++            _refuse(f"{o}: strict parse differs from the v1 parse")
++        _strict_checks(o, kv, modes, want_scope, known_allow, now, gate_path, gate_sha)
+     dep_res = {}
+-    for o in pinning:
+-        kv = parsed[Path(o)]
++    for o in pinning:                                # 6, 7 in every pinning .ok
++        kv = parsed[o]
+         for m in modes:
+             if kv.get(f"allow_{m}", "").strip().lower() != "true":
+                 _refuse(f"{o}: mode {m!r} needs allow_{m}=true in the pinning .ok")
+@@ -211,8 +257,9 @@
+             if got != want:
+                 _refuse(f"dep {key} {_rel(Path(dp))} sha256={got} != pinned {want} in {o}")
+             dep_res[key] = got
+-    first = parsed[Path(next(iter(pinning)))]
+-    return {"gate": VERSION, "runner": _rel(script), "runner_sha256": sha, "pins": pinning, "deps": dep_res,
+-            "modes": modes, "scope": first.get("scope"), "out_dir": first.get("out_dir"),
+-            "expires_et": first.get("expires_et"), "gate_sha256": gate_sha, "oks": {str(o): sha256_file(o) for o in oks},
+-            "status": "PINNED_MATCH"}
++    first = parsed[strict[0]]
++    return {"gate": VERSION, "gate_sha256": gate_sha, "runner": _rel(script), "runner_sha256": sha,
++            "pins": {str(o): v for o, v in pinning.items()}, "strict_oks": [str(o) for o in strict],
++            "v1_only_oks": [str(o) for o in oks if o not in strict], "deps": dep_res, "modes": modes,
++            "scope": first.get("scope"), "out_dir": first.get("out_dir"), "expires_et": first.get("expires_et"),
++            "oks": {str(o): sha256_file(o) for o in oks}, "status": "PINNED_MATCH"}

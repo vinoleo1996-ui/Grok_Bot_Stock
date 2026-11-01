@@ -1,0 +1,18 @@
+diff --git a/quantlab/portfolio/v2_multisleeve_book.py b/quantlab/portfolio/v2_multisleeve_book.py
+index 65afab0..87c83f5 100644
+--- a/quantlab/portfolio/v2_multisleeve_book.py
++++ b/quantlab/portfolio/v2_multisleeve_book.py
+@@ -467,10 +467,9 @@ def combine(sleeve_sched, sleeve_w, idx, *, collateral_frac=1.0, cash_target=0.0
+ 
+ 
+ def metrics(nav):
+-    nav = pd.Series(nav).dropna(); r = nav.pct_change().dropna(); y = len(r) / 244
+-    cg = (nav.iloc[-1] / nav.iloc[0]) ** (1 / y) - 1; md = (nav / nav.cummax() - 1).min()
+-    return dict(cagr=float(cg), mdd=float(md), sharpe=float(r.mean() / r.std() * np.sqrt(244)),
+-                vol=float(r.std() * np.sqrt(244)), calmar=float(cg / -md) if md < 0 else None,
++    from quantlab import metrics as QM   # single source of truth (244-day annualisation)
++    nav = pd.Series(nav).dropna(); r = nav.pct_change().dropna(); cg = QM.cagr(nav); md = QM.mdd(nav)
++    return dict(cagr=cg, mdd=md, sharpe=QM.sharpe(r), vol=QM.vol(r), calmar=QM.calmar(cg, md),
+                 total_return=float(nav.iloc[-1] / nav.iloc[0] - 1), start=str(nav.index[0])[:10], end=str(nav.index[-1])[:10])
+ 
+ 

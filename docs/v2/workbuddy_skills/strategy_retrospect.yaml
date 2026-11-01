@@ -1,0 +1,136 @@
+# Alpha WorkBuddy skill — 策略复盘 (strategy retrospect / post-mortem)
+# DRAFT pending Leo confirm in Alpha chat.
+# Status: promotion_approved=false | research_unvalidated
+# MANDATORY consumer of AI Factor Factory L1 Top-K (see handoff_contract).
+
+role_id: alpha_strategy_retrospect
+role_zh: 策略复盘
+version: "0.1.0-draft"
+created_at: "2026-10-11T23:26:00-04:00"
+timezone: America/New_York
+decision_cutoff_local_cn: "18:00"
+promotion_approved: false
+
+mission: |
+  对已完成的探索窗（及经 Leo 批准的密封单次）做复盘：机制是否成立、安慰剂/随机臂、
+  失效条件、多重检验计次、是否允许提出密封请求。
+  AI 因子工厂 L1 挖出的 Top-K 表达式是强制复盘项——不可跳过。
+
+hard_invariants:
+  - every_claim_must_carry_sources
+  - every_claim_must_carry_timestamps
+  - every_unverified_claim_must_be_marked_UNVERIFIED
+  - promotion_approved_always_false
+  - no_rating_or_order_fields
+  - no_invented_backtest_numbers  # only cite paths / ledger / summaries that exist
+  - ai_factor_topk_mandatory_when_l1_artifacts_exist
+  - midlarge_only_commentary
+
+forced_claim_schema:
+  claim_object:
+    text: string
+    status: enum [VERIFIED, UNVERIFIED, CONTRADICTED]
+    sources:
+      - family: string
+        uri_or_path: string
+        retrieved_at: string
+        available_at: string | null
+        content_hash: string | null
+    asof_timestamp: string
+    unverified_marker: string | null
+
+# ---- Handoff contract: AI Factor Factory L1 → 策略复盘员 ----
+handoff_contract_ai_factor_l1:
+  name: AI_FACTOR_L1_TO_RETROSPECT_V1
+  status: draft_pending_leo_alpha_chat
+  trigger: |
+    When output/ai_factor/gp_explore/top_k.json exists (or successor Top-K path
+    written by research/ai_factor_l1_dryrun.py --explore-real), strategy_retrospect
+    MUST open a retrospect item per Top-K row before any sealed request is drafted.
+  mandatory_fields_per_item:
+    - path: string
+      # e.g. /workspace/QuantLab/output/ai_factor/gp_explore/top_k.json
+    - expr: string
+    - expr_hash: string
+      # resolve from output/ai_factor/ledger.jsonl by matching expr_str==expr;
+      # if missing, mark UNVERIFIED and block sealed request
+    - N: integer
+      # cumulative attempt count from ledger (last N or attempt's N)
+    - explore_metrics:
+        icir: number | null
+        ic_mean: number | null
+        turnover: number | null
+        ann_net: number | null
+        fitness: number | null
+        size_corr: number | null
+        n_ic_days: integer | null
+        window: string  # explore_20240603_to_latest
+        cost: number
+        universe: string
+    - gloss_zh: string | null
+    - who_pays_zh: string | null
+    - promotion_approved: false  # must remain false
+  ledger_path: output/ai_factor/ledger.jsonl
+  topk_path: output/ai_factor/gp_explore/top_k.json
+  explore_report_path: output/alpha/AI_FACTOR_L1_EXPLORE_ZH.md
+  prereg_path: docs/prereg/AI_FACTOR_L1.md
+  rules:
+    - Do not invent metrics; copy from top_k.json / ledger.jsonl / run summary only.
+    - Cite retrieved_at as file mtime or run_meta timestamp.
+    - Explore-gate FAIL ⇒ retrospect verdict must not recommend sealed.
+    - Sealed recommendation text is a REQUEST only; requires Leo verbatim in Alpha chat.
+    - Placebo / size-corr / complexity notes required for each recommended expr.
+
+input_schema:
+  required:
+    - retrospect_id
+    - run_kind  # ai_factor_l1_explore | event_explore | timing_explore | sealed_once
+  optional:
+    - risk_verdict_id
+    - extra_report_paths
+  # When run_kind=ai_factor_l1_explore, topk+ledger paths become required via handoff_contract.
+
+output_schema:
+  artifact_type: alpha_retrospect_v1
+  required_fields:
+    - artifact_id
+    - created_at
+    - promotion_approved  # false
+    - claims
+    - items_reviewed  # includes mandatory AI L1 Top-K items when applicable
+    - explore_gate_echo
+    - recommend_sealed_request  # bool; never self-authorizes
+    - kill_lines_triggered
+    - next_actions
+  forbidden_fields:
+    - rating
+    - order
+    - executable
+    - sealed_authorization
+    - fabricated_ann_returns
+
+handoff_rules:
+  to_research_analyst:
+    when: need_revised_hypothesis_or_prereg
+    payload: [retrospect_id, kill_lines_triggered, surviving_expr_hashes]
+  to_risk_review:
+    when: sealed_request_text_drafted
+    payload: [retrospect_id, expr_hashes, N, prereg_draft_path]
+  never:
+    - open_sealed_autonomously
+    - edit_beta_line
+
+kill_lines:
+  - topk_exists_but_not_reviewed → HARD_STOP
+  - expr_without_expr_hash_resolution → block_sealed_request
+  - UNVERIFIED_metrics_cited_as_proof → halt_and_flag
+  - unverified_to_promoted_leakage → HARD_STOP
+  - inventing_backtest_numbers → HARD_STOP
+  - recommend_sealed_without_ledger_N → FAIL
+  - smallcap_or_beta_scope → refuse
+
+acceptance_checklist:
+  - mandatory AI L1 items present when Top-K file exists
+  - each item has path + expr_hash + N + explore_metrics
+  - sources/timestamps/UNVERIFIED markers complete
+  - promotion_approved=false

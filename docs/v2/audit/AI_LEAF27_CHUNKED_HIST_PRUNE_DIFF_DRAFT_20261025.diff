@@ -1,0 +1,88 @@
+--- research/leaf27_chunked_members_mktcap_r1.py (sha 262f9bf6)
++++ research/leaf27_chunked_members_mktcap_r1.py (hist_prune_r1)
+@@ -16,8 +16,12 @@
+   - Per chunk: load members+suspend (mask RG date prune) + mktcap (dates_needed only)
+     + capadv (span filter) → process days → del maps + gc.collect()
+   - Rolling β/ε histories retained across chunks (factor continuity)
++  - hist_prune_r1: ALSO prune ret_hist/eps_hist at each chunk boundary
++    (alive_recent), then reset alive_recent to last-day codes; keep di%40
++    in-loop prune; drop empty deques; NO raise rss_limit
+   - mktcap T-1 lookback: each chunk loads max(1 prev session, chunk start)
+   - rss_limit HARD = 1500 MB (NO raise); soft abort if stage peak exceeds
++  - SUPERSEDES ndays40-only ticket for next auth (code fix, not mode change)
+ 
+ Factor pins UNCHANGED vs lowmem_v1 / baseline:
+   α_raw=-ivol; β60/min40; W20/min15; residual order SW→logMV T-1→β→capadv→ivol→domain
+@@ -88,6 +92,7 @@
+ _prune_hist = _lm._prune_hist
+ 
+ CHUNKED_TAG = "leaf27_chunked_members_mktcap_r1"
++HIST_PRUNE_TAG = "hist_prune_r1"  # chunk-boundary prune; supersedes ndays40-only ticket
+ LOWMEM_V1_SHA = "05bd81ea9da97cd53785b374c36273b327ff0302098c5b1cef1368c051d400f8"
+ AUDIT_P14_SHA8 = "c8877760"
+ RSS_LIMIT_MB = 1500  # HARD — forbid raise
+@@ -448,16 +453,31 @@
+                     flush=True,
+                 )
+ 
+-        # end chunk — free chunk-local maps
++        # end chunk — hist_prune_r1 (PRIMARY) then free chunk-local maps
++        # Keep in-loop di%40 prune; factor pins / BETA_WIN / IVOL_WIN UNCHANGED.
++        _prune_hist(ret_hist, alive_recent)
++        _prune_hist(eps_hist, alive_recent)
++        for _h in (ret_hist, eps_hist):
++            _empty = [c for c, dq in _h.items() if len(dq) == 0]
++            for c in _empty:
++                del _h[c]
++        try:
++            alive_recent = set(str(c) for c in codes)  # last-day codes only
++        except NameError:
++            alive_recent = set()
+         members.clear()
+         suspended.clear()
+         mktcap.clear()
+         cap.clear()
+         del members, suspended, mktcap, cap
+         gc.collect()
+-        r = rss_mb()
++        r = _check_rss(f"chunk{ci}_hist_pruned")
+         peak = max(peak, r)
+-        print(f"  chunk[{ci}] freed rss={r:.0f}MB", flush=True)
++        print(
++            f"  chunk[{ci}] hist_pruned+freed rss={r:.0f}MB "
++            f"ret_hist_n={len(ret_hist)} eps_hist_n={len(eps_hist)}",
++            flush=True,
++        )
+ 
+     alpha = pd.DataFrame(
+         {
+@@ -512,9 +532,10 @@
+         supersedes_lowmem_v1_sha256=LOWMEM_V1_SHA,
+         audit_p14_sha8=AUDIT_P14_SHA8,
+         forbid_restored_ok_sha8=list(VOID_OK_SHA8),
++        hist_prune_tag=HIST_PRUNE_TAG,
+         note=(
+-            "CHUNKED_MEMBERS_MKTCAP_r1 DRAFT; factor pins UNCHANGED; "
+-            "quarter/month/ndays chunk load + del+gc; no .ok this turn"
++            "CHUNKED_MEMBERS_MKTCAP_r1 + hist_prune_r1 DRAFT; factor pins UNCHANGED; "
++            "chunk-boundary + di%40 hist prune; no .ok this turn"
+         ),
+         baseline_script_sha256=(
+             "7a5f756c0a1ab09fb55aa2bc3c17f389bde44d222d7066237e503566c908f8c6"
+@@ -543,7 +564,7 @@
+ def main() -> None:
+     ap = argparse.ArgumentParser(
+         description=(
+-            "Leaf27 chunked members/mktcap r1 — DRAFT; no .ok; await Arch review."
++            "Leaf27 chunked members/mktcap r1 + hist_prune_r1 — DRAFT; no .ok."
+         )
+     )
+     ap.add_argument("--universe", choices=["FULLA", "HILIQ", "both"], default="HILIQ")
+@@ -572,6 +593,7 @@
+                 {
+                     "mechanism_tag": MECHANISM_TAG,
+                     "chunked_tag": CHUNKED_TAG,
++                    "hist_prune_tag": HIST_PRUNE_TAG,
+                     "exposure_col": "target_weight",
+                     "rss_limit_mb": RSS_LIMIT_MB,
+                     "chunk_mode_default": DEFAULT_CHUNK_MODE,

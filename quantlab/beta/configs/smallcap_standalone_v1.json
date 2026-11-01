@@ -1,0 +1,174 @@
+{
+  "schema": "beta_smallcap_standalone_v1",
+  "promotion_approved": false,
+  "status": "research_only",
+  "confirmed_by": "Leo 2026-10-10 21:30 ET (relayed); supersedes satellite-inside-max_etf rule",
+  "main_beta": "sh.510300",
+  "bound_by_max_etf": false,
+  "mandate_json_edited": false,
+  "data": {
+    "panels_dir": "output/research_attrib_v2/panels",
+    "panels_builder": "research/attrib_v2/build_panels.py",
+    "sw_l1": "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet",
+    "sw_l1_promotable": false,
+    "circ_mv_unit": "wan_cny_x1e4",
+    "amount_unit": "cny"
+  },
+  "universe": {
+    "min_history_sessions": 253,
+    "exclude_st": true,
+    "require_trading": true,
+    "cap_window": 20,
+    "band": "absolute",
+    "rank_start": 3001,
+    "rank_end": 5000,
+    "relative_bottom_frac": 0.4,
+    "fallback_to_relative_if_short": true,
+    "exclude_bottom_mktcap_pct": null,
+    "note": "Old 'exclude smallest 30% mktcap' filter dropped per Leo (research override; Mandate JSON unchanged)"
+  },
+  "fundamentals": {
+    "pe_ttm_gt": 0.0,
+    "pb_gt": 0.0,
+    "pb_le": 3.0,
+    "mode": "filter_with_tier_fallback",
+    "note": "Hard filter; if fewer than target names pass, fill from non-passing names (tier fallback) and flag"
+  },
+  "selection": {
+    "target_names": 50,
+    "retain_top": 150,
+    "seed": 0,
+    "industry_scheme": "SW_L1",
+    "max_names_per_industry": 12,
+    "unknown_industry_max_names": 12,
+    "capacity_policy": "keep_target_names_no_capacity_reduction",
+    "retain_top_note": "research retain_top=150 (=3xN) unchanged; 2xN gives the same turnover in the 2023-12..2026-10 harness"
+  },
+  "tiers": {
+    "T10": 0.1,
+    "T15": 0.15,
+    "T20": 0.2
+  },
+  "risk_controls": {
+    "adv_window": 60,
+    "adv_min_periods": 40,
+    "adv_floor_cny": 5000000.0,
+    "adv_floor_label": "Mandate U5 alt-research threshold",
+    "max_name_weight_of_book": 0.005,
+    "max_name_frac_of_sleeve": 0.03,
+    "max_order_vs_adv": 0.01,
+    "book_capital_cny": 600000.0,
+    "min_trade_notional_cny": 2000.0,
+    "lot_size": 100,
+    "crowding": {
+      "turnover_lookback_sessions": 250,
+      "turnover_recent_sessions": 20,
+      "crowded_turnover_pct": 0.9,
+      "hot_ret_window": 20,
+      "hot_ret_threshold": 0.25,
+      "hot_name_frac_alert": 0.2
+    },
+    "account_capital_cny": 600000.0,
+    "research_notional_cny": 5000000.0,
+    "capacity_buffer": 1.1,
+    "capacity_buffer_note": "10% headroom for overnight price moves to next-open fill plus fees",
+    "research_notional_note": "Research notional (Leo 21:35 ET: keep ~50 names, ignore 600k for now). Max required across T10/T15/T20 on 2026-06-30, 2026-10-09 and the 2023-12-29 stress basket was ~3.0M (T10, stress); 5M is the next round number with headroom. Real account remains 600k."
+  },
+  "stress_tests": [
+    {
+      "id": "smallcap_crash_2024_02",
+      "formation_on_or_before": "2023-12-29",
+      "window_start": "2024-01-02",
+      "window_end": "2024-02-29",
+      "label": "pre_engine_fix_descriptive_raw_price",
+      "note": "EW buy-and-hold of the formation basket from adjusted daily returns; limit/halt days keep raw return; |r|>35% nulled upstream"
+    }
+  ],
+  "engine_dependency": {
+    "performance_reporting": "blocked_until_engine_limit_fix",
+    "reason": "Engine books limit-up/limit-down/halt days as 0 return (block_mark_to_zero) — Strategy/Eng fixing"
+  },
+  "risk_exclusions": {
+    "decided_by": "Leo 2026-10-10 21:38 ET",
+    "st": {
+      "enabled": true,
+      "primary": "data/v2/st_flags/is_st_daily_2018_2026.parquet",
+      "daily_table": "data/v2/st_flags/is_st_daily_2018_2026.parquet",
+      "fallback": "tushare_namechange_pit (only if table missing / session before table start)",
+      "namechange_glob": "data/v2/tushare_raw/namechange/*.parquet",
+      "rule": "exclude if is_st_at_open on session (Data table, 2026-10-10 fix); disagreements vs namechange/panel reported"
+    },
+    "low_price": {
+      "enabled": true,
+      "price_floor_cny": 2.0,
+      "price_basis": "raw_close_on_session",
+      "rationale": "2x the 1 CNY face-value delisting line (20 consecutive sessions <1 CNY)"
+    },
+    "non_standard_audit_opinion": {
+      "enabled": true,
+      "data_ready": true,
+      "table": "data/v2/audit/audit_opinion_pit_tushare.parquet",
+      "rule": "latest annual (end_date month 12) audit opinion with available_at date < session; exclude if is_non_standard",
+      "max_fiscal_years_back": 2,
+      "lookback_why": "most recent annual report; ignore opinions older than FY(session.year-2) as stale (e.g. on 2026-03 before FY2025 reports the FY2024 opinion applies)",
+      "missing": "not excluded, counted",
+      "decided_by": "Leo 2026-10-10 21:38 ET; data landed 22:12 ET"
+    },
+    "not_added": [
+      "high_volatility_derisking (Leo: no)",
+      "any market-cap-based exclusion (Leo: no)"
+    ]
+  },
+  "dd_brake": {
+    "decided_by": "Leo 2026-10-10 22:09 ET (card 68)",
+    "provider_default_enabled": false,
+    "compare_arm_enabled": true,
+    "nav_basis": "sleeve_nav",
+    "nav_basis_why": "Beta owns and can measure the sleeve's own NAV; book NAV mixes 510300/residual owned by Strategy. Book-level brake left for Strategy once the book is composed.",
+    "dd_limit": 0.2,
+    "dd_limit_why": "sleeve-level budget below the Mandate book gate (-28%); a 20% sleeve DD at T20 is ~4% of book",
+    "floor": 0.2,
+    "floor_why": "card 68: >=20% base exposure to avoid the zero-exposure absorbing state",
+    "gamma": "calibrated: 1/max(structural 2x limit-down loss of board mix, empirical worst 2-day EW loss in pre-start window)",
+    "rerisk_max_step": 0.05,
+    "trade_band": 0.05,
+    "rebalance_every_sessions": 20,
+    "execution": "decide at close d, trade at close d+1 under fixed-engine fill rules",
+    "concave_objective": "exposure map e(z)=floor+(1-floor)*clip(gamma*(1-(1-d)/z),0,1): continuous, monotone, concave on active region; no return target, no step ladder, never adds risk below a target"
+  },
+  "live_profile": {
+    "decided_by": "Leo 2026-10-10 22:34 ET",
+    "account_capital_cny": 600000.0,
+    "n_min": 20,
+    "n_max": 30,
+    "min_name_weight_of_book": 0.005,
+    "min_name_weight_why": "0.5% of 600k = 3,000 CNY/name: 1.5x the 2,000 CNY min trade (room for drift/partial rebalance trades), 5 CNY min commission = 16.7bp one-way at worst; caps N at tier/0.005 (T10=20, T15=30, T20=40->30)",
+    "lot_size": 100,
+    "lot_buffer": 1.1,
+    "industry_cap_rule": "max(3, ceil(max_names_per_industry * N / 50))",
+    "selection": "walk the same research ranking (same band/PE/PB/ST/low-price/audit filters); skip names whose 1 lot x buffer > per-name CNY and take the next",
+    "research_profile_unchanged": "~50 names at research_notional_cny 5,000,000",
+    "retain_mult": 2.0,
+    "retain_why": "keep current holding if still eligible and within top 2xN of the ranking; 2x is where research turnover plateaus (4.3->2.9/yr) and live T10/T15/T20 turnover falls 5.9/6.1/4.6 -> 4.3/4.9/3.2; 3x adds little"
+  },
+  "survivorship_b1": {
+    "enabled": true,
+    "decided_by": "Leo via V2_REBUILD_PLAN B1 + Beta chat 22:34 ET",
+    "ranking": "as-of float circ_mv over full market (panel ∪ delisted daily); ST/low-price/audit applied AFTER band",
+    "delisted_master": "data/v2/delisted/delisted_master_tushare.parquet",
+    "delisted_daily": "data/v2/delisted/delisted_daily_from2015_tushare.parquet",
+    "delisted_st_daily": "data/v2/delisted/delisted_is_st_daily_from2015.parquet",
+    "terminal_scenarios": [
+      "minus_50",
+      "minus_100"
+    ],
+    "terminal_rule": "on delist during holding: mark once at last available close × (1+terminal_return); no invented post-delist prices",
+    "panel_window_note": "research_attrib_v2 panels start 2023-01-03 and already contain most post-2023 delisted bars; merge fills gaps and enables pre-2023 B3",
+    "incomplete_if": "panels lack delisted bars AND merge disabled — never claim survivorship-clean then",
+    "primary_float_mktcap": "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet",
+    "primary_note": "Data 2026-10-10 23:43 ET: 2015-01-05→2026-10-09, 5831 names incl. delisted, unit yuan, research-grade. Pre-2023 ranking COMPLETE.",
+    "pre_2023_complete": true,
+    "absolute_band_requires_n": 5000,
+    "relative_fallback_when_universe_lt_rank_start": true
+  }
+}

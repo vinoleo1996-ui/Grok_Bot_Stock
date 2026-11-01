@@ -1,0 +1,3 @@
+START pid=2909940 pgid=2909940 exe=/home/box/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12 et=2026-10-18T09:38:27-04:00
+END rc=0 vmhwm_max_kb=136140 stopped=0 pgroup_left=[] et=2026-10-18T09:38:50-04:00
+e77c07e6d643f1d3fd6888d6e3bcee2ae88ce2b111c51f0ea896c3099d399db8  /workspace/QuantLab/output/ai_factory/_readonly_7name/ARCH_7NAME_RO_RECEIPT_20261018_0938ET.json

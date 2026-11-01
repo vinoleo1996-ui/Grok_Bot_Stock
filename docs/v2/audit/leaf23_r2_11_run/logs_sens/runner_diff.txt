@@ -1,0 +1,12 @@
+4c4
+< LOG=R+"/docs/v2/audit/leaf23_r2_11_run/logs_rerun2"; AIF=R+"/output/ai_factory"
+---
+> LOG=R+"/docs/v2/audit/leaf23_r2_11_run/logs_sens"; AIF=R+"/output/ai_factory"
+130c130
+<             if VIOL:
+---
+>             if VIOL or hwm>1331200:
+145c145
+<     if hwm>1536000: fail.append("hwm")
+---
+>     if hwm>1331200: fail.append("hwm>1300MiB")

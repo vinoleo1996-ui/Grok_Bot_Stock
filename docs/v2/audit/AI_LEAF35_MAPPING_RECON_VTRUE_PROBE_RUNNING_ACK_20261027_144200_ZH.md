@@ -1,0 +1,21 @@
+# AI · 叶35 Mapping Recon VTRUE 只读探针 RUNNING_ACK
+
+- status: IN_WINDOW_EXECUTE_RUNNING
+- ET_TS: `20261027_144200` America/New_York
+- OUT: `output/ai_factory/_leaf35_mapping_recon_vtrue/20261027_144200`
+- MATCH pins:
+  - `.ok` `ARCH_RUN_AUTH_LEAF35_MAPPING_RECON_VTRUE_PROBE.ok` sha8=`00eec671`（∉forbid；≠RESTORED `10927bd9`）
+  - QUIET `RESEARCH_QUIET.lock` sha8=`bf3470cb` holder=`leaf35_MAPPING_RECON_VTRUE_PROBE`（勿 lift）
+  - SIGNED sha8=`97a84fa7`
+  - 探针 py sha8=`2c2226e0` UNCHANGED
+  - 正式脚本 sha8=`25ae4572` UNCHANGED
+  - 骨架 sha8=`c2f2ca94` UNCHANGED
+  - 叶33 sha8=`afbbe7e7` UNCHANGED
+  - Arch 审探针 sha8=`bbbf809b`
+- window: `14:37`→`16:07` expires `16:11` ET；prelaunch 时刻仍 IN_WINDOW
+- pgrep kline/export_static/snapshot/gen: EMPTY
+- healthz: quiet=true；gen/snapshot/kline_running=false；child_pids={}
+- rss_limit_mb: 1500（禁抬）；peak_proof: REQUIRED
+- ban_write_alpha_mask_overlap: true
+- pid: `517908`（execute STARTED；IN_WINDOW；nice=10）
+- ≠X2 ACCEPT；≠叶36；leo_notify=false；live=false

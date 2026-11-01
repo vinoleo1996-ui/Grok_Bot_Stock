@@ -1,0 +1,59 @@
+--- selftest_run_backfill_r_v3_1_b.py
++++ selftest_run_backfill_r_v3_1_c.py
+@@ -1,15 +1,15 @@
+ #!/usr/bin/python3
+ # -*- coding: utf-8 -*-
+-# run_backfill_r_v3_1.py 补充自测 b（QuantLab Data，2026-10-18；按 Arch 11:43 要求；待 Arch 审查并签新 selftest .ok；未运行）。
++# run_backfill_r_v3_1.py 补充自测 c（QuantLab Data，2026-10-18；由 b e3d04311 复制，只改：替身子进程在孙退出后仍存活、断言恰好四个信号、新增 B3b；待 Arch 签 .ok；未运行）。
+ # 覆盖 v3.1 首次自测未演练的路径：两级子孙（子、孙）存活后才触发停树；断言信号顺序 SIGSTOP nightly → 孙 → 子 → KILL nightly；
+ # 每个信号前核 cmdline+ppid；不起下一步；全部替身进程消失；orphans_run1 为空；P3-B 反例（cmdline 不含 scripts/acquire/ 被拒）；P3-2 二次打开失败。
+ # 只在 mkdtemp（前缀取 .ok 的 out_dir_prefix）下工作；不读写项目数据；不起真 nightly；不触网。
+ # 只对本自测（及其起的替身树）产生的 PID 发信号：os.kill 被包装，PID 不在 SPAWNED 集合即断言失败、不发信号。
+-# 用法：cd /tmp && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /usr/bin/python3 /workspace/QuantLab/docs/v2/audit/backfill_1014_1016/selftest_run_backfill_r_v3_1_b.py </dev/null
++# 用法：cd /tmp && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /usr/bin/python3 /workspace/QuantLab/docs/v2/audit/backfill_1014_1016/selftest_run_backfill_r_v3_1_c.py </dev/null
+ import datetime, importlib.util, json, os, re, signal, subprocess, sys, tempfile, time
+ 
+ ROOT = "/workspace/QuantLab"
+-OK = ROOT + "/output/ai_factory/ARCH_SELFTEST_DATA_BACKFILL_R_V3_1_B.ok"
++OK = ROOT + "/output/ai_factory/ARCH_SELFTEST_DATA_BACKFILL_R_V3_1_C.ok"
+ RUNNER = ROOT + "/docs/v2/audit/backfill_1014_1016/run_backfill_r_v3_1.py"
+ CONFIRM_MAX_S = 30
+ 
+@@ -81,6 +81,7 @@
+ # ---------- 信号守卫与调用日志 ----------
+ SPAWNED = set()
+ CALLS = []  # ("cmdline"|"ppid"|"kill", pid, sig)
++KSTATE = []  # (pid, sig, 发信号前 /proc/<pid>/stat 状态)
+ _real_kill = os.kill
+ _real_cmdline = M.cmdline
+ _real_ppid = M.ppid
+@@ -99,6 +100,7 @@
+     refresh_spawned()
+     assert pid in SPAWNED, "拒绝：试图对非本自测产生的 PID %r 发信号 %r（SPAWNED=%r）" % (pid, sig, sorted(SPAWNED))
+     CALLS.append(("kill", pid, int(sig)))
++    KSTATE.append((pid, int(sig), M.proc_state(pid)))
+     return _real_kill(pid, sig)
+ 
+ 
+@@ -124,7 +126,9 @@
+            "import os, subprocess, sys, time\n"
+            "open(%r, \"w\").write(str(os.getpid()))\n"
+            "p = subprocess.Popen([sys.executable, %r], stdin=subprocess.DEVNULL)\n"
+-           "p.wait()\n" % (os.path.join(W, "pids/child.pid"), GC))
++           "while True:\n"
++           "    p.poll()  # 非阻塞收尸：孙退出后子进程继续存活，只因 SIGTERM（默认处理）退出\n"
++           "    time.sleep(0.2)\n" % (os.path.join(W, "pids/child.pid"), GC))
+ wfile("scripts/nightly_update.py",
+       "import subprocess, sys\n"
+       "for k in range(3):\n"
+@@ -180,7 +184,9 @@
+ first = [x for x in kills if x[0] in (npid, c, g)]
+ seq = [(p, s) for p, s in first if s != signal.SIGKILL or p == npid]
+ exp_seq = [(npid, int(signal.SIGSTOP)), (g, int(signal.SIGTERM)), (c, int(signal.SIGTERM)), (npid, int(signal.SIGKILL))]
+-case("B3 os.kill 实际顺序 STOP nightly → TERM 孙 → TERM 子 → KILL nightly", seq == exp_seq, repr(kills))
++case("B3 恰好四个信号：STOP nightly → TERM 孙 → TERM 子 → KILL nightly", kills == exp_seq, repr(kills))
++ks = [x for x in KSTATE if x[0] == c and x[1] == int(signal.SIGTERM)]
++case("B3b 子进程收到 TERM 时存活（非 Z）", len(ks) == 1 and ks[0][2] not in (None, "Z"), repr(KSTATE))
+ # B4：每个 kill 之前（自上一个 kill 之后）必须有对同一 PID 的 cmdline 与 ppid 读取
+ okb4, prev, det = True, 0, []
+ for i, (k, p, s) in enumerate(CALLS):

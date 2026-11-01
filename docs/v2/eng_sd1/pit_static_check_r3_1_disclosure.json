@@ -1,0 +1,403 @@
+{
+ "spec_sha256": "2e428f3956fcb6d2de8204a0b7226242763045afdd280a4d1e860bc6d0fbdb0b",
+ "mode": "disclosure",
+ "n_files": 666,
+ "n_hits": 43,
+ "n_violations": 10,
+ "n_preexisting": 21,
+ "n_allowed_func": 12,
+ "violations_by_file": {
+  "research/g1g5_imax_intraday_alpha.py": 5,
+  "research/g1g5_sue_desens_cs_alpha.py": 5
+ },
+ "note": "disclosure only; never part of the SD1 selftest result (Arch 2b8f81c9 §6.1-3)",
+ "hits": [
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 61,
+   "text": "for c in (\"list_date\", \"delist_date\", \"last_trade_date\"):",
+   "token": "delist_date",
+   "function": "load_delisted_master",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 107,
+   "text": "alive = set(master.index[(master.list_date <= day) & (master.delist_date > day)])",
+   "token": "delist_date",
+   "function": "merge_cap_for_ranking",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 170,
+   "text": "alive_later = master[(master.list_date <= day) & (master.delist_date > day)]",
+   "token": "delist_date",
+   "function": "later_delisted_in_band",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 175,
+   "text": "\"delist_dates\": {i: str(alive_later.loc[i, \"delist_date\"].date()) for i in hit},",
+   "token": "delist_date",
+   "function": "later_delisted_in_band",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 209,
+   "text": "\"delist_date\": str(row[\"delist_date\"].date()) if row[\"delist_date\"] == row[\"delist_date\"] else None,",
+   "token": "delist_date",
+   "function": "delist_sensitivity_table",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/portfolio/v2_multisleeve_book.py",
+   "line": 118,
+   "text": "dl = self.BAS.set_index(\"code\").delist_date.dropna()",
+   "token": "delist_date",
+   "function": "panels",
+   "status": "PREEXISTING",
+   "note": "CB basic delist_date -> bond terminal payout (accounting; pre-SD1, in paper closure, unchanged)"
+  },
+  {
+   "path": "quantlab/universe/mask.py",
+   "line": 8,
+   "text": "is_st, listing_date, delist_date, asset_type, quality_status, ...",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "docstring of the instruments contract (field list only); mask code must not use it"
+  },
+  {
+   "path": "research/ai_hiliq_pool_review_x2.py",
+   "line": 27,
+   "text": "dm = pd.read_parquet(R/\"data/v2/delisted/delisted_master_tushare.parquet\", columns=[\"ts_code\",\"delist_date\",\"last_trade_date\",\"delist_reason_category\"])",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "AI HI_LIQ pool audit (ex-post review script, not selection)"
+  },
+  {
+   "path": "research/ai_hiliq_pool_review_x2.py",
+   "line": 28,
+   "text": "dm[\"delist_date\"] = pd.to_datetime(dm.delist_date.astype(str), errors=\"coerce\"); dm[\"last_trade_date\"] = pd.to_datetime(dm.last_trade_date.astype(str), errors=\"coerce\")",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "same audit script"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 369,
+   "text": "forever; last_trade_date NaT → delist_date). Name-days cut this way: delisted_cut_name_days_x2.",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 377,
+   "text": "dl = pd.read_parquet(DELISTED, columns=[\"ts_code\", \"last_trade_date\", \"delist_date\"])",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 378,
+   "text": "cut = pd.to_datetime(dl.last_trade_date).fillna(pd.to_datetime(dl.delist_date)); cut.index = dl.ts_code; cut = cut[~cut.index.duplicated()]",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 379,
+   "text": "cut_dd = pd.to_datetime(dl.delist_date).fillna(pd.to_datetime(dl.last_trade_date)); cut_dd.index = dl.ts_code; cut_dd = cut_dd[~cut_dd.index.duplicated()]   # Arch b09901f5 P3-2 (disclosure)",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 400,
+   "text": "carry_dd = carry_nc & ~gone_dd                                          # P3-2: cut at delist_date instead (disclosure only)",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 467,
+   "text": "delisted_cut_rule=\"Arch bd3abe5c P1-A: S=False and MV chain broken for d > last_trade_date (NaT → delist_date)\",",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 648,
+   "text": "\"退市（Arch bd3abe5c P1-A）：mask 是矩形网格，退市后恒为 suspended=True；按 delisted_master（data_delisted_sha256，读前 repin）在 d > last_trade_date（缺失用 delist_date）时记 S=False、市值链断开；被截断名·日按名见 res.*.b3_pool_carry.delisted_cu",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 649,
+   "text": "\"B3 校验（Arch P3-A / P2-B）：沿用名·日按构造必然为 mask 停牌，not_suspended 恒为 0，只是自洽检查；独立校验靠 Mp≠carry 停跑和截断断言（Arch b09901f5 P2-1，取代 bd3abe5c P2-B）：X2 每一日 (S & gone) 必须全为 False，否则停跑报 Arch；cut 在窗口末之后、窗口末仍停牌被沿用的名属合法，只列入",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 679,
+   "text": "poolEW_cagr244_cut_delist_date=ann(ew_d), wb_cagr244_cut_delist_date=ann(wb_d),",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 680,
+   "text": "poolEW_cagr244_diff_vs_cut_delist_date=ann(ew) - ann(ew_d), wb_cagr244_diff_vs_cut_delist_date=ann(wb) - ann(wb_d),",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_imax_intraday_alpha.py",
+   "line": 681,
+   "text": "note=\"old / r2.2 / delist_date-cut constructions: disclosure only (Arch b09901f5 P3-2)\")",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 398,
+   "text": "forever; last_trade_date NaT → delist_date). Name-days cut this way: delisted_cut_name_days_x2.",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 406,
+   "text": "dl = pd.read_parquet(DELISTED, columns=[\"ts_code\", \"last_trade_date\", \"delist_date\"])",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 407,
+   "text": "cut = pd.to_datetime(dl.last_trade_date).fillna(pd.to_datetime(dl.delist_date)); cut.index = dl.ts_code; cut = cut[~cut.index.duplicated()]",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 408,
+   "text": "cut_dd = pd.to_datetime(dl.delist_date).fillna(pd.to_datetime(dl.last_trade_date)); cut_dd.index = dl.ts_code; cut_dd = cut_dd[~cut_dd.index.duplicated()]   # Arch b09901f5 P3-2 (disclosure)",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 429,
+   "text": "carry_dd = carry_nc & ~gone_dd                                          # P3-2: cut at delist_date instead (disclosure only)",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 496,
+   "text": "delisted_cut_rule=\"Arch bd3abe5c P1-A: S=False and MV chain broken for d > last_trade_date (NaT → delist_date)\",",
+   "token": "delist_date",
+   "function": "pool_benchmarks",
+   "status": "ALLOWED_FUNC",
+   "note": "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3"
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 715,
+   "text": "\"退市（Arch bd3abe5c P1-A）：mask 是矩形网格，退市后恒为 suspended=True；按 delisted_master（data_delisted_sha256，读前 repin）在 d > last_trade_date（缺失用 delist_date）时记 S=False、市值链断开；被截断名·日按名见 res.*.b3_pool_carry.delisted_cu",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 716,
+   "text": "\"B3 校验（Arch P3-A / P2-B）：沿用名·日按构造必然为 mask 停牌，not_suspended 恒为 0，只是自洽检查；独立校验靠 Mp≠carry 停跑和截断断言（Arch b09901f5 P2-1，取代 bd3abe5c P2-B）：X2 每一日 (S & gone) 必须全为 False，否则停跑报 Arch；cut 在窗口末之后、窗口末仍停牌被沿用的名属合法，只列入",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 747,
+   "text": "poolEW_cagr244_cut_delist_date=ann(ew_d), wb_cagr244_cut_delist_date=ann(wb_d),",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 748,
+   "text": "poolEW_cagr244_diff_vs_cut_delist_date=ann(ew) - ann(ew_d), wb_cagr244_diff_vs_cut_delist_date=ann(wb) - ann(wb_d),",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/g1g5_sue_desens_cs_alpha.py",
+   "line": 749,
+   "text": "note=\"old / r2.2 / delist_date-cut constructions: disclosure only (Arch b09901f5 P3-2)\")",
+   "token": "delist_date",
+   "function": "evaluate",
+   "status": "VIOLATION",
+   "note": ""
+  },
+  {
+   "path": "research/v3_a2_etf_share_demand_report.py",
+   "line": 22,
+   "text": "return m.assign(tracker=label)[['ts_code', 'name', 'benchmark', 'list_date', 'delist_date', 'tracker']]",
+   "token": "delist_date",
+   "function": "pick",
+   "status": "PREEXISTING",
+   "note": "ETF fund_basic delist_date (not stock delisting)"
+  },
+  {
+   "path": "research/v3_a2_etf_share_demand_report.py",
+   "line": 32,
+   "text": "extra = row.assign(tracker=lab)[['ts_code', 'name', 'benchmark', 'list_date', 'delist_date', 'tracker']]",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "ETF fund_basic delist_date (not stock delisting)"
+  },
+  {
+   "path": "research/v3_a4_sealed.py",
+   "line": 12,
+   "text": "for c in ['maturity_date','delist_date','list_date']: b[c]=pd.to_datetime(b[c],errors='coerce',format='%Y%m%d')",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "CB basic delist_date (bond maturity/redemption)"
+  },
+  {
+   "path": "research/v3_a4_sealed.py",
+   "line": 25,
+   "text": "gap=(b.delist_date.reindex(cols)-last).dt.days",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "CB basic delist_date"
+  },
+  {
+   "path": "research/v3_a4_sealed.py",
+   "line": 27,
+   "text": "live=b.delist_date.reindex(cols).isna()&((END-last).dt.days<=30)",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "CB basic delist_date"
+  },
+  {
+   "path": "scripts/smallcap_audit.py",
+   "line": 73,
+   "text": "delist_events=len(result['events']), median_gross=float(result['gross'][result['gross'] > 0].median()))",
+   "token": "delist_events",
+   "function": "run_task",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_audit.py",
+   "line": 93,
+   "text": "columns = ['cagr', 'max_drawdown', *L.SEGMENTS, 'median_gross', 'fees', 'turnover', 'delist_events']",
+   "token": "delist_events",
+   "function": "run_family",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_e7.py",
+   "line": 93,
+   "text": "slippage=result['slippage'], turnover=result['turnover'], delist_events=len(result['events']),",
+   "token": "delist_events",
+   "function": "run_equity",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events=len(engine events) (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_info.py",
+   "line": 300,
+   "text": "slippage=result['slippage'], turnover=result['turnover'], delist_events=len(result['events']),",
+   "token": "delist_events",
+   "function": "run_variant",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events=len(engine events) (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_layers.py",
+   "line": 123,
+   "text": "delist_events=len(result['events']),",
+   "token": "delist_events",
+   "function": "run_one",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_layers.py",
+   "line": 179,
+   "text": "columns = ['cagr', 'max_drawdown', *SEGMENTS, 'median_gross', 'fees', 'slippage', 'turnover', 'delist_events']",
+   "token": "delist_events",
+   "function": "summarize",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events (count only; no table read)"
+  },
+  {
+   "path": "scripts/smallcap_parity.py",
+   "line": 54,
+   "text": "delist_events=len(run['events']))",
+   "token": "delist_events",
+   "function": "main",
+   "status": "PREEXISTING",
+   "note": "report column label delist_events (count only; no table read)"
+  }
+ ]
+}

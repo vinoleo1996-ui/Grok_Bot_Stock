@@ -1,0 +1,31 @@
+#!/bin/bash
+# Rebuild classified announcements sparsely to save RAM.
+# New Bot 2026-10-11: was every 30m (~7.5GB); now every 2h, or when coverage flag set.
+cd /workspace/QuantLab
+COV_FLAG=output/d1/ANN_COVERAGE_READY.flag
+INTERVAL=7200   # 2 hours
+while pgrep -f "event_flow_pull.py (anns|margin_detail)|cninfo_anns_pull|em_anns_pull" >/dev/null; do
+  # skip rebuild if a heavy sibling is already eating RAM
+  avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+  if [ "${avail_kb:-0}" -lt 4000000 ]; then
+    echo "$(date) SKIP rebuild MemAvailable=${avail_kb}kB <4GB" >> logs/event_rebuild.log
+    sleep "$INTERVAL"
+    continue
+  fi
+  python3 scripts/acquire/event_alpha_build.py >> logs/event_rebuild.log 2>&1
+  echo "$(date) rebuilt" >> logs/event_rebuild.log
+  if [ -f "$COV_FLAG" ]; then
+    echo "$(date) coverage flag set — exit loop after this rebuild" >> logs/event_rebuild.log
+    break
+  fi
+  sleep "$INTERVAL"
+done
+# final rebuild when pullers stop (only if memory allows)
+avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+if [ "${avail_kb:-0}" -ge 4000000 ]; then
+  python3 scripts/acquire/event_alpha_build.py >> logs/event_rebuild.log 2>&1
+  echo "$(date) FINAL rebuilt" >> logs/event_rebuild.log
+else
+  echo "$(date) FINAL skipped low mem ${avail_kb}kB" >> logs/event_rebuild.log
+fi
+# 2026-10-11 停用：内存。重建只在覆盖率达标或每小时检查显式调用时跑（event_alpha_build.py 默认仅公告、峰值~0.8GB）

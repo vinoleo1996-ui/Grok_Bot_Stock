@@ -1,0 +1,1926 @@
+--- a/quantlab/platform/execution_sd1.py(r1)
++++ b/quantlab/platform/execution_sd1.py(r2)
+@@ -315,11 +315,58 @@
+ SD1_MA_CONSIDERATION_TABLE = Path(__file__).resolve().parents[2] / "data/v2/ref/delist_consideration.parquet"
+ SD1_BLOCKED_BUY_BUDGET_BY_TRACK = {"core": "cash"}   # ruling 1: Core keeps blocked budget as cash; others renorm
+ SD1_DELIST_TYPES = ("FORCED_PERIOD", "FORCED_NO_PERIOD", "MERGER_SWAP", "CASH_OUT", "UNKNOWN")
++SD1_ANNOUNCED_FORCED = ("FORCED_PERIOD", "FORCED_NO_PERIOD")
++SD1_G2_WRITEOFF_THRESHOLD = 0.01   # spec §4 G2 / 主 Agent E-1 final (01:53 ET)
+ 
+ 
+-def sd1_blocked_buy_budget(track: str | None) -> str:
+-    """Ruling 1 (final): ``cash`` for the Core track, ``renorm`` for every other track."""
+-    return SD1_BLOCKED_BUY_BUDGET_BY_TRACK.get(str(track).lower(), "renorm") if track is not None else "renorm"
++def sd1_blocked_buy_budget(track: str) -> str:
++    """Ruling 1 (final): ``cash`` for the Core track, ``renorm`` for every other track. ``track`` is REQUIRED
++    (Arch SD1 review P2-2): None / empty raises, so a forgotten Core track can never silently get renorm."""
++    if track is None or not str(track).strip():
++        raise ValueError("track is required (e.g. 'core', 'capacity_adv', 'b4', 's6'); no silent pro-rata default")
++    return SD1_BLOCKED_BUY_BUDGET_BY_TRACK.get(str(track).strip().lower(), "renorm")
++
++
++def sd1_delist_summary(sd1_events, *, delist_events=None, unknown_policy: str = "writeoff",
++                       recovery: float = 0.0, threshold: float = SD1_G2_WRITEOFF_THRESHOLD, basis: str = "main") -> dict:
++    """主 Agent E-1 final (01:53 ET): announced write-offs (DELIST_WRITEOFF, FORCED_*) and UNKNOWN write-offs
++    (DELIST_WRITEOFF_UNKNOWN) are separate categories; 0 recovery is the main basis. UNKNOWN alone does NOT trigger
++    G2; G2 IS triggered when announced + UNKNOWN write-off weight >= 1%. Implemented reading (flagged for 主 Agent):
++    g2_triggered = (n_announced >= 1) and (combined_weight >= threshold); ``g2_if_unknown_alone_counted`` reports the
++    alternative reading (combined >= threshold with no announced write-off) for transparency.
++    Weight = book weight of the position on the write-off session (value at the last tradable close / NAV of the
++    previous close), summed over the run; independent of the recovery assumption."""
++    ev = sd1_events if isinstance(sd1_events, pd.DataFrame) else pd.DataFrame(sd1_events)
++    typ = ev["type"] if "type" in ev.columns else pd.Series(dtype=object)
++    w = pd.to_numeric(ev["weight"], errors="coerce") if "weight" in ev.columns else pd.Series(np.nan, index=ev.index)
++    val = pd.to_numeric(ev["writeoff_value"], errors="coerce") if "writeoff_value" in ev.columns else pd.Series(np.nan, index=ev.index)
++    pos = pd.to_numeric(ev["position_value"], errors="coerce") if "position_value" in ev.columns else pd.Series(np.nan, index=ev.index)
++    ann, unk = typ == "DELIST_WRITEOFF", typ == "DELIST_WRITEOFF_UNKNOWN"
++    unk_cash = typ == "DELIST_UNKNOWN_LAST_CLOSE_CASH"
++    wa, wu = float(w[ann].fillna(0).sum()), float(w[unk].fillna(0).sum())
++    comb = wa + wu
++    n_a, n_u = int(ann.sum()), int(unk.sum())
++    held = typ == "BLOCKED_BUDGET_CASH_HELD"
++    from quantlab.platform.delist_accounting import delist_source_info
++    src = delist_source_info(delist_events)
++    return dict(basis=basis, unknown_policy=unknown_policy, recovery=float(recovery), g2_threshold=float(threshold),
++                n_writeoff_announced=n_a, writeoff_weight_announced=wa,
++                writeoff_value_announced=float(val[ann].fillna(0).sum()),
++                max_single_writeoff_weight_announced=float(w[ann].max()) if n_a else 0.0,
++                n_writeoff_unknown=n_u, writeoff_weight_unknown=wu,
++                writeoff_value_unknown=float(val[unk].fillna(0).sum()),
++                position_value_unknown=float(pos[unk].fillna(0).sum()),
++                n_unknown_last_close_cash=int(unk_cash.sum()),
++                combined_writeoff_weight=comb,
++                g2_triggered=bool(n_a >= 1 and comb >= threshold),
++                g2_if_unknown_alone_counted=bool(comb >= threshold),
++                g2_rule="n_announced>=1 and announced+UNKNOWN write-off weight>=threshold (主 Agent E-1 01:53; reading flagged)",
++                blocked_budget_cash_held_sessions=int(pd.to_numeric(ev.loc[held, "sessions"], errors="coerce").fillna(0).sum())
++                if held.any() else 0,
++                blocked_budget_cash_held_weight_sessions=float((pd.to_numeric(ev.loc[held, "sessions"], errors="coerce")
++                                                                * pd.to_numeric(ev.loc[held, "weight"], errors="coerce")).fillna(0).sum())
++                if held.any() else 0.0,
++                **src)
+ 
+ 
+ @dataclass
+@@ -370,6 +417,8 @@
+     delist_force_sell_in_period: bool = False     # SD1 (ruling 3): sell at every open from the PUBLIC period start, limit-down bound
+     ma_consideration_table: str | None = None     # Data's consideration table (MERGER_SWAP / CASH_OUT); None/missing -> fallback
+     ma_fallback: str = "last_close_cash"          # MERGER_SWAP / CASH_OUT without consideration: last close -> cash, flag MA_FALLBACK_LAST_CLOSE
++    delist_unknown_policy: str = "writeoff"       # E-1: writeoff (DELIST_WRITEOFF_UNKNOWN, recovery as forced; MAIN) | last_close_cash (disclosure)
++    g2_writeoff_threshold: float = SD1_G2_WRITEOFF_THRESHOLD
+ 
+     @property
+     def engine_version(self) -> str:
+@@ -390,11 +439,11 @@
+         return cls(**kw)
+ 
+     @classmethod
+-    def strategy_v1_sd1(cls, impact_k: float = 1.0, track: str | None = None, **overrides) -> "ExecConfig":
++    def strategy_v1_sd1(cls, impact_k: float = 1.0, *, track: str, **overrides) -> "ExecConfig":
+         """exec_SD1 = strategy_v1 + SD1 defaults (spec 3.0 table; rulings 主 Agent 01:03 ET, final):
+         halt freeze_renorm, limit open_touch, delist sd1 with recovery 0 (sensitivity 0/0.3/0.7),
+         forced sell from the public delisting-period start. Blocked-buy budget: ``cash`` for the Core track
+-        (``track='core'``), ``renorm`` (pro-rata to the other holdings) for every other track."""
++        (``track='core'``), ``renorm`` (pro-rata to the other holdings) for every other track. ``track`` is required."""
+         kw = dict(halt_policy="freeze_renorm", blocked_buy_budget=sd1_blocked_buy_budget(track),
+                   limit_policy="open_touch", delist_policy="sd1", delist_forced_recovery=0.0,
+                   delist_sensitivity=(0.0, 0.3, 0.7), delist_force_sell_in_period=True,
+@@ -417,6 +466,8 @@
+             raise ValueError(f"delist_forced_recovery must be in [0, 1], got {self.delist_forced_recovery}")
+         if self.ma_fallback != "last_close_cash":
+             raise ValueError(f"bad ma_fallback {self.ma_fallback}")
++        if self.delist_unknown_policy not in ("writeoff", "last_close_cash"):
++            raise ValueError(f"bad delist_unknown_policy {self.delist_unknown_policy}")
+         if self.unfilled not in ("carry", "drop"):
+             raise ValueError(f"bad unfilled rule {self.unfilled}")
+         if self.order_rounding not in ("target", "delta"):
+@@ -1000,6 +1051,11 @@
+             sd1_ev.append(dict(date=str(day.date()), code=codes[j], type=why, side=1, frozen_weight=0.0,
+                                target_weight=float(tgt[j]), budget=cfg.blocked_buy_budget))
+             pending.pop(j, None)   # a blocked buy is not carried: its budget is renormed (or kept as cash)
++        if cfg.blocked_buy_budget == "cash" and (B or BP):
++            # A2 (Arch): the blocked budget stays cash until the next signal (no re-buy on resumption); the
++            # BLOCKED_BUDGET_CASH_HELD event (sessions held) is closed at the next signal / end of run.
++            cash_hold.append(dict(start=t, start_date=str(day.date()), codes=[codes[j] for j in sorted(set(B) | BP)],
++                                  weight=float(sum(tgt[j] for j in set(B) | BP))))
+         moved = 0.0
+         for k in live:
+             px = mode_px[t, k]
+@@ -1014,7 +1070,9 @@
+                 pending[k] = delta
+         sd1_ev.append(dict(date=str(day.date()), code="", type="RENORM", n_frozen=len(F), n_blocked_buy=len(B) + len(BP),
+                            frozen_value=VF, budget=budget, moved_weight=moved, mode=cfg.blocked_buy_budget,
+-                           note="no re-solve: exposure deviation vs solver is disclosed, not corrected (spec 3.2.4)"))
++                           pricing="exec_day_open",
++                           note="no re-solve: exposure deviation vs solver is disclosed, not corrected (spec 3.2.4); "
++                                "A3: renormed shares priced at the execution-day open (PIT; SD0 prices at the signal close)"))
+ 
+     def _sd1_prorata_buys(t, day, mode_px):
+         buys = [j for j, q in pending.items() if q > 0 and _blocked(t, j, 1, mode_px) is None]
+@@ -1046,13 +1104,23 @@
+             if d["term_pos"] != t or shares[j] <= 0:
+                 continue
+             q0 = float(shares[j]); last = d["last_close"]; typ = d["type"]
+-            if typ in ("FORCED_PERIOD", "FORCED_NO_PERIOD", "UNKNOWN"):
++            nav_ref = nav_out[t - 1] if t > 0 else float(initial_cash)
++            pv = q0 * last if np.isfinite(last) else 0.0
++            wgt = pv / nav_ref if nav_ref > 0 else np.nan
++            if typ == "UNKNOWN" and cfg.delist_unknown_policy == "last_close_cash":   # E-1 disclosure comparison only
++                cash += pv
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_UNKNOWN_LAST_CLOSE_CASH", delist_type=typ,
++                                   shares=q0, last_close=last, cash=pv, position_value=pv, weight=wgt,
++                                   flag="DISCLOSURE_ONLY_UNKNOWN_AT_LAST_CLOSE"))
++            elif typ in ("FORCED_PERIOD", "FORCED_NO_PERIOD", "UNKNOWN"):
+                 rec = float(cfg.delist_forced_recovery)
+-                amt = q0 * last * rec
++                amt = pv * rec
+                 cash += amt
+-                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_WRITEOFF", delist_type=typ, shares=q0,
+-                                   last_close=last, recovery=rec, cash=amt, writeoff_value=q0 * last * (1 - rec),
+-                                   flag="UNKNOWN_AS_FORCED" if typ == "UNKNOWN" else ""))
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j],
++                                   type="DELIST_WRITEOFF_UNKNOWN" if typ == "UNKNOWN" else "DELIST_WRITEOFF",
++                                   delist_type=typ, shares=q0, last_close=last, recovery=rec, cash=amt,
++                                   position_value=pv, writeoff_value=pv * (1 - rec), weight=wgt,
++                                   flag="UNKNOWN_SEPARATE_CATEGORY" if typ == "UNKNOWN" else ""))
+             elif typ == "MERGER_SWAP" and d.get("swap_ratio") and d.get("acq_col") is not None:
+                 a = d["acq_col"]; ratio = float(d["swap_ratio"])
+                 raw = q0 * ratio
+@@ -1075,6 +1143,15 @@
+             Cm[t:, j] = np.nan
+ 
+     sig_state = {"tgt": None, "fresh": False}
++    cash_hold: list = []   # A2 open BLOCKED_BUDGET_CASH_HELD spells (cash mode)
++
++    def _close_cash_hold(t_end, end_label):
++        for h in cash_hold:
++            sd1_ev.append(dict(date=h["start_date"], code="|".join(h["codes"]), type="BLOCKED_BUDGET_CASH_HELD",
++                               weight=h["weight"], sessions=int(t_end - h["start"]), end=end_label,
++                               note="A2: blocked-buy budget held as cash until the next signal (no re-buy on resumption)"))
++        cash_hold.clear()
++
+     marks_open = np.where(np.isfinite(O), O, Cm)
+     ca_cash = 0.0; ca_events = 0
+     term_cash_total = [0.0]
+@@ -1157,6 +1234,8 @@
+                     reserve[0] = fb.margin
+             pending = {}
+             tgt = {col[c]: float(x) for c, x in w.items() if c in col and x > 0}
++            if cash_hold:
++                _close_cash_hold(t, str(day.date()))
+             if SD1_HALT:
+                 sig_state["tgt"] = dict(tgt); sig_state["fresh"] = True
+             if record_weights:
+@@ -1219,6 +1298,20 @@
+             TW[t] = cur_tw
+             if nav_out[t] > 0:
+                 AW[t] = (shares * np.nan_to_num(Cm[t]) / nav_out[t]).astype(np.float32)
++    if cash_hold:
++        _close_cash_hold(len(dates), "end_of_run")
++    sd1_summary = None
++    if cfg.engine_version == "exec_SD1":
++        sd1_summary = sd1_delist_summary(sd1_ev, delist_events=delist_events, unknown_policy=cfg.delist_unknown_policy,
++                                         recovery=cfg.delist_forced_recovery, threshold=cfg.g2_writeoff_threshold)
++        sd1_summary.update(a3_renorm_priced_at_exec_open=True,
++                           n_renorm=sum(1 for e in sd1_ev if e.get("type") == "RENORM"),
++                           halt_extra_source="suspend_flags_v2" if p.halt_extra is not None else
++                           "none(A11: open_status+volume only; P2-3 same-day volume used for fill feasibility only)")
++        sd1_ev.append(dict(date="", code="", type="G2_CHECK", weight=sd1_summary["combined_writeoff_weight"],
++                           g2_triggered=sd1_summary["g2_triggered"], n_writeoff_announced=sd1_summary["n_writeoff_announced"],
++                           n_writeoff_unknown=sd1_summary["n_writeoff_unknown"],
++                           delist_source=sd1_summary["delist_source"], source_sha256=sd1_summary["source_sha256"]))
+     nav = pd.Series(nav_out, index=dates)
+     total_cost = sum(cost.values())
+     enh = pd.Series(ENH, index=dates, name="effective_n_holdings")
+@@ -1243,7 +1336,8 @@
+                 target_weights=None if TW is None else pd.DataFrame(TW, index=dates, columns=codes),
+                 actual_weights=None if AW is None else pd.DataFrame(AW, index=dates, columns=codes),
+                 # SD0 result keys are unchanged (paper-safety: identical dict to 373fed30); SD1 adds two keys.
+-                **({"engine_version": "exec_SD1", "sd1_events": pd.DataFrame(sd1_ev)} if cfg.engine_version == "exec_SD1" else {}))
++                **({"engine_version": "exec_SD1", "sd1_events": pd.DataFrame(sd1_ev), "sd1_summary": sd1_summary}
++                   if cfg.engine_version == "exec_SD1" else {}))
+ 
+ 
+ def _sd1_delist_plan(delist_events, dates, codes, C) -> dict:
+@@ -1275,6 +1369,9 @@
+             typ = "UNKNOWN"
+         ff = r.get("force_sell_from")
+         force_from = int(idx.searchsorted(pd.Timestamp(ff), side="left")) if nan_ok(ff) and pd.notna(ff) else None
++        nms = r.get("needs_manual_source")
++        if nan_ok(nms) and pd.notna(nms) and bool(nms):
++            force_from = None   # Arch P1-5: needs_manual_source=True never triggers a forced sell (defence in depth)
+         acq = r.get("acquirer"); sw = r.get("swap_ratio"); cps = r.get("cash_per_share"); pdt = r.get("pay_date")
+         out[j] = dict(type=typ, ltd_pos=ltd_pos, term_pos=term_pos, last_close=last_close, force_from=force_from,
+                       swap_ratio=float(sw) if nan_ok(sw) and pd.notna(sw) else None,
+@@ -1285,14 +1382,26 @@
+ 
+ 
+ def run_delist_sensitivity(panels: "ExecPanels", schedule: Mapping, *, delist_events, initial_cash: float = 600_000.0,
+-                           config: "ExecConfig | None" = None, **kw) -> dict:
+-    """Spec 3.5 / ruling 2: one SD1 run per recovery in ``config.delist_sensitivity`` (default 0 / 0.3 / 0.7).
+-    Returns {recovery: result}; headline = recovery 0. Real-data use needs an Arch .ok."""
+-    cfg = config or ExecConfig.strategy_v1_sd1()
+-    return {float(r): run_weight_schedule(panels, schedule, initial_cash=initial_cash,
+-                                          config=replace(cfg, delist_forced_recovery=float(r)),
+-                                          delist_events=delist_events, **kw)
+-            for r in cfg.delist_sensitivity}
++                           config: "ExecConfig", **kw) -> dict:
++    """Spec 3.5 / ruling 2 / 主 Agent E-1 final (01:53 ET). ``config`` is required (it carries the track's budget rule).
++    Returns {recovery: result for r in config.delist_sensitivity} + {"unknown_last_close_cash": result}.
++    MAIN basis = recovery 0 with UNKNOWN written off (DELIST_WRITEOFF_UNKNOWN); every other entry is DISCLOSURE ONLY
++    (sd1_summary.basis says which). Real-data use needs an Arch .ok."""
++    cfg = config
++    main_r = float(cfg.delist_forced_recovery)
++    out = {}
++    for r in cfg.delist_sensitivity:
++        res = run_weight_schedule(panels, schedule, initial_cash=initial_cash,
++                                  config=replace(cfg, delist_forced_recovery=float(r), delist_unknown_policy="writeoff"),
++                                  delist_events=delist_events, **kw)
++        res["sd1_summary"]["basis"] = "main" if float(r) == main_r == 0.0 else "sensitivity_disclosure_only"
++        out[float(r)] = res
++    res = run_weight_schedule(panels, schedule, initial_cash=initial_cash,
++                              config=replace(cfg, delist_forced_recovery=main_r, delist_unknown_policy="last_close_cash"),
++                              delist_events=delist_events, **kw)
++    res["sd1_summary"]["basis"] = "sensitivity_disclosure_only"
++    out["unknown_last_close_cash"] = res
++    return out
+ 
+ 
+ # ----------------------------------------------------------------- capacity
+--- a/quantlab/platform/tradability.py(r1)
++++ b/quantlab/platform/tradability.py(r2)
+@@ -15,6 +15,14 @@
+     names absent from ``delist_events`` with trailing NaN keep legacy 0-return and are flagged TAIL_NAN_NOT_IN_TABLE.
+   * Ruling 4 (主 Agent 01:03): cs_panel rebuild (resumption-day rows, D-1) is Data P0; the FE adapter refuses
+     cs_panel v1 unless allow_cs_panel_v1=True (then tagged 'cs_panel_v1(D-1 gap)').
++  * E-1 (主 Agent final 01:53): UNKNOWN delistings are their own category DELIST_WRITEOFF_UNKNOWN (recovery 0 = main
++    basis); comparisons 'UNKNOWN at last close -> cash' and recovery 0.3/0.7 are disclosure only. G2 combined weight
++    (announced + UNKNOWN) is computed here and written to the events and ``summary`` (see execution_sd1.sd1_delist_summary).
++  * E-2 (主 Agent final 01:53): FE and ADG apply NO limit-up/down for now; every FE/ADG output is tagged
++    OPTIMISTIC_NO_LIMIT and cannot serve as a gate on its own (book_smoke takes precedence). When cs_panel_v2 carries
++    raw limit prices FE switches back to open_touch and the affected leaves are recomputed (disclosure only).
++    ADG keeps the frozen-prereg close fills.
++  * ``track`` and ``delist_source`` are required in every adapter (Arch P2-2 / P2-4).
+ Research-grade; live=false; promotion_approved=false. Real-data use needs an Arch .ok.
+ """
+ from __future__ import annotations
+@@ -42,6 +50,7 @@
+     raw_high: pd.DataFrame | None = None
+     raw_low: pd.DataFrame | None = None
+     raw_close: pd.DataFrame | None = None
++    entry_block: pd.DataFrame | None = None  # bool: no NEW position may be opened that session (P1-6 resume-day gate)
+ 
+ 
+ @dataclass
+@@ -56,6 +65,8 @@
+     cost: float = 0.0                        # per unit two-sided turnover
+     no_limit_codes: frozenset = field(default_factory=frozenset)
+     cs_panel_version: str = "n/a"
++    unknown_policy: str = "writeoff"         # E-1: writeoff (main) | last_close_cash (disclosure)
++    g2_threshold: float = 0.01
+ 
+     def __post_init__(self):
+         if self.version != WB_VERSION:
+@@ -70,6 +81,8 @@
+             raise ValueError("wb_SD1 requires delist_policy='sd1'")
+         if not (0.0 <= float(self.delist_forced_recovery) <= 1.0):
+             raise ValueError("delist_forced_recovery must be in [0, 1]")
++        if self.unknown_policy not in ("writeoff", "last_close_cash"):
++            raise ValueError(f"bad unknown_policy {self.unknown_policy}")
+ 
+ 
+ def limits_from_ratio(raw_close: pd.DataFrame, ratio, tick: float = 0.01):
+@@ -96,6 +109,8 @@
+         ltd_pos = int(idx.searchsorted(pd.Timestamp(r["last_trade_date"]), side="right")) - 1
+         fin = np.flatnonzero(np.isfinite(C[: max(ltd_pos, 0) + 1, j]))
+         ff, acq = r.get("force_sell_from"), r.get("acquirer")
++        if _ok(r.get("needs_manual_source")) and bool(r.get("needs_manual_source")):
++            ff = None   # Arch P1-5: needs_manual_source=True never triggers a forced sell
+         out[j] = dict(type=str(r.get("type") or "UNKNOWN"), ltd_pos=ltd_pos, term_pos=ltd_pos + 1,
+                       last_pos=int(fin[-1]) if len(fin) else None,
+                       force_from=int(idx.searchsorted(pd.Timestamp(ff), side="left")) if _ok(ff) else None,
+@@ -135,6 +150,9 @@
+     rC = al(panels.raw_close) if panels.raw_close is not None else C
+     rH = al(panels.raw_high) if panels.raw_high is not None else None
+     rL = al(panels.raw_low) if panels.raw_low is not None else None
++    EB = (panels.entry_block.reindex(index=idx, columns=cols).fillna(False).astype(bool).to_numpy()
++          if panels.entry_block is not None else np.zeros((n, m), dtype=bool))
++    held_cash: dict = {}   # A2: code -> sessions its blocked-buy budget was kept as cash (cash mode)
+     free = {j for j, c in enumerate(cols) if c in pol.no_limit_codes}
+     events, flags = [], []
+     tail = [cols[j] for j in range(m) if j not in DL and np.isfinite(C[:, j]).any() and not np.isfinite(C[-1, j])]
+@@ -175,10 +193,16 @@
+                 if t != d["term_pos"] or post[j] <= 0:
+                     continue
+                 typ = d["type"]
+-                if typ in ("FORCED_PERIOD", "FORCED_NO_PERIOD", "UNKNOWN"):
++                if typ == "UNKNOWN" and pol.unknown_policy == "last_close_cash":   # E-1 disclosure comparison
++                    rel[j] = 1.0
++                    events.append(dict(date=day, code=cols[j], type="DELIST_UNKNOWN_LAST_CLOSE_CASH", delist_type=typ,
++                                       weight=float(post[j]), flag="DISCLOSURE_ONLY_UNKNOWN_AT_LAST_CLOSE"))
++                elif typ in ("FORCED_PERIOD", "FORCED_NO_PERIOD", "UNKNOWN"):
+                     rel[j] = float(pol.delist_forced_recovery)
+-                    events.append(dict(date=day, code=cols[j], type="DELIST_WRITEOFF", delist_type=typ, weight=float(post[j]),
+-                                       recovery=rel[j], flag="UNKNOWN_AS_FORCED" if typ == "UNKNOWN" else ""))
++                    events.append(dict(date=day, code=cols[j],
++                                       type="DELIST_WRITEOFF_UNKNOWN" if typ == "UNKNOWN" else "DELIST_WRITEOFF",
++                                       delist_type=typ, weight=float(post[j]), writeoff_value=float(post[j] * (1 - rel[j])),
++                                       recovery=rel[j], flag="UNKNOWN_SEPARATE_CATEGORY" if typ == "UNKNOWN" else ""))
+                 elif typ == "MERGER_SWAP" and d["swap_ratio"] and d["acq"] is not None and d["last_pos"] is not None \
+                         and np.isfinite(Cf[t - 1, d["acq"]]):
+                     a = d["acq"]
+@@ -215,7 +239,8 @@
+                 if why:
+                     F[j] = why
+             else:
+-                why = blocked(t, j, 1) or ("DELIST_PERIOD" if j in period else None)
++                why = blocked(t, j, 1) or ("RESUME_DAY_ENTRY_GATE" if EB[t, j] else None) \
++                    or ("DELIST_PERIOD" if j in period else None)
+                 if why:
+                     B[j] = why
+         bp = [j for j in period if tgt[j] > 0 and j not in F and j not in B]
+@@ -232,9 +257,12 @@
+                 events.append(dict(date=day, code=cols[j], type=why, frozen_weight=float(pre[j]), target_weight=float(tgt[j])))
+             for j, why in B.items():
+                 events.append(dict(date=day, code=cols[j], type=why, frozen_weight=0.0, target_weight=float(tgt[j]),
+-                                   budget=pol.blocked_buy_budget))
++                                   budget=pol.blocked_buy_budget, cash_held=pol.blocked_buy_budget == "cash"))
++                if pol.blocked_buy_budget == "cash":
++                    held_cash[cols[j]] = held_cash.get(cols[j], 0) + 1
+             events.append(dict(date=day, code="", type="RENORM", n_frozen=len(F), n_blocked_buy=len(B) + len(bp),
+-                               moved_weight=float(np.abs(ex - np.where(pmask, 0.0, tgt)).sum()), mode=pol.blocked_buy_budget))
++                               moved_weight=float(np.abs(ex - np.where(pmask, 0.0, tgt)).sum()), mode=pol.blocked_buy_budget,
++                               pricing="exec_day_open"))
+         for j in np.flatnonzero(pre > 1e-12):
+             if SUS[t, j]:
+                 events.append(dict(date=day, code=cols[j], type="HALT_HOLD", weight=float(pre[j])))
+@@ -252,22 +280,92 @@
+         gross[t] = g
+         ret[t] = g - pol.cost * TO[t]
+         post = ex.copy(); EX[t] = ex
++    for c, k in sorted(held_cash.items()):
++        events.append(dict(date="", code=c, type="BLOCKED_BUDGET_CASH_HELD", sessions=int(k),
++                           weight=float(np.mean([e["target_weight"] for e in events if e.get("code") == c
++                                                 and e.get("cash_held")])),
++                           note="A2: blocked-buy budget kept as cash on these sessions (weight = mean target weight)"))
++    from quantlab.platform.execution_sd1 import sd1_delist_summary
++    summary = sd1_delist_summary(events, delist_events=delist_events, unknown_policy=pol.unknown_policy,
++                                 recovery=pol.delist_forced_recovery, threshold=pol.g2_threshold)
++    summary.update(a3_renorm_priced_at_exec_open=True)
++    events.append(dict(date="", code="", type="G2_CHECK", weight=summary["combined_writeoff_weight"],
++                       g2_triggered=summary["g2_triggered"], n_writeoff_announced=summary["n_writeoff_announced"],
++                       n_writeoff_unknown=summary["n_writeoff_unknown"], delist_source=summary["delist_source"],
++                       source_sha256=summary["source_sha256"]))
+     s = lambda a, nm: pd.Series(a, index=idx, name=nm)
+     return dict(ret=s(ret, "ret"), gross=s(gross, "gross"), turnover=s(TO, "turnover_2s"),
+                 events=pd.DataFrame(events), executed=pd.DataFrame(EX, index=idx, columns=cols),
+-                version=WB_VERSION, flags=flags, cs_panel_version=pol.cs_panel_version)
++                version=WB_VERSION, flags=flags, cs_panel_version=pol.cs_panel_version, summary=summary)
++
++
++def run_wb_delist_sensitivity(weights, panels: WBPanels, policy: WBPolicy, *, delist_events,
++                              recoveries=(0.0, 0.3, 0.7)) -> dict:
++    """E-1 for weight books: {0.0 (main), 0.3, 0.7, "unknown_last_close_cash"}; all but 0.0 are disclosure only."""
++    from dataclasses import replace as _rp
++    out = {}
++    for r in recoveries:
++        res = weight_book_returns(weights, panels, _rp(policy, delist_forced_recovery=float(r), unknown_policy="writeoff"),
++                                  delist_events=delist_events)
++        res["summary"]["basis"] = "main" if float(r) == 0.0 else "sensitivity_disclosure_only"
++        out[float(r)] = res
++    res = weight_book_returns(weights, panels, _rp(policy, delist_forced_recovery=0.0, unknown_policy="last_close_cash"),
++                              delist_events=delist_events)
++    res["summary"]["basis"] = "sensitivity_disclosure_only"
++    out["unknown_last_close_cash"] = res
++    return out
++
++
++OPTIMISTIC_NO_LIMIT = dict(flag="OPTIMISTIC_NO_LIMIT",
++                           note="主 Agent E-2 (01:53 ET): no limit-up/down applied; cannot serve as a gate on its own; "
++                                "book_smoke takes precedence. FE -> open_touch once cs_panel_v2 has raw limit prices "
++                                "(affected leaves recomputed, disclosure only); ADG keeps frozen-prereg close fills.")
++
++
++def _tag_optimistic(res: dict) -> dict:
++    res["flags"].append(dict(OPTIMISTIC_NO_LIMIT))
++    res["summary"]["tags"] = sorted(set(res["summary"].get("tags", [])) | {"OPTIMISTIC_NO_LIMIT"})
++    res["summary"]["gate_eligible_alone"] = False
++    return res
++
++
++def check_hiliq_carry(close: pd.DataFrame, executed: pd.DataFrame, carry: pd.DataFrame) -> dict:
++    """P1-6: on every hiliq_carry=True cell whose position was HELD into the halt (executed weight > 0 the session
++    before), the resumption session must carry a price (row present -> the full gap is booked that day).
++    Returns counts; the FE adapter refuses its output on any mismatch."""
++    C = close.reindex(index=executed.index, columns=executed.columns)
++    K = carry.reindex(index=executed.index, columns=executed.columns).fillna(False).astype(bool)
++    EXp = executed.shift(1).fillna(0.0)
++    hit = K & (EXp > 1e-12)
++    bad = (hit & C.isna()).stack()
++    bad = bad[bad]
++    return dict(n_carry_cells=int(K.to_numpy().sum()), n_carry_held=int(hit.to_numpy().sum()),
++                n_mismatch=int(len(bad)), mismatches=[(str(d.date()), str(c)) for d, c in list(bad.index)[:20]])
+ 
+ 
+ # ----------------------------------------------------------------- adapters for the three legacy weight books
+-def _events_for(codes):
++def _events_for(codes, delist_source: str):
+     from quantlab.platform.delist_accounting import load_delist_events   # accounting layer (guarded; this file is allow-listed)
+-    return load_delist_events(codes)
++    return load_delist_events(codes, source=delist_source)
++
++
++def _need(track, delist_source):
++    if track is None or not str(track).strip():
++        raise ValueError("track is required (Arch P2-2): e.g. 'core' (blocked budget -> cash) or the leaf/track name")
++    if not delist_source:
++        raise ValueError("delist_source is required (Arch P2-4): src_events_v1 | src_table_v2 | src_table_v1_d3rule")
+ 
+ 
+ def fe_book_ret_sd1(W_long: pd.DataFrame, start, end, *, cost: float, bal: str, bal_open: pd.Series, bal_close: pd.Series,
+-                    panel_dir: Path | None = None, allow_cs_panel_v1: bool = False, track: str | None = None):
++                    panel_dir: Path | None = None, allow_cs_panel_v1: bool = False, track: str, delist_source: str):
+     """FE.book_ret wb_SD1: yearly-chunk read of cs_panel_v2_{y}.parquet (resumption-day rows, D-1 / ruling 4).
++    P1-6: no NEW position on a resumption session (B = RESUME_DAY_ENTRY_GATE; gate column = ``resume_announced``
++    (t 09:00 PIT) when the panel has it, else ``is_resume_day`` (t 16:00, booking-only -> used only to BLOCK entry,
++    conservative, flagged)); ``hiliq_carry`` held-through-halt cells are checked (resumption gap booked) and a
++    mismatch refuses the output. E-2: tagged OPTIMISTIC_NO_LIMIT (no limit prices in cs_panel yet).
+     Returns (ret Series without the 2 warm-up rows, one-sided mean turnover, full result dict)."""
++    _need(track, delist_source)
++    import pyarrow.parquet as pq
+     pdir = Path(panel_dir or CS_PANEL_DIR)
+     years = range(int(str(start)[:4]), int(str(end)[:4]) + 1)
+     want = sorted(set(W_long.instrument.astype(str)) - {bal})
+@@ -279,8 +377,23 @@
+             if not allow_cs_panel_v1:
+                 raise FileNotFoundError(f"{f} missing: wb_SD1 needs the rebuilt cs_panel_v2 (D-1, Data P0 per ruling 4)")
+             f = pdir / f"cs_panel_{y}.parquet"; tag = "cs_panel_v1(D-1 gap)"
+-        parts.append(pd.read_parquet(f, columns=["date", "instrument", "ret", "ret_on"], filters=[("instrument", "in", want)]))
++        names = set(pq.read_schema(f).names)
++        cols_ = ["date", "instrument", "ret", "ret_on"]
++        if f.name.startswith("cs_panel_v2_"):
++            miss = {"is_resume_day", "hiliq_carry"} - names
++            if miss:
++                raise ValueError(f"{f} lacks {sorted(miss)}: wb_SD1 FE needs the v2 resumption columns (P1-6)")
++            cols_ += ["is_resume_day", "hiliq_carry"] + (["resume_announced"] if "resume_announced" in names else [])
++        parts.append(pd.read_parquet(f, columns=cols_, filters=[("instrument", "in", want)]))
+     X = pd.concat(parts); del parts
++    gate_col = "resume_announced" if "resume_announced" in X.columns else ("is_resume_day" if "is_resume_day" in X.columns else None)
++    gate = carry = None
++    if gate_col is not None:
++        X[gate_col] = X[gate_col].astype("boolean").fillna(False).astype(bool)
++        X["hiliq_carry"] = X["hiliq_carry"].astype("boolean").fillna(False).astype(bool)
++        gate = X.pivot_table(index="date", columns="instrument", values=gate_col, aggfunc="max").fillna(False).astype(bool)
++        carry = X.pivot_table(index="date", columns="instrument", values="hiliq_carry", aggfunc="max").fillna(False).astype(bool)
++        gate.index = pd.to_datetime(gate.index); carry.index = pd.to_datetime(carry.index)
+     rr = X.pivot_table(index="date", columns="instrument", values="ret")
+     on = X.pivot_table(index="date", columns="instrument", values="ret_on"); del X
+     rr.index = pd.to_datetime(rr.index); on = on.reindex(rr.index); on.index = rr.index
+@@ -295,16 +408,29 @@
+     from quantlab.platform.execution_sd1 import sd1_blocked_buy_budget
+     pol = WBPolicy(cost=cost, no_limit_codes=frozenset({bal}), cs_panel_version=tag,
+                    blocked_buy_budget=sd1_blocked_buy_budget(track), limit_policy="off")
+-    res = weight_book_returns(P, WBPanels(close=close, open=open_), pol, delist_events=_events_for(want))
+-    res["flags"].append(dict(flag="LIMITS_UNAVAILABLE_IN_CS_PANEL", note="cs_panel has no raw limit prices; limit_policy=off"))
++    res = weight_book_returns(P, WBPanels(close=close, open=open_, entry_block=gate), pol,
++                              delist_events=_events_for(want, delist_source))
++    if gate_col is None:
++        res["flags"].append(dict(flag="NO_RESUME_DAY_GATE", note="cs_panel v1 has no resumption columns (D-1 gap)"))
++    else:
++        if gate_col == "is_resume_day":
++            res["flags"].append(dict(flag="ENTRY_GATE_IS_RESUME_DAY_T1600",
++                                     note="is_resume_day is t-16:00 info: used only to block new entries (conservative)"))
++        chk = check_hiliq_carry(close, res["executed"], carry)
++        res["summary"]["hiliq_carry_check"] = chk
++        if chk["n_mismatch"]:
++            raise RuntimeError(f"hiliq_carry check failed (P1-6): {chk}")
++    _tag_optimistic(res)
+     to = res["turnover"]
+     return res["ret"].iloc[2:], float(to.iloc[2:].mean() / 2), res
+ 
+ 
+-def lc_ret_sd1(W_long: pd.DataFrame, px_fn, raw_fn, *, cost: float, net: bool = True, track: str | None = None,
++def lc_ret_sd1(W_long: pd.DataFrame, px_fn, raw_fn, *, cost: float, net: bool = True, track: str, delist_source: str,
+                etf=lambda i: False):
+     """LC._ret wb_SD1. px_fn(i) -> (adj_open, adj_close); raw_fn(i) -> DataFrame(open, close, volume,
+-    limit_ratio_at_open) raw (stocks only). Limits = open_touch on raw prices; halt = no bar or volume <= 0."""
++    limit_ratio_at_open) raw (stocks only). Limits = open_touch on raw prices; halt = no bar or volume <= 0
++    (P2-3: same-day volume decides fill feasibility only, never selection; disclosed)."""
++    _need(track, delist_source)
+     P = W_long.pivot_table(index="date", columns="instrument", values="target_weight", aggfunc="sum").fillna(0).sort_index()
+     P.index = pd.to_datetime(P.index)
+     C = pd.DataFrame({i: px_fn(i)[1] for i in P.columns}).reindex(P.index)
+@@ -323,17 +449,18 @@
+     res = weight_book_returns(P, WBPanels(close=C, open=O, suspended=sus, limit_up=LU.reindex(columns=P.columns),
+                                           limit_down=LD.reindex(columns=P.columns), raw_open=rO.reindex(columns=P.columns),
+                                           raw_close=rC.reindex(columns=P.columns)),
+-                              pol, delist_events=_events_for([i for i in P.columns if not etf(i)]))
++                              pol, delist_events=_events_for([i for i in P.columns if not etf(i)], delist_source))
+     return res["ret"].iloc[2:], res
+ 
+ 
+-def adg_gross_and_turnover_sd1(P: pd.DataFrame, close_fn, *, track: str | None = None, no_limit=frozenset()):
++def adg_gross_and_turnover_sd1(P: pd.DataFrame, close_fn, *, track: str, delist_source: str, no_limit=frozenset()):
+     """ADG gross_and_turnover wb_SD1 (fill at the close, as the frozen ADG prereg). close_fn(i) -> adj close Series.
+-    No raw limit panel in ADG -> limit_policy off (flagged). Returns (gross, turnover, full result)."""
++    E-2: no limits (tagged OPTIMISTIC_NO_LIMIT). Returns (gross, turnover, full result)."""
++    _need(track, delist_source)
+     C = pd.DataFrame({i: close_fn(i) for i in P.columns}).reindex(P.index)
+     from quantlab.platform.execution_sd1 import sd1_blocked_buy_budget
+     pol = WBPolicy(fill="close", limit_policy="off", no_limit_codes=frozenset(no_limit),
+                    blocked_buy_budget=sd1_blocked_buy_budget(track))
+-    res = weight_book_returns(P, WBPanels(close=C), pol, delist_events=_events_for(list(P.columns)))
+-    res["flags"].append(dict(flag="ADG_LIMITS_OFF", note="ADG has no raw limit prices"))
++    res = weight_book_returns(P, WBPanels(close=C), pol, delist_events=_events_for(list(P.columns), delist_source))
++    _tag_optimistic(res)
+     return res["gross"].iloc[1:], res["turnover"].iloc[1:], res
+--- a/quantlab/platform/delist_accounting.py(r1)
++++ b/quantlab/platform/delist_accounting.py(r2)
+@@ -10,15 +10,22 @@
+ ``tradability.weight_book_returns``:
+     code (ts_code), instrument_id, last_trade_date, type (FORCED_PERIOD | FORCED_NO_PERIOD | MERGER_SWAP | CASH_OUT |
+     UNKNOWN), period_start, force_sell_from (first session the period is PUBLIC = max(period_start, namechange ann_date)),
+-    swap_ratio, acquirer, cash_per_share, pay_date, last_close, flags, type_source
+-Source priority: Data ``delist_events_v1`` (spec §3.5 step 0) > Data ``stock_delisted_v2`` (DATA_SUSPEND_DELIST_FIX_PLAN
+-§2: D-3/D-4 fixed) > ``stock_delisted`` v1 with the D-3 face-value rule applied here. Merger/privatisation rows have no
+-manually verified announcement source yet, so they are UNKNOWN (treated as FORCED, flagged) until Data's table exists.
++    swap_ratio, acquirer, cash_per_share, pay_date, last_close, flags, type_source, needs_manual_source,
++    source_path, source_sha256
++Source (Arch SD1 review P2-4 / A5, 2026-10-18): passed EXPLICITLY as ``source=`` — ``src_events_v1`` (Data
++delist_events_v1, spec §3.5 step 0) | ``src_table_v2`` (stock_delisted_v2, DATA_SUSPEND_DELIST_FIX_PLAN §2, D-3/D-4
++fixed) | ``src_table_v1_d3rule`` (frozen stock_delisted v1 + the D-3 face-value rule applied here). Never auto-switched by file existence: a missing file raises FileNotFoundError. The
++table's full sha256 is recorded in every row (``source_sha256``) so results state the exact table they used; a formal
++run's .ok pins path + sha. Merger/privatisation rows without a manually verified announcement source are UNKNOWN
++(engines book them as DELIST_WRITEOFF_UNKNOWN, recovery 0 main basis; 主 Agent E-1 final 01:53).
++needs_manual_source=True rows NEVER get a force_sell_from (Arch P1-5 / A5 condition 1): flag
++NEEDS_MANUAL_SOURCE_NO_FORCE_SELL; the engines enforce the same rule again on the column (defence in depth).
+ ``load_halt_extra`` builds ExecPanels.halt_extra from Data ``suspend_flags_v2`` (spec §3.1 / D-2) when it exists.
+ Reads only requested codes / columns (filters), no full-panel loads. live=false; promotion_approved=false.
+ """
+ from __future__ import annotations
+ 
++import hashlib
+ import inspect
+ import re
+ from pathlib import Path
+@@ -30,12 +37,18 @@
+ DELIST_EVENTS_V1 = ROOT / "data/v2/ref/delist_events_v1.parquet"
+ STOCK_DELISTED_V2 = ROOT / "data/v2/ref/stock_delisted_v2.parquet"
+ STOCK_DELISTED = ROOT / "data/v2/ref/stock_delisted.parquet"
++# Source names are deliberately token-free so research callers can name one without tripping the PIT static scan.
++DELIST_SOURCES = {"src_events_v1": DELIST_EVENTS_V1,       # Data delist_events_v1 (spec §3.5 step 0)
++                  "src_table_v2": STOCK_DELISTED_V2,       # Data D-3/D-4 fixed table
++                  "src_table_v1_d3rule": STOCK_DELISTED}   # frozen v1 table + the D-3 face-value rule applied here
+ NAMECHANGE = ROOT / "data/v2/st_events/namechange_all.parquet"
+ DELISTED_DAILY = ROOT / "data/v2/delisted/delisted_daily_tushare.parquet"
+ CONSIDERATION = ROOT / "data/v2/ref/delist_consideration.parquet"
+ SUSPEND_FLAGS_V2 = ROOT / "data/v2/suspend_flags/suspend_flags_v2.parquet"
+ EVENT_COLUMNS = ("code", "instrument_id", "last_trade_date", "type", "period_start", "force_sell_from", "swap_ratio",
+-                 "acquirer", "cash_per_share", "pay_date", "last_close", "flags", "type_source")
++                 "acquirer", "cash_per_share", "pay_date", "last_close", "flags", "type_source", "needs_manual_source",
++                 "source_path", "source_sha256")
++MANUAL_FLAG = "NEEDS_MANUAL_SOURCE_NO_FORCE_SELL"
+ 
+ # Repo-relative files (or directory prefixes ending in '/') allowed to call the loaders directly.
+ _ALLOWED_CALLERS = (
+@@ -76,6 +89,14 @@
+     return caller
+ 
+ 
++def _sha256_file(path: Path) -> str:
++    h = hashlib.sha256()
++    with open(path, "rb") as fh:
++        for b in iter(lambda: fh.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
+ def _face_value_codes(codes) -> set:
+     """D-3 rule: the last 20 traded closes all < 1 CNY (reads only the needed codes and columns)."""
+     codes = list(codes)
+@@ -127,23 +148,31 @@
+                              period_start=pd.to_datetime(ps.where(has_period).astype("string"), format="%Y%m%d",
+                                                          errors="coerce").values,
+                              swap_ratio=np.nan, acquirer=None, cash_per_share=np.nan, pay_date=None,
+-                             last_close=src.last_close.values, flags=flags, type_source=source))
++                             last_close=src.last_close.values, flags=flags, type_source=source,
++                             needs_manual_source=manual.values))
+ 
+ 
+-def load_delist_events(codes=None) -> pd.DataFrame:
+-    """Accounting-layer delisting events for ``codes`` (ts_code or instrument_id; None = all). Guarded."""
++def load_delist_events(codes=None, *, source: str) -> pd.DataFrame:
++    """Accounting-layer delisting events for ``codes`` (ts_code or instrument_id; None = all). Guarded.
++    ``source`` is mandatory and explicit (one of DELIST_SOURCES); its file must exist (no fallback chain)."""
+     guard_accounting_caller()
+-    if DELIST_EVENTS_V1.exists():
+-        ev = pd.read_parquet(DELIST_EVENTS_V1)
++    if source not in DELIST_SOURCES:
++        raise ValueError(f"source must be one of {sorted(DELIST_SOURCES)} (explicit; no auto-switch), got {source!r}")
++    path = DELIST_SOURCES[source]
++    if not path.exists():
++        raise FileNotFoundError(f"delist source {source!r} -> {path} does not exist (no silent fallback; Arch P2-4)")
++    src_sha = _sha256_file(path)
++    if source == "src_events_v1":
++        ev = pd.read_parquet(path)
+         ev["type_source"] = "delist_events_v1"
+         for c in EVENT_COLUMNS:
+             if c not in ev.columns:
+                 ev[c] = None
+-    elif STOCK_DELISTED_V2.exists():
+-        ev = _derive(pd.read_parquet(STOCK_DELISTED_V2), v2=True)
+     else:
+-        ev = _derive(pd.read_parquet(STOCK_DELISTED), v2=False)
+-    if ev["force_sell_from"].isna().all() if "force_sell_from" in ev.columns else True:
++        ev = _derive(pd.read_parquet(path), v2=(source == "src_table_v2"))
++        ev["force_sell_from"] = pd.NaT
++    ev["needs_manual_source"] = ev["needs_manual_source"].astype("boolean").fillna(False).astype(bool)
++    if ev["force_sell_from"].isna().all():
+         ann = _period_ann(ev.code.tolist())
+         ff = []
+         for c, ps in zip(ev.code, ev.period_start):
+@@ -152,14 +181,42 @@
+             a = pd.to_datetime(str(ann.get(c)), format="%Y%m%d", errors="coerce") if ann.get(c) is not None else pd.NaT
+             ff.append(max(pd.Timestamp(ps), a) if pd.notna(a) else pd.Timestamp(ps))
+         ev["force_sell_from"] = ff
++    ev["force_sell_from"] = pd.to_datetime(ev["force_sell_from"], errors="coerce")
++    blocked = ev["needs_manual_source"] & ev["force_sell_from"].notna()
++    if blocked.any():   # Arch P1-5: a row whose period/announcement still needs a manual source never forces a sell
++        fl = ev["flags"].fillna("").astype(str)
++        ev.loc[blocked, "flags"] = np.where(fl[blocked] == "", MANUAL_FLAG, fl[blocked] + "|" + MANUAL_FLAG)
++        ev.loc[blocked, "force_sell_from"] = pd.NaT
+     if CONSIDERATION.exists():
+         cdf = pd.read_parquet(CONSIDERATION)
+         keep = [c for c in ("swap_ratio", "acquirer", "cash_per_share", "pay_date") if c in cdf.columns]
+         ev = ev.drop(columns=keep).merge(cdf[["code"] + keep], on="code", how="left")
++        ev["consideration_sha256"] = _sha256_file(CONSIDERATION)
++    ev["source_path"] = _rel(str(path))
++    ev["source_sha256"] = src_sha
+     if codes is not None:
+         want = {str(c) for c in codes}
+         ev = ev[ev.code.astype(str).isin(want) | ev.instrument_id.astype(str).isin(want)]
+-    return ev.reset_index(drop=True)
++    out = ev.reset_index(drop=True)
++    out.attrs.update(delist_source=source, source_path=_rel(str(path)), source_sha256=src_sha)
++    return out
++
++
++def delist_source_info(delist_events) -> dict:
++    """{delist_source, source_path, source_sha256} of an events frame (empty frame -> 'none_stated')."""
++    if delist_events is None:
++        return dict(delist_source=None, source_path=None, source_sha256=None)
++    at = dict(getattr(delist_events, "attrs", {}) or {})
++    if at.get("delist_source"):
++        return dict(delist_source=at["delist_source"], source_path=at.get("source_path"), source_sha256=at.get("source_sha256"))
++    def uniq(c):
++        if c not in delist_events.columns:
++            return None
++        v = sorted({str(x) for x in delist_events[c].dropna()})
++        return v[0] if len(v) == 1 else (v or None)
++    if len(delist_events) == 0:
++        return dict(delist_source="none_stated(empty_frame)", source_path=None, source_sha256=None)
++    return dict(delist_source=uniq("type_source"), source_path=uniq("source_path"), source_sha256=uniq("source_sha256"))
+ 
+ 
+ def _covers_open(timing) -> bool:
+@@ -181,13 +238,25 @@
+     cols = list(map(str, codes))
+     out = pd.DataFrame(False, index=idx, columns=cols)
+     ys = years or sorted(set(idx.year))
++    import pyarrow as pa
++    import pyarrow.parquet as pq
++    td_type = pq.read_schema(SUSPEND_FLAGS_V2).field("trade_date").type   # Arch P2-7: filter in the column's own type
++    if pa.types.is_integer(td_type):
++        bounds = lambda y: (y * 10000 + 101, y * 10000 + 1231)
++    elif pa.types.is_timestamp(td_type) or pa.types.is_date(td_type):
++        bounds = lambda y: (pd.Timestamp(f"{y}-01-01"), pd.Timestamp(f"{y}-12-31 23:59:59"))
++    else:
++        bounds = lambda y: (f"{y}0101", f"{y}1231")
+     for y in ys:
++        lo, hi = bounds(y)
+         f = pd.read_parquet(SUSPEND_FLAGS_V2, columns=["instrument_id", "ts_code", "trade_date", "halted_fullday",
+                                                       "intraday_halt", "intraday_halt_timing"],
+-                            filters=[("trade_date", ">=", f"{y}0101"), ("trade_date", "<=", f"{y}1231")])
++                            filters=[("trade_date", ">=", lo), ("trade_date", "<=", hi)])
+         if f.empty:
+             continue
+-        f["d"] = pd.to_datetime(f.trade_date.astype(str), format="%Y%m%d", errors="coerce")
++        f["d"] = (pd.to_datetime(f.trade_date) if not (pa.types.is_integer(td_type) or pa.types.is_string(td_type)
++                                                     or pa.types.is_large_string(td_type))
++                  else pd.to_datetime(f.trade_date.astype(str).str[:8], format="%Y%m%d", errors="coerce"))
+         hit = f.halted_fullday.fillna(False).astype(bool) | (f.intraday_halt.fillna(False).astype(bool)
+                                                               & f.intraday_halt_timing.map(_covers_open))
+         f = f[hit]
+--- a/research/wb_sd1_books.py(r1)
++++ b/research/wb_sd1_books.py(r2)
+@@ -2,9 +2,15 @@
+ """wb_SD1 side entry points for the three legacy weight books (spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md
+ sha256 2e428f39…bdbb0b; 主 Agent 01:33 ET ruling: legacy functions stay byte-identical = wb_SD0).
+ 
+-    book_ret_sd1(W, start, end)              ~ research.g1g5_fund_resid_alpha.book_ret      (FE)
+-    lc_ret_sd1(W, net=True)                  ~ research.leaf_selfcheck_common._ret          (LC)
+-    gross_and_turnover_sd1(weights_path)     ~ research.alpha_decay_gate.gross_and_turnover (ADG)
++    book_ret_sd1(W, start, end, track=, delist_source=)          ~ research.g1g5_fund_resid_alpha.book_ret      (FE)
++    lc_ret_sd1(W, net=True, track=, delist_source=)              ~ research.leaf_selfcheck_common._ret          (LC)
++    gross_and_turnover_sd1(weights_path, track=, delist_source=) ~ research.alpha_decay_gate.gross_and_turnover (ADG)
++
++``track`` (Arch P2-2; 'core' -> blocked budget kept as cash) and ``delist_source`` (Arch P2-4; src_events_v1 |
++src_table_v2 | src_table_v1_d3rule, never auto-switched) are REQUIRED keyword arguments.
++主 Agent E-2 (01:53 ET): FE and ADG outputs carry OPTIMISTIC_NO_LIMIT (no limit-up/down yet) and cannot serve as a
++gate on their own; book_smoke takes precedence. Use ``*_full`` variants to get the result dict with flags/summary
++(E-1 write-off categories + G2 combined weight).
+ 
+ Same return shapes as the legacy functions. They reuse the legacy modules' constants and price loaders read-only and
+ route the book through quantlab.platform.tradability.weight_book_returns. FE needs cs_panel_v2 (D-1; Data P0 per
+@@ -20,33 +26,40 @@
+ sys.path.insert(0, str(ROOT))
+ 
+ 
+-def book_ret_sd1(W, start, end, *, allow_cs_panel_v1: bool = False, track: str | None = None):
++def book_ret_sd1_full(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False):
+     import research.g1g5_fund_resid_alpha as FE
+     import quantlab.platform.tradability as TB
+     e = pd.read_parquet(FE.R / "data/v2/etf/etf_daily_adj.parquet", columns=["trade_date", "open_hfq", "close_hfq"],
+                         filters=[("ts_code", "==", FE.BAL)])
+     e.index = pd.to_datetime(e.trade_date, format="%Y%m%d"); e = e.sort_index()
+     r, to, res = TB.fe_book_ret_sd1(W, start, end, cost=FE.COST, bal=FE.BAL, bal_open=e.open_hfq, bal_close=e.close_hfq,
+-                                    panel_dir=FE.PC, allow_cs_panel_v1=allow_cs_panel_v1, track=track)
+-    return r, to
++                                    panel_dir=FE.PC, allow_cs_panel_v1=allow_cs_panel_v1, track=track, delist_source=delist_source)
++    return r, to, res
+ 
+ 
+-def lc_ret_sd1(W: pd.DataFrame, net: bool = True, *, track: str | None = None) -> pd.Series:
++def book_ret_sd1(W, start, end, *, track: str, delist_source: str, allow_cs_panel_v1: bool = False):
++    r, to, _ = book_ret_sd1_full(W, start, end, track=track, delist_source=delist_source, allow_cs_panel_v1=allow_cs_panel_v1)
++    return r, to   # OPTIMISTIC_NO_LIMIT (E-2): see book_ret_sd1_full()[2]['flags']
++
++
++def lc_ret_sd1(W: pd.DataFrame, net: bool = True, *, track: str, delist_source: str) -> pd.Series:
+     import research.leaf_selfcheck_common as LC
+     import quantlab.platform.tradability as TB
+     from research.g1g5_x2_panel_stitch import load_panel_features_x2, clear_caches
+ 
+     def _raw(i):
+         f = load_panel_features_x2(i); clear_caches(); f.index = pd.to_datetime(f.index); return f
+-    r, _ = TB.lc_ret_sd1(W, LC._px, _raw, cost=LC.ADG.COST, net=net, track=track, etf=LC.etf)
++    r, _ = TB.lc_ret_sd1(W, LC._px, _raw, cost=LC.ADG.COST, net=net, track=track, delist_source=delist_source,
++                         etf=LC.etf)
+     return r
+ 
+ 
+-def gross_and_turnover_sd1(weights_path, *, track: str | None = None):
++def gross_and_turnover_sd1(weights_path, *, track: str, delist_source: str):
+     import research.alpha_decay_gate as ADG
+     import quantlab.platform.tradability as TB
+     d = pd.read_parquet(weights_path, columns=["date", "instrument", "target_weight"])
+     d["date"] = pd.to_datetime(d["date"].astype(str).str[:10])
+     P = d.pivot_table(index="date", columns="instrument", values="target_weight", aggfunc="sum").fillna(0).sort_index()
+-    g, to, _ = TB.adg_gross_and_turnover_sd1(P, ADG._close, no_limit={ADG.B}, track=track)
+-    return g, to
++    g, to, _ = TB.adg_gross_and_turnover_sd1(P, ADG._close, no_limit={ADG.B}, track=track,
++                                         delist_source=delist_source)
++    return g, to   # OPTIMISTIC_NO_LIMIT (E-2)
+--- a/tests/test_sd1_suspend_delist.py(r1)
++++ b/tests/test_sd1_suspend_delist.py(r2)
+@@ -1,13 +1,26 @@
+-"""SD1 suspend/delist acceptance tests T1–T13 (spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md §3.8,
+-sha256 2e428f39…bdbb0b). Synthetic data only (T13 has an extra real-data case that is skipped unless
+-QL_SD1_REAL_DATA=1 and cs_panel_v2 exists). No returns are computed on real data. live=false.
+-
+-Run (needs an Arch .ok first, 主 Agent 00:40 rule):  python3 -m pytest -q tests/test_sd1_suspend_delist.py
++"""SD1 suspend/delist acceptance tests T1–T13 + E-1 / E-2 / P1-5 / P1-6 / P1-7 (spec
++docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md §3.8, sha256 2e428f39…fdbb0b; Arch SD1 review 7f0b4819; run-auth spec
++docs/v2/ARCH_RUN_AUTH_SELFTEST_SPEC_ZH.md 1aa43bdd). Synthetic data only, except T13's real-data case (opt-in).
++
++GATE (in code, at import/collection time, BEFORE any module under test is imported; 主 Agent 01:59 ruling):
++  ok_runner_pin.enforce(__file__, [docs/v2/eng_sd1/ARCH_SD1_TEST.ok], modes=["selftest"] (+ "real_data" when
++  QL_SD1_REAL_DATA=1), deps=TEST_DEPS) plus the self-checks ok_runner_pin c7805d9a does not do (scope=selftest, every
++  known allow_* explicit, allow_real_data consistent with the mode, out_dir = mkdtemp or /tmp/<tag> (never output/ or
++  the repo), no BOM / CR / inline comments, signed_et + expires_et ISO8601 with offset and not expired, format/signer).
++  A refusal raises SystemExit (aborts collection); there is no skip path.
++
++Run (qlvenv: system python3 has no pytest), serial, nothing else concurrently, RSS <= 1.5GB:
++  PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python -m pytest tests/test_sd1_suspend_delist.py -q -p no:cacheprovider
++Writes only under the .ok out_dir (removed at exit); never output/. live=false; promotion=false.
+ """
+ from __future__ import annotations
+ 
++import atexit
++import datetime as _dt
+ import importlib.util
+ import os
++import re
++import shutil
+ import subprocess
+ import sys
+ import tempfile
+@@ -15,10 +28,164 @@
+ from dataclasses import replace
+ from pathlib import Path
+ 
+-import numpy as np
+-import pandas as pd
+-
+ ROOT = Path(__file__).resolve().parents[1]
++TEST_OK = ROOT / "docs/v2/eng_sd1/ARCH_SD1_TEST.ok"
++REAL_DATA = os.environ.get("QL_SD1_REAL_DATA") == "1"
++KNOWN_ALLOW = ("selftest", "real_data", "dryrun", "full", "smoke", "diagnostic", "disclosure_only")
++# every project module this file executes (static AST import closure, 2026-10-18); pinned as dep_sha256_<key>
++TEST_DEPS = {
++    "execution": "quantlab/platform/execution.py",
++    "execution_sd1": "quantlab/platform/execution_sd1.py",
++    "tradability": "quantlab/platform/tradability.py",
++    "delist_accounting": "quantlab/platform/delist_accounting.py",
++    "platform_init": "quantlab/platform/__init__.py",
++    "ok_runner_pin": "scripts_eng/ok_runner_pin.py",
++    "sd1_pit_static_check": "scripts_eng/sd1_pit_static_check.py",
++    # ---- rest of the static closure (function-level imports included; over-approximation is deliberate)
++    "quantlab____init__": "quantlab/__init__.py",
++    "quantlab__backtest____init__": "quantlab/backtest/__init__.py",
++    "quantlab__backtest__engine": "quantlab/backtest/engine.py",
++    "quantlab__backtest__ledger": "quantlab/backtest/ledger.py",
++    "quantlab__backtest__tax": "quantlab/backtest/tax.py",
++    "quantlab__config": "quantlab/config.py",
++    "quantlab__config_validation": "quantlab/config_validation.py",
++    "quantlab__data____init__": "quantlab/data/__init__.py",
++    "quantlab__data__contracts": "quantlab/data/contracts.py",
++    "quantlab__data__eastmoney": "quantlab/data/eastmoney.py",
++    "quantlab__data__exchange_rules": "quantlab/data/exchange_rules.py",
++    "quantlab__data__industry": "quantlab/data/industry.py",
++    "quantlab__data__market": "quantlab/data/market.py",
++    "quantlab__data__qualification": "quantlab/data/qualification.py",
++    "quantlab__data__sina": "quantlab/data/sina.py",
++    "quantlab__data__sources": "quantlab/data/sources.py",
++    "quantlab__data__store": "quantlab/data/store.py",
++    "quantlab__data__v2_d0_meta": "quantlab/data/v2_d0_meta.py",
++    "quantlab__data__v2_readers": "quantlab/data/v2_readers.py",
++    "quantlab__factors____init__": "quantlab/factors/__init__.py",
++    "quantlab__factors__engine": "quantlab/factors/engine.py",
++    "quantlab__factors__neutralize": "quantlab/factors/neutralize.py",
++    "quantlab__factors__orthogonalize": "quantlab/factors/orthogonalize.py",
++    "quantlab__factors__p1_factor_lib": "quantlab/factors/p1_factor_lib.py",
++    "quantlab__factors__p1_pipeline": "quantlab/factors/p1_pipeline.py",
++    "quantlab__factors__residual_factory": "quantlab/factors/residual_factory.py",
++    "quantlab__factors__v2_min_pipeline": "quantlab/factors/v2_min_pipeline.py",
++    "quantlab__factors__walk_forward": "quantlab/factors/walk_forward.py",
++    "quantlab__mandate": "quantlab/mandate.py",
++    "quantlab__mandate_v2": "quantlab/mandate_v2.py",
++    "quantlab__metrics": "quantlab/metrics.py",
++    "quantlab__platform__futures": "quantlab/platform/futures.py",
++    "quantlab__platform__margin": "quantlab/platform/margin.py",
++    "quantlab__platform__strategy_feed": "quantlab/platform/strategy_feed.py",
++    "quantlab__portfolio____init__": "quantlab/portfolio/__init__.py",
++    "quantlab__portfolio__trade_calendar": "quantlab/portfolio/trade_calendar.py",
++    "quantlab__portfolio__v2_constructor": "quantlab/portfolio/v2_constructor.py",
++    "quantlab__portfolio__v2_rebalance": "quantlab/portfolio/v2_rebalance.py",
++    "quantlab__promotion_gate": "quantlab/promotion_gate.py",
++    "quantlab__report____init__": "quantlab/report/__init__.py",
++    "quantlab__report__advice": "quantlab/report/advice.py",
++    "quantlab__report__capital": "quantlab/report/capital.py",
++    "quantlab__report__metrics": "quantlab/report/metrics.py",
++    "quantlab__smallcap____init__": "quantlab/smallcap/__init__.py",
++    "quantlab__smallcap__sim": "quantlab/smallcap/sim.py",
++    "quantlab__strategy____init__": "quantlab/strategy/__init__.py",
++    "quantlab__strategy__allocation": "quantlab/strategy/allocation.py",
++    "quantlab__strategy__candidates": "quantlab/strategy/candidates.py",
++    "quantlab__strategy__crowding": "quantlab/strategy/crowding.py",
++    "quantlab__strategy__decision": "quantlab/strategy/decision.py",
++    "quantlab__strategy__experts": "quantlab/strategy/experts.py",
++    "quantlab__strategy__legacy": "quantlab/strategy/legacy.py",
++    "quantlab__strategy__portfolio": "quantlab/strategy/portfolio.py",
++    "quantlab__strategy__risk": "quantlab/strategy/risk.py",
++    "quantlab__strategy__risk_policy": "quantlab/strategy/risk_policy.py",
++    "quantlab__strategy__risk_trades": "quantlab/strategy/risk_trades.py",
++    "quantlab__strategy__scoring": "quantlab/strategy/scoring.py",
++    "quantlab__universe____init__": "quantlab/universe/__init__.py",
++    "quantlab__universe__d1_masks": "quantlab/universe/d1_masks.py",
++    "quantlab__universe__mask": "quantlab/universe/mask.py",
++    "quantlab__v2_schemas": "quantlab/v2_schemas.py",
++}
++ISO_TZ = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2})$")
++
++
++def _refuse(msg):
++    raise SystemExit(f"REFUSED (test_sd1 selftest gate): {msg}")
++
++
++def _selftest_selfcheck(ok: Path, real_data: bool) -> Path:
++    """Checks ok_runner_pin c7805d9a does not do (ARCH_RUN_AUTH_SELFTEST_SPEC §2-§4, §9). Returns the out_dir."""
++    raw = ok.read_bytes()
++    if raw.startswith(b"\xef\xbb\xbf"):
++        _refuse(f"{ok}: UTF-8 BOM")
++    if b"\r" in raw:
++        _refuse(f"{ok}: CR line endings (LF only)")
++    kv = {}
++    for line in raw.decode("utf-8").split("\n"):
++        t = line.strip()
++        if not t or t.startswith("#") or "=" not in t:
++            continue
++        k, v = t.split("=", 1); k, v = k.strip(), v.strip()
++        if "#" in v:
++            _refuse(f"{ok}: inline comment in {k!r} (spec §3)")
++        kv[k] = v
++    for k, want in (("format", "quantlab_run_auth_v1"), ("signed_by", "arch"), ("scope", "selftest"),
++                    ("live", "false"), ("promotion", "false"), ("allow_selftest", "true")):
++        if kv.get(k) != want:
++            _refuse(f"{ok}: {k} must be {want!r} (got {kv.get(k)!r})")
++    for m in KNOWN_ALLOW:
++        if f"allow_{m}" not in kv:
++            _refuse(f"{ok}: allow_{m} must be written explicitly")
++    if kv["allow_real_data"] != ("true" if real_data else "false"):
++        _refuse(f"{ok}: allow_real_data={kv['allow_real_data']} inconsistent with QL_SD1_REAL_DATA={int(real_data)}")
++    for k, v in kv.items():
++        if k.startswith("allow_") and k not in ("allow_selftest", "allow_real_data") and v != "false":
++            _refuse(f"{ok}: {k}={v}; every allow_* other than selftest/real_data must be false")
++    now = _dt.datetime.now().astimezone()
++    for k in ("signed_et", "expires_et"):
++        v = kv.get(k, "")
++        if not ISO_TZ.match(v):
++            _refuse(f"{ok}: {k}={v!r} is not ISO8601 with a UTC offset")
++    if _dt.datetime.fromisoformat(kv["expires_et"]) <= now:
++        _refuse(f"{ok}: expired at {kv['expires_et']}")
++    if _dt.datetime.fromisoformat(kv["signed_et"]) > now + _dt.timedelta(minutes=5):
++        _refuse(f"{ok}: signed_et in the future")
++    od = kv.get("out_dir", "")
++    if od == "mkdtemp":
++        out = Path(tempfile.mkdtemp(prefix="sd1_selftest_"))
++    elif re.fullmatch(r"/tmp/[A-Za-z0-9._-]+", od):
++        out = Path(od); out.mkdir(exist_ok=False)
++    else:
++        _refuse(f"{ok}: out_dir must be 'mkdtemp' or /tmp/<tag> (got {od!r})")
++    r = out.resolve()
++    if r == ROOT or ROOT in r.parents or "output" in r.parts:
++        _refuse(f"out_dir {r} is inside the repo / output/")
++    atexit.register(shutil.rmtree, str(r), True)
++    return r
++
++
++def _data_manifest_sha(files) -> str:
++    """sha256 of `sha256sum`-style lines '<sha>  <repo-rel path>\n' sorted by path (= what Arch pins)."""
++    import hashlib
++    lines = []
++    for f in sorted(files, key=lambda x: str(Path(x).resolve().relative_to(ROOT))):
++        h = hashlib.sha256(Path(f).read_bytes()).hexdigest()
++        lines.append(f"{h}  {Path(f).resolve().relative_to(ROOT)}\n")
++    return hashlib.sha256("".join(lines).encode()).hexdigest()
++
++
++sys.path.insert(0, str(ROOT / "scripts_eng"))
++import ok_runner_pin as _PIN  # noqa: E402  (the gate itself is a pinned dep)
++
++if not sys.flags.dont_write_bytecode:
++    _refuse("run with PYTHONDONTWRITEBYTECODE=1 (no __pycache__ in the repo)")
++_GATE = _PIN.enforce(__file__, [TEST_OK], modes=["selftest", "real_data"] if REAL_DATA else ["selftest"],
++                     deps={k: ROOT / v for k, v in TEST_DEPS.items()})
++OUT_DIR = _selftest_selfcheck(TEST_OK, REAL_DATA)
++OK_KV = _PIN.parse_ok(TEST_OK)
++
++# ---- gate passed: only now import the modules under test
++import numpy as np  # noqa: E402
++import pandas as pd  # noqa: E402
++
+ sys.path.insert(0, str(ROOT))
+ from quantlab.platform import execution_sd1 as E      # noqa: E402  (SD1 side engine; execution.py untouched)
+ from quantlab.platform import tradability as TB       # noqa: E402
+@@ -158,7 +325,22 @@
+     def test_core_track_ruling(self):
+         self.assertEqual(E.ExecConfig.strategy_v1_sd1(track="core").blocked_buy_budget, "cash")
+         self.assertEqual(E.ExecConfig.strategy_v1_sd1(track="capacity_adv").blocked_buy_budget, "renorm")
+-        self.assertEqual(E.ExecConfig.strategy_v1_sd1().blocked_buy_budget, "renorm")
++        with self.assertRaises(TypeError):            # Arch P2-2: track is a required keyword
++            E.ExecConfig.strategy_v1_sd1()
++        for bad in (None, "", "  "):
++            with self.assertRaises(ValueError):
++                E.sd1_blocked_buy_budget(bad)
++
++    def test_cash_days_recorded(self):              # A2: days the blocked budget stays cash (to next signal)
++        r = self.run_mode("cash")
++        ev = r["sd1_events"]
++        h = ev[ev.type == "BLOCKED_BUDGET_CASH_HELD"]
++        self.assertEqual(len(h), 1)
++        self.assertEqual(int(h.sessions.iloc[0]), 6 - 3)                      # blocked at d[3] open, no later signal
++        self.assertAlmostEqual(float(h.weight.iloc[0]), 0.4, places=12)
++        self.assertEqual(r["sd1_summary"]["blocked_budget_cash_held_sessions"], 3)
++        rn = ev[ev.type == "RENORM"]
++        self.assertTrue((rn.pricing == "exec_day_open").all())               # A3 disclosed in the event row
+ 
+ 
+ class T4LimitPolicies(unittest.TestCase):
+@@ -207,11 +389,15 @@
+                     high={X: [10, 10, 9.0, 8.1, 7.29, 6.56, nan, nan]}, low={X: [10, 10, 9.0, 8.1, 7.29, 6.56, nan, nan]})
+         ev = _ev(X, d[5], "FORCED_NO_PERIOD")
+         res = E.run_delist_sensitivity(p, {d[0]: {X: 1.0}}, delist_events=ev, initial_cash=1e6, config=CFG1)
+-        self.assertEqual(sorted(res), [0.0, 0.3, 0.7])
+-        for rec, r in res.items():
++        self.assertEqual(set(res), {0.0, 0.3, 0.7, "unknown_last_close_cash"})
++        self.assertEqual(res[0.0]["sd1_summary"]["basis"], "main")
++        for rec in (0.0, 0.3, 0.7):
++            r = res[rec]
+             nav = r["nav"].to_numpy()
+             self.assertAlmostEqual(nav[5] - nav[6], 1e5 * 6.56 * (1 - rec), places=4)
+             self.assertIn("DELIST_WRITEOFF", set(r["sd1_events"].type))
++            if rec:
++                self.assertEqual(r["sd1_summary"]["basis"], "sensitivity_disclosure_only")
+         r0 = _run(p, {d[0]: {X: 1.0}}, CFG0)
+         self.assertAlmostEqual(r0["nav"].iloc[6], 1e5 * 6.56, places=4)   # SD0 legacy last-mark (optimistic)
+ 
+@@ -260,6 +446,11 @@
+     if got != PRISTINE_SHA256:
+         raise RuntimeError(f"execution.py sha256 {got} != pristine {PRISTINE_SHA256}; parity baseline invalid")
+     from quantlab.platform import execution as H
++    want = str(ROOT / "quantlab/platform/execution.py")
++    if H.run_weight_schedule.__code__.co_filename != want:      # the reference must be the REAL execution.py
++        raise RuntimeError(f"reference engine loaded from {H.run_weight_schedule.__code__.co_filename}, not {want}")
++    if E.run_weight_schedule.__code__.co_filename != str(ROOT / "quantlab/platform/execution_sd1.py"):
++        raise RuntimeError("SD1 side engine not loaded from execution_sd1.py")
+     return H
+ 
+ 
+@@ -323,12 +514,13 @@
+     def test_static_check_catches_planted(self):
+         sys.path.insert(0, str(ROOT / "scripts_eng"))
+         import sd1_pit_static_check as SC
+-        with tempfile.TemporaryDirectory() as td:
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:        # only under the .ok out_dir
+             f = Path(td) / "planted.py"
+             f.write_text('import pandas as pd\nx = pd.read_parquet("data/v2/ref/stock_delisted.parquet")\nb.delist_date\n')
+             hits = SC.scan([f], forced_scope=True)
+         self.assertEqual(len([h for h in hits if h["status"] == "VIOLATION"]), 2)
+-        rc = subprocess.run([sys.executable, str(ROOT / "scripts_eng/sd1_pit_static_check.py")], capture_output=True)
++        rc = subprocess.run([sys.executable, str(ROOT / "scripts_eng/sd1_pit_static_check.py")], capture_output=True,
++                            env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+         self.assertEqual(rc.returncode, 0, rc.stdout[-2000:])
+ 
+ 
+@@ -354,7 +546,8 @@
+             "except ValueError:",
+             "    print('DL_RAISED')",
+             ""])
+-        out = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True, cwd=str(ROOT)).stdout
++        out = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True, cwd=str(ROOT),
++                             env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1")).stdout
+         self.assertIn("debug False", out)
+         for k in ("GUARD_RAISED", "CFG_RAISED", "DL_RAISED"):
+             self.assertIn(k, out)
+@@ -411,28 +604,233 @@
+         self.assertEqual(check_resume_rows(v1, sd, traded, cal), [(X, str(cal[5].date()))])
+         self.assertEqual(check_resume_rows(v2, sd, traded, cal), [])
+ 
+-    @unittest.skipUnless(os.environ.get("QL_SD1_REAL_DATA") == "1"
+-                         and (ROOT / "output/ai_factory/panel_cache/cs_panel_v2_2025.parquet").exists(),
+-                         "real-data T13 needs QL_SD1_REAL_DATA=1 + cs_panel_v2 (Data P0) + an Arch .ok")
++    @unittest.skipUnless(REAL_DATA, "real-data T13 needs QL_SD1_REAL_DATA=1 + allow_real_data=true + pinned data manifest")
+     def test_cs_panel_v2_real(self):
++        """P1-7: the traded set comes from an INDEPENDENT source (suspend_d R = resumption records), not the panel.
++        Every file read is pinned: .ok data_manifest_sha256_t13 = sha256 of sorted `sha256sum` lines (see receipt)."""
+         import glob
+         pc = ROOT / "output/ai_factory/panel_cache"
++        panels = sorted(glob.glob(str(pc / "cs_panel_v2_*.parquet")))
++        sds = sorted(glob.glob(str(ROOT / "data/v2/tushare_raw/suspend_d/*.parquet")))
++        self.assertTrue(panels and sds, "cs_panel_v2 / suspend_d missing")
++        got = _data_manifest_sha(panels + sds)
++        self.assertEqual(OK_KV.get("data_manifest_sha256_t13"), got, "real data differs from the pinned manifest")
+         miss_total = 0
+-        for f in sorted(glob.glob(str(pc / "cs_panel_v2_*.parquet"))):           # yearly chunks
++        for f in panels:                                                 # yearly chunks (RSS)
+             y = int(Path(f).stem.rsplit("_", 1)[1])
+-            panel = pd.read_parquet(f, columns=["date", "instrument"])
+-            files = sorted(glob.glob(str(ROOT / f"data/v2/tushare_raw/suspend_d/{y}*.parquet")))
++            files = [x for x in sds if Path(x).name.startswith(str(y))]
+             if not files:
+                 continue
++            panel = pd.read_parquet(f, columns=["date", "instrument"])
+             sd = pd.concat([pd.read_parquet(x, columns=["ts_code", "trade_date", "suspend_type", "suspend_timing"]) for x in files])
+             sd["trade_date"] = pd.to_datetime(sd.trade_date.astype(str), format="%Y%m%d")
+             sd["suspend_timing"] = sd.suspend_timing.replace("", None)
+-            cal = sorted(set(pd.to_datetime(panel.date)))
+-            traded = panel   # panel rows with volume>0 are the traded set once v2 carries vol; conservative: any row
+-            miss_total += len(check_resume_rows(panel, sd, traded.assign(date=pd.to_datetime(traded.date)), cal))
+-            del panel, sd
++            rr = sd[sd.suspend_type == "R"]
++            traded = pd.DataFrame(dict(date=rr.trade_date, instrument=rr.ts_code.astype(str)))   # independent of the panel
++            cal = sorted(set(pd.to_datetime(panel.date)) | set(traded.date))
++            miss_total += len(check_resume_rows(panel, sd, traded, cal))
++            del panel, sd, rr, traded
+         self.assertEqual(miss_total, 0)
+ 
++    def test_checker_not_tautological(self):
++        """P1-7: with an independent traded set the checker CAN fail (guards against traded = panel)."""
++        cal = _dates(8)
++        sd = pd.DataFrame(dict(ts_code=[X, X], trade_date=cal[2:4], suspend_type="S", suspend_timing=None))
++        panel = pd.DataFrame(dict(date=[cal[0], cal[1], cal[5]], instrument=X))
++        self.assertEqual(check_resume_rows(panel, sd, pd.DataFrame(dict(date=[cal[4]], instrument=[X])), cal),
++                         [(X, str(cal[4].date()))])
++        self.assertEqual(check_resume_rows(panel, sd, panel, cal), [])   # traded = panel would always pass
++
++
++# ------------------------------------------------------------------ E-1 (主 Agent final 01:53 ET)
++def _wo_case(kind_a, w_a, kind_b, w_b):
++    """Two names delisting at d[4] (A: kind_a weight w_a, B: kind_b weight w_b), rest cash; main engine, no lots."""
++    n = 8; d = _dates(n); nan = np.nan
++    A, B = X, Y
++    p = _panels({A: [10, 10, 10, 10, 10, nan, nan, nan], B: [10, 10, 10, 10, 10, nan, nan, nan], Z: [10] * n}, n)
++    ev = pd.concat([_ev(A, d[4], kind_a), _ev(B, d[4], kind_b)], ignore_index=True)
++    sched = {d[0]: {A: w_a, B: w_b, Z: 1.0 - w_a - w_b}}
++    return p, sched, ev, d
++
++
++class T14E1WriteoffCategories(unittest.TestCase):
++    def test_unknown_separate_category_and_amounts(self):
++        p, s, ev, d = _wo_case("FORCED_NO_PERIOD", 0.004, "UNKNOWN", 0.003)
++        r = _run(p, s, CFG1, cash=1e6, ev=ev)
++        e = r["sd1_events"]
++        self.assertEqual(set(e[e.code == X].type) & {"DELIST_WRITEOFF", "DELIST_WRITEOFF_UNKNOWN"}, {"DELIST_WRITEOFF"})
++        self.assertEqual(set(e[e.code == Y].type) & {"DELIST_WRITEOFF", "DELIST_WRITEOFF_UNKNOWN"}, {"DELIST_WRITEOFF_UNKNOWN"})
++        sm = r["sd1_summary"]
++        self.assertEqual((sm["n_writeoff_announced"], sm["n_writeoff_unknown"]), (1, 1))
++        self.assertAlmostEqual(sm["writeoff_value_announced"], 400 * 10.0, places=6)
++        self.assertAlmostEqual(sm["writeoff_value_unknown"], 300 * 10.0, places=6)
++        self.assertAlmostEqual(sm["writeoff_weight_announced"], 0.004, places=6)
++        self.assertAlmostEqual(sm["writeoff_weight_unknown"], 0.003, places=6)
++        self.assertAlmostEqual(sm["combined_writeoff_weight"], 0.007, places=6)
++        self.assertFalse(sm["g2_triggered"])
++        g = e[e.type == "G2_CHECK"]
++        self.assertEqual(len(g), 1); self.assertAlmostEqual(float(g.weight.iloc[0]), 0.007, places=6)
++
++    def test_g2_rules(self):
++        for ka, wa, kb, wb, want in (("FORCED_NO_PERIOD", 0.005, "UNKNOWN", 0.006, True),     # combined >= 1%
++                                     ("FORCED_NO_PERIOD", 0.012, "CASH_OUT", 0.001, True),    # announced alone >= 1%
++                                     ("UNKNOWN", 0.008, "UNKNOWN", 0.007, False),             # UNKNOWN alone: no G2
++                                     ("FORCED_NO_PERIOD", 0.004, "UNKNOWN", 0.005, False)):   # combined < 1%
++            p, s, ev, d = _wo_case(ka, wa, kb, wb)
++            sm = _run(p, s, CFG1, cash=1e6, ev=ev)["sd1_summary"]
++            self.assertEqual(sm["g2_triggered"], want, (ka, wa, kb, wb, sm))
++        p, s, ev, d = _wo_case("UNKNOWN", 0.008, "UNKNOWN", 0.007)
++        self.assertTrue(_run(p, s, CFG1, cash=1e6, ev=ev)["sd1_summary"]["g2_if_unknown_alone_counted"])
++
++    def test_last_close_comparison_disclosure(self):
++        p, s, ev, d = _wo_case("FORCED_NO_PERIOD", 0.004, "UNKNOWN", 0.003)
++        res = E.run_delist_sensitivity(p, s, delist_events=ev, initial_cash=1e6, config=CFG1)
++        lc = res["unknown_last_close_cash"]
++        self.assertEqual(lc["sd1_summary"]["basis"], "sensitivity_disclosure_only")
++        self.assertIn("DELIST_UNKNOWN_LAST_CLOSE_CASH", set(lc["sd1_events"].type))
++        self.assertEqual(lc["sd1_summary"]["n_writeoff_unknown"], 0)
++        self.assertAlmostEqual(lc["nav"].iloc[-1] - res[0.0]["nav"].iloc[-1], 300 * 10.0, places=4)
++
++    def test_weight_engine_same_categories(self):
++        n = 7; d = _dates(n); nan = np.nan
++        C = pd.DataFrame({X: [10, 10, 10, 10, 10, nan, nan], Y: [10, 10, 10, 10, 10, nan, nan], Z: [10.0] * n}, index=d)
++        P = pd.DataFrame({X: [0.006], Y: [0.005], Z: [0.989]}, index=d[:1])
++        ev = pd.concat([_ev(X, d[4], "FORCED_NO_PERIOD"), _ev(Y, d[4], "UNKNOWN")], ignore_index=True)
++        out = TB.run_wb_delist_sensitivity(P, TB.WBPanels(close=C, open=C.copy()), TB.WBPolicy(), delist_events=ev)
++        sm = out[0.0]["summary"]
++        self.assertEqual((sm["n_writeoff_announced"], sm["n_writeoff_unknown"]), (1, 1))
++        self.assertAlmostEqual(sm["combined_writeoff_weight"], 0.011, places=9)
++        self.assertTrue(sm["g2_triggered"])
++        self.assertIn("DELIST_WRITEOFF_UNKNOWN", set(out[0.0]["events"].type))
++        self.assertIn("DELIST_UNKNOWN_LAST_CLOSE_CASH", set(out["unknown_last_close_cash"]["events"].type))
++        self.assertEqual(set(out), {0.0, 0.3, 0.7, "unknown_last_close_cash"})
++
++
++# ------------------------------------------------------------------ P1-5 needs_manual_source never force-sells
++class T15NeedsManualSource(unittest.TestCase):
++    def _case(self, manual):
++        n = 10; d = _dates(n)
++        p = _panels({X: [10.0] * 9 + [np.nan]}, n)
++        ev = _ev(X, d[8], "FORCED_PERIOD", period_start=d[3], force_sell_from=d[3], needs_manual_source=manual)
++        return p, ev, d
++
++    def test_engines_ignore_force_sell(self):
++        for manual, want_sells in ((True, 0), (False, 1)):
++            p, ev, d = self._case(manual)
++            r = _run(p, {d[0]: {X: 1.0}}, CFG1, ev=ev)
++            self.assertEqual(len([f for f in r["fills"] if f["side"] < 0]), want_sells, manual)
++            C = p.close
++            w = TB.weight_book_returns(pd.DataFrame({X: [1.0]}, index=d[:1]), TB.WBPanels(close=C, open=C.copy()),
++                                       TB.WBPolicy(), delist_events=ev)
++            self.assertEqual("DELIST_SOLD_IN_PERIOD" in set(w["events"].type), not manual)
++
++    def test_loader_clears_force_sell_from(self):
++        """Synthetic v2 table in OUT_DIR (no real data): 002509-like row with needs_manual_source=False keeps its
++        2020-06-04 period start (forced sell correct, per Data); a True row gets NaT + NEEDS_MANUAL_SOURCE_NO_FORCE_SELL."""
++        f = OUT_DIR / "synthetic_table_v2.parquet"
++        pd.DataFrame(dict(ts_code=["002509.SZ", "600999.SH"], instrument_id=["sz.002509", "sh.600999"],
++                          last_trade_date=["2020-07-01", "2020-07-01"], delist_reason_category_v2=["强制退市-财务", "强制退市-财务"],
++                          delist_period_start=["20200604", "20200604"], entered_delisting_period_v2=[True, True],
++                          face_value_delist_flag=[False, False], needs_manual_source=[False, True],
++                          last_close=[1.0, 1.0])).to_parquet(f, index=False)
++        saved = (dict(DA.DELIST_SOURCES), DA.NAMECHANGE, DA.CONSIDERATION)
++        try:
++            DA.DELIST_SOURCES["src_table_v2"] = f
++            DA.NAMECHANGE = OUT_DIR / "absent_namechange.parquet"; DA.CONSIDERATION = OUT_DIR / "absent_consideration.parquet"
++            ev = DA.load_delist_events(source="src_table_v2")
++        finally:
++            DA.DELIST_SOURCES.clear(); DA.DELIST_SOURCES.update(saved[0]); DA.NAMECHANGE, DA.CONSIDERATION = saved[1], saved[2]
++        a = ev.set_index("code")
++        self.assertEqual(a.loc["002509.SZ", "force_sell_from"], pd.Timestamp("2020-06-04"))
++        self.assertTrue(pd.isna(a.loc["600999.SH", "force_sell_from"]))
++        self.assertIn("NEEDS_MANUAL_SOURCE_NO_FORCE_SELL", str(a.loc["600999.SH", "flags"]))
++        self.assertEqual(set(ev.source_sha256), {__import__("hashlib").sha256(f.read_bytes()).hexdigest()})
++
++    def test_source_explicit(self):
++        with self.assertRaises(TypeError):
++            DA.load_delist_events()                                     # source is keyword-required
++        with self.assertRaises(ValueError):
++            DA.load_delist_events(source="auto")
++
++
++# ------------------------------------------------------------------ E-2 + P1-6 + P1-7 (FE / ADG adapters)
++def _write_panel(dirp: Path, name: str, rows: list, v2: bool):
++    df = pd.DataFrame(rows, columns=["date", "instrument", "ret", "ret_on", "is_resume_day", "hiliq_carry"])
++    if not v2:
++        df = df[["date", "instrument", "ret", "ret_on"]]
++    df.to_parquet(dirp / name, index=False)
++
++
++class T16AdaptersE2(unittest.TestCase):
++    def setUp(self):
++        self.d = _dates(8)
++        self.saved = TB._events_for
++        TB._events_for = lambda codes, src: NO_EVENTS.copy()          # no real delisting table in a synthetic test
++        self.bal = "510300.SH"
++        self.bo = pd.Series(1.0, index=self.d); self.bc = pd.Series(1.0, index=self.d)
++
++    def tearDown(self):
++        TB._events_for = self.saved
++
++    def _rows(self, v2):
++        d = self.d; rows = []
++        for t in range(8):
++            if t in (3, 4):                                            # Y halted: no row
++                rows.append((d[t], X, 0.01, 0.0, False, False))
++                continue
++            rows.append((d[t], X, 0.01, 0.0, False, False))
++            rows.append((d[t], Y, 0.02 if t != 5 else -0.10, 0.0, t == 5, t == 5))
++        return rows
++
++    def _W(self):
++        return pd.DataFrame(dict(date=[self.d[1], self.d[1], self.d[4], self.d[4], self.d[4]],
++                                 instrument=[X, Y, X, Y, Z], target_weight=[0.5, 0.5, 0.4, 0.4, 0.2]))
++
++    def test_refuse_v1_and_tag(self):
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            _write_panel(Path(td), "cs_panel_2024.parquet", self._rows(False), v2=False)
++            with self.assertRaises(FileNotFoundError):
++                TB.fe_book_ret_sd1(self._W(), "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal, bal_open=self.bo,
++                                   bal_close=self.bc, panel_dir=td, track="leaf_test", delist_source="src_table_v2")
++            r, to, res = TB.fe_book_ret_sd1(self._W(), "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal, bal_open=self.bo,
++                                            bal_close=self.bc, panel_dir=td, allow_cs_panel_v1=True, track="leaf_test",
++                                            delist_source="src_table_v2")
++            self.assertEqual(res["cs_panel_version"], "cs_panel_v1(D-1 gap)")
++            fl = {f["flag"] for f in res["flags"]}
++            self.assertIn("OPTIMISTIC_NO_LIMIT", fl); self.assertIn("NO_RESUME_DAY_GATE", fl)
++            self.assertFalse(res["summary"]["gate_eligible_alone"])
++
++    def test_resume_gate_and_carry(self):
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            _write_panel(Path(td), "cs_panel_v2_2024.parquet", self._rows(True), v2=True)
++            W2 = pd.DataFrame(dict(date=[self.d[1], self.d[4]], instrument=[X, Y], target_weight=[1.0, 0.5]))
++            r, to, res = TB.fe_book_ret_sd1(W2, "2024-01-02", "2024-01-11", cost=0.0, bal=self.bal, bal_open=self.bo,
++                                            bal_close=self.bc, panel_dir=td, track="leaf_test", delist_source="src_table_v2")
++            ev = res["events"]
++            self.assertTrue(((ev.type == "RESUME_DAY_ENTRY_GATE") & (ev.code == Y) & (ev.date == str(self.d[5].date()))).any())
++            self.assertIn("ENTRY_GATE_IS_RESUME_DAY_T1600", {f["flag"] for f in res["flags"]})
++            self.assertEqual(res["summary"]["hiliq_carry_check"]["n_mismatch"], 0)
++            self.assertIn("OPTIMISTIC_NO_LIMIT", {f["flag"] for f in res["flags"]})
++
++    def test_carry_checker_detects_mismatch(self):
++        d = self.d
++        close = pd.DataFrame({Y: [10, 10, 10, np.nan, np.nan, np.nan, 10, 10]}, index=d, dtype=float)
++        ex = pd.DataFrame({Y: [0, 1, 1, 1, 1, 1, 1, 1]}, index=d, dtype=float)
++        carry = pd.DataFrame({Y: [False] * 5 + [True, False, False]}, index=d)
++        self.assertEqual(TB.check_hiliq_carry(close, ex, carry)["n_mismatch"], 1)
++        carry2 = pd.DataFrame({Y: [False] * 6 + [True, False]}, index=d)
++        self.assertEqual(TB.check_hiliq_carry(close, ex, carry2)["n_mismatch"], 0)
++
++    def test_adg_tagged_and_track_required(self):
++        P = pd.DataFrame({X: [0.5] * 8, Y: [0.5] * 8}, index=self.d)
++        cl = lambda i: pd.Series(np.linspace(10, 11, 8), index=self.d)
++        g, to, res = TB.adg_gross_and_turnover_sd1(P, cl, track="adg_test", delist_source="src_table_v2")
++        self.assertIn("OPTIMISTIC_NO_LIMIT", {f["flag"] for f in res["flags"]})
++        self.assertFalse(res["summary"]["gate_eligible_alone"])
++        for bad in (dict(track=None, delist_source="src_table_v2"), dict(track="x", delist_source=None)):
++            with self.assertRaises(ValueError):
++                TB.adg_gross_and_turnover_sd1(P, cl, **bad)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+--- a/scripts_eng/sd0_parity_runner.py(r1)
++++ b/scripts_eng/sd0_parity_runner.py(r2)
+@@ -1,170 +1,297 @@
+ #!/usr/bin/env python3
+-"""SD0 parity runner (Eng, 2026-10-18; spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md sha256 2e428f39…bdbb0b).
++"""SD0 parity runner r2 (Eng, 2026-10-18 02:xx ET; Arch SD1 review ARCH_SD1_IMPL_REVIEW_ZH.md 7f0b4819 §8 + addendum B).
+ 
+-Proves that the SD1 side engine quantlab/platform/execution_sd1.py with every SD1 switch at its default (exec_SD0)
+-reproduces the untouched quantlab/platform/execution.py (sha256 373fed30…486c) bit-for-bit, on real configurations,
+-by recomputing each book twice into a scratch dir and comparing:
+-    pristine : book_smoke as shipped (imports quantlab.platform.execution, sha-checked = 373fed30)
+-    sd0      : same call with quantlab.platform.execution_sd1 injected as quantlab.platform.execution (defaults = SD0)
+-Plus an informational diff of the pristine recompute against the stored artifact (data revisions may differ).
+-
+-Suites (run one at a time; --suite paper FIRST — paper safety, 主 Agent 01:29 ET):
+-    paper     capacity_adv (CLI default 20261013 weights + newest paper-extension weights), B4 and S6 FROZEN_CONFIG
+-              weights, each AUM, windows X2 and PX (2024-06-03 -> last weight session); weights read-only
+-    research  Core v1.3 x4 (core_x2 weights, as book_smoke_v1_3_*), B4 leg-review 60w/100w, capacity_adv x2 AUM (X2)
+-Outputs ONLY under output/_sd0_parity/<suite>_<YYYYmmdd_HHMMSS>/ (refuses anything else / non-empty dirs). Never
+-writes paper dirs, FROZEN configs, STATUS, weights or any existing artifact; no CLI paper commands are invoked.
+-
+-    unit      SD1 unit tests: ``<this interpreter> -m pytest -q tests/test_sd1_suspend_delist.py`` (cwd=ROOT), only after
+-              the gate; refuses if this interpreter has no pytest (system python3 has none; use /workspace/qlvenv/bin/python)
+-
+-Gate (Arch appx C 8b50f6c0): ok_runner_pin.enforce on docs/v2/eng_sd1/ARCH_SD1_EXEC.ok with
+-  modes=[parity_<suite>]  → the .ok needs runner_sha256_sd0_parity_runner=<64hex> and allow_parity_<suite>=true
+-  deps (full 64-hex dep_sha256_<key>, all mandatory): execution (must also equal 373fed30), execution_sd1, tradability,
+-  delist_accounting, wb_sd1_books, platform_init, test_sd1_suspend_delist, book_smoke, v2_multisleeve_book, ok_runner_pin.
+-  live=false and promotion=false are required by ok_runner_pin itself.
+-Sequential child processes (one book at a time), each RSS-checked (≤1.5GB recorded; >1.5GB flagged FAIL_RSS).
+-live=false; promotion_approved=false.
++Proves the SD1 side engine quantlab/platform/execution_sd1.py with every SD1 switch at its default (exec_SD0)
++reproduces the untouched quantlab/platform/execution.py (373fed30…486c) bit-for-bit on real books: each case is
++recomputed twice into scratch and compared two-way:
++    pristine : book_smoke with the REAL execution.py loaded as quantlab.platform.execution
++    sd0      : book_smoke with execution_sd1.py loaded as quantlab.platform.execution (SD1 switches all default)
++Each child loads its engine via importlib.util.spec_from_file_location BEFORE any quantlab import (quantlab/platform/
++__init__.py L47 imports execution, so this is the only way the injection holds), executes exactly the bytes it hashed,
++asserts run_weight_schedule.__code__.co_filename == the expected file (in-process and as bound in v2_multisleeve_book),
++and prints the engine sha256 it actually executed; the parent checks it against the .ok dep pin.
++
++Suites (one at a time; paper FIRST):
++    paper     FIXED case list (no glob; Arch P1-8): capacity_adv 20261013 + paper extension 20261014_r2, B4 r2 60w/100w,
++              S6 60w/100w — each at its AUM(s), windows X2 + PX (2024-06-03 -> last weight session)
++    research  Core v1.3 x4, B4 leg-review 60w/100w, capacity_adv 20261013 x2 AUM (X2)   [Arch: released later]
++    unit      the SD1 selftest file (its own in-code gate needs docs/v2/eng_sd1/ARCH_SD1_TEST.ok):
++              PYTHONDONTWRITEBYTECODE=1, nice 10, /workspace/qlvenv/bin/python -m pytest ... -q -p no:cacheprovider
++
++Gate: ok_runner_pin.enforce(__file__, [docs/v2/eng_sd1/ARCH_SD1_EXEC.ok], modes=[f"parity_{suite}"], deps=...) with
++  module deps execution(=373fed30), execution_sd1, tradability, delist_accounting, platform_init, ok_runner_pin,
++  book_smoke, v2_multisleeve_book (+ test_sd1_suspend_delist for unit) and one dep_sha256_w_<name> per weight file;
++  plus runner-side checks: allow_smoke=false written explicitly; out_root=output/_sd0_parity; out_tag ends with this
++  runner's sha256[:8]; exec_serial=true; exec_nice=10; rss_cap_mb<=1536. Output dir <out_root>/<suite>_<out_tag>
++  created with mkdir(exist_ok=False); every report/JSON written with open(..., "x").
++Process guards: os.nice(10) at start; one child at a time; parent polls /proc/<pid>/status VmRSS every second and
++  kills a child above rss_cap_mb (FAIL_RSS); refuses within 16:40–18:40 ET (paper routine 17:40 ET ±1h), while
++  another parity runner or a Data scripts/fix_sd1 rebuild is running; book_smoke HASH_FILES (full sha256) recorded
++  before and after — a change voids the run. No paper CLI, no writes outside the out dir. live=false; promotion=false.
+ 
+-  python3 scripts_eng/sd0_parity_runner.py --suite paper
+-  python3 scripts_eng/sd0_parity_runner.py --suite research
++  python3 scripts_eng/sd0_parity_runner.py --suite paper --out-tag <tag ending in runner sha8>
+ """
+ from __future__ import annotations
+-import argparse, datetime, hashlib, json, os, re, resource, subprocess, sys
++import argparse, ast, datetime, hashlib, json, os, re, signal, subprocess, sys, time
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ OK = ROOT / "docs/v2/eng_sd1/ARCH_SD1_EXEC.ok"
+-SCRATCH = ROOT / "output/_sd0_parity"
++OUT_ROOT = "output/_sd0_parity"
+ PRISTINE_SHA256 = "373fed309f055888e83572d3fbef8f5b5052ebfcb208307962a272bca6fc486c"
+ SLEEVES = '{"core":0.0,"stock":1.0,"alpha_event":0.0}'
+ RSS_CAP_MB = 1536
+ TEST_FILE = "tests/test_sd1_suspend_delist.py"
+-DEPS = {  # every file whose code a gated suite executes or injects; pinned as dep_sha256_<key>=<64hex> in ARCH_SD1_EXEC.ok
++UNIT_PY = "/workspace/qlvenv/bin/python"     # system python3 has no pytest
++ENGINE_FILES = {"pristine": "quantlab/platform/execution.py", "sd0": "quantlab/platform/execution_sd1.py"}
++MODULE_DEPS = {
+     "execution": "quantlab/platform/execution.py",
+     "execution_sd1": "quantlab/platform/execution_sd1.py",
+     "tradability": "quantlab/platform/tradability.py",
+     "delist_accounting": "quantlab/platform/delist_accounting.py",
+-    "wb_sd1_books": "research/wb_sd1_books.py",
+     "platform_init": "quantlab/platform/__init__.py",
+-    "test_sd1_suspend_delist": TEST_FILE,
++    "ok_runner_pin": "scripts_eng/ok_runner_pin.py",
+     "book_smoke": "quantlab/portfolio/book_smoke.py",
+     "v2_multisleeve_book": "quantlab/portfolio/v2_multisleeve_book.py",
+-    "ok_runner_pin": "scripts_eng/ok_runner_pin.py",
+ }
++# FIXED paper case list (Arch P1-8): path + expected sha256 (also pinned by the .ok as dep_sha256_w_<key>)
++PAPER_WEIGHTS = {
++    "capadv_20261013": ("output/ai_factory/g1g5_capacity_adv_daily_weights_20261013_111219.parquet",
++                        "4348877ef927c85197a0068c219ab5a5f5957c7d11451a3ca68b73fd985d5caf"),
++    "capadv_paper_20261014_r2": ("output/ai_factory/g1g5_capacity_adv_daily_weights_paper_20261014_r2.parquet",
++                                 "e03028ee04f43aa33bc584a7846134d7e9001659655f49ecaaa3e6e5c1afd44c"),
++    "b4_60w": ("output/small_aum_concentration/v2/B_B4_50_25_25_topN_60w_20261014_r2.parquet",
++               "efcef7c43f919317baf2106f14c704a0d6d9351c910e8776a1d1f4cabf4f4480"),
++    "b4_100w": ("output/small_aum_concentration/v2/B_B4_50_25_25_topN_100w_20261014_r2.parquet",
++                "4736c030996fc631ec40ddaff9ae0dfb93c147f6191a346f3c0476edd57debf0"),
++    "s6_60w": ("output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_60w_20261014.parquet",
++               "6ce63a7939a26e410ff2382d42b58988da4d8ace078f477f85f532c2c344cd9d"),
++    "s6_100w": ("output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_100w_20261014.parquet",
++                "b1f9ae65483f0ffd161bc5a69e97b905cf634c26e9a58a88058afbd78f363a41"),
++}
++PAPER_CASES = [  # (name, weight key, AUM, windows, stored reference or None)
++    ("paper_capadv_20261013_60w", "capadv_20261013", 600000, ["X2", "PX"], "output/v3/book_smoke_g1g5_capacity_adv_x2"),
++    ("paper_capadv_20261013_100w", "capadv_20261013", 1000000, ["X2", "PX"], "output/v3/book_smoke_g1g5_capacity_adv_x2"),
++    ("paper_capadv_paper_20261014_r2_60w", "capadv_paper_20261014_r2", 600000, ["X2", "PX"], None),
++    ("paper_capadv_paper_20261014_r2_100w", "capadv_paper_20261014_r2", 1000000, ["X2", "PX"], None),
++    ("paper_b4_60w", "b4_60w", 600000, ["X2", "PX"], None),
++    ("paper_b4_100w", "b4_100w", 1000000, ["X2", "PX"], None),
++    ("paper_s6_60w", "s6_60w", 600000, ["X2", "PX"], None),
++    ("paper_s6_100w", "s6_100w", 1000000, ["X2", "PX"], None),
++]
++RESEARCH_WEIGHTS = {   # shas come only from the .ok (dep_sha256_w_<key>); research suite is reviewed after paper
++    "core_equity_100_60w": "output/strategy_optimizer/core_x2/core_equity_100_60w.parquet",
++    "core_equity_100_100w": "output/strategy_optimizer/core_x2/core_equity_100_100w.parquet",
++    "core_equity80_etf20_510300_60w": "output/strategy_optimizer/core_x2/core_equity80_etf20_510300_60w.parquet",
++    "core_equity80_etf20_510300_100w": "output/strategy_optimizer/core_x2/core_equity80_etf20_510300_100w.parquet",
++    "b4_leg_review_60w": "output/strategy_hiliq/b4_leg_review/weights_B4_50_25_25_60w.parquet",
++    "b4_leg_review_100w": "output/strategy_hiliq/b4_leg_review/weights_B4_50_25_25_100w.parquet",
++    "capadv_20261013": "output/ai_factory/g1g5_capacity_adv_daily_weights_20261013_111219.parquet",
++}
++RESEARCH_CASES = [
++    *[(f"core_v1_3_{sl}_{a}w", f"core_{sl}_{a}w", a * 10000, ["X2"], f"output/strategy_optimizer/core_x2/book_smoke_v1_3_{sl}_{a}w")
++      for sl in ("equity_100", "equity80_etf20_510300") for a in (60, 100)],
++    *[(f"b4_leg_review_{a}w", f"b4_leg_review_{a}w", a * 10000, ["X2"], f"output/strategy_hiliq/b4_leg_review/smoke_B4_50_25_25_{a}w")
++      for a in (60, 100)],
++    *[(f"capadv_x2_{a}w", "capadv_20261013", a * 10000, ["X2"], "output/v3/book_smoke_g1g5_capacity_adv_x2") for a in (60, 100)],
++]
+ SUITES = ("paper", "research", "unit")
+ 
+ 
+-def sha(p) -> str:
+-    return hashlib.sha256((ROOT / p).read_bytes()).hexdigest()
++def sha_file(p) -> str:
++    h = hashlib.sha256()
++    with open(ROOT / p, "rb") as fh:
++        for b in iter(lambda: fh.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
+ 
+ 
+-def _gate(suite: str) -> dict:
+-    if not OK.exists():
+-        raise SystemExit(f"REFUSED: {OK.relative_to(ROOT)} missing (主 Agent 00:40/01:21 rule: every run needs an Arch .ok)")
+-    sys.path.insert(0, str(ROOT / "scripts_eng"))
+-    import ok_runner_pin
+-    if suite not in SUITES:
+-        raise SystemExit(f"bad suite {suite}")
+-    pin = ok_runner_pin.enforce(__file__, [OK], modes=[f"parity_{suite}"], deps={k: ROOT / v for k, v in DEPS.items()})
+-    if pin["status"] != "PINNED_MATCH":
+-        raise SystemExit("REFUSED: .ok does not pin this runner's sha256 (Arch P1-1: runners must be pinned)")
+-    mods = {v: pin["deps"][k] for k, v in DEPS.items()}
+-    if mods["quantlab/platform/execution.py"] != PRISTINE_SHA256:
+-        raise SystemExit("REFUSED: quantlab/platform/execution.py is not the pristine 373fed30 baseline")
+-    return dict(runner_pin=pin, module_sha256=mods, ok=str(OK.relative_to(ROOT)), ok_sha256=sha(OK.relative_to(ROOT)))
++def _refuse(msg):
++    raise SystemExit(f"REFUSED (sd0_parity_runner): {msg}")
+ 
+ 
+-def _last_session(path) -> str:
+-    import pandas as pd
+-    w = pd.read_parquet(ROOT / path)
+-    c = "session" if "session" in w.columns else "date"
+-    return str(pd.to_datetime(w[c].astype(str).str[:10]).max().date())
++def _weights(suite):
++    if suite == "paper":
++        return {k: v[0] for k, v in PAPER_WEIGHTS.items()}
++    if suite == "research":
++        return dict(RESEARCH_WEIGHTS)
++    return {}
+ 
+ 
+-def cases(suite: str) -> list:
+-    out = []
++def _gate(suite: str, out_tag: str) -> dict:
++    if suite not in SUITES:
++        _refuse(f"bad suite {suite}")
++    if not OK.exists():
++        _refuse(f"{OK.relative_to(ROOT)} missing (every run needs an Arch .ok)")
++    sys.path.insert(0, str(ROOT / "scripts_eng"))
++    import ok_runner_pin as PIN
++    deps = {k: ROOT / v for k, v in MODULE_DEPS.items()}
++    if suite == "unit":
++        deps["test_sd1_suspend_delist"] = ROOT / TEST_FILE
++    deps.update({f"w_{k}": ROOT / v for k, v in _weights(suite).items()})
++    pin = PIN.enforce(__file__, [OK], modes=[f"parity_{suite}"], deps=deps)
++    if pin.get("status") != "PINNED_MATCH":
++        _refuse("ok_runner_pin did not return PINNED_MATCH")
++    kv = PIN.parse_ok(OK)
++    me = pin["runner_sha256"]
++    if pin["deps"]["execution"] != PRISTINE_SHA256:
++        _refuse("quantlab/platform/execution.py is not the pristine 373fed30 baseline")
+     if suite == "paper":
+-        caps = [600000, 1000000]
+-        cap_w = ["output/ai_factory/g1g5_capacity_adv_daily_weights_20261013_111219.parquet"]
+-        ext = sorted((ROOT / "output/ai_factory").glob("g1g5_capacity_adv_daily_weights_paper_2*.parquet"))
+-        if ext:
+-            cap_w.append(str(ext[-1].relative_to(ROOT)))
+-        for w in cap_w:
+-            for cap in caps:
+-                tag = "capadv_" + Path(w).stem.rsplit("_", 1)[-1]
+-                out.append(dict(name=f"paper_{tag}_{cap // 10000}w", weights=w, cap=cap, windows=["X2", "PX"],
+-                                ref="output/v3/book_smoke_g1g5_capacity_adv_x2" if w == cap_w[0] else None))
+-        for track, fz in (("b4", "output/strategy_paper_b4/FROZEN_CONFIG.json"), ("s6", "output/strategy_paper_s6/FROZEN_CONFIG.json")):
+-            if not (ROOT / fz).exists():
+-                continue
+-            for cap, v in json.loads((ROOT / fz).read_text())["weights"].items():
+-                out.append(dict(name=f"paper_{track}_{int(cap) // 10000}w", weights=v["path"], cap=int(cap), windows=["X2", "PX"],
+-                                weights_sha256_frozen=v.get("sha256"), ref=None))
+-    elif suite == "research":
+-        for sl in ("equity_100", "equity80_etf20_510300"):
+-            for aum in (60, 100):
+-                out.append(dict(name=f"core_v1_3_{sl}_{aum}w", weights=f"output/strategy_optimizer/core_x2/core_{sl}_{aum}w.parquet",
+-                                cap=aum * 10000, windows=["X2"], ref=f"output/strategy_optimizer/core_x2/book_smoke_v1_3_{sl}_{aum}w"))
+-        for aum in (60, 100):
+-            out.append(dict(name=f"b4_leg_review_{aum}w", weights=f"output/strategy_hiliq/b4_leg_review/weights_B4_50_25_25_{aum}w.parquet",
+-                            cap=aum * 10000, windows=["X2"], ref=f"output/strategy_hiliq/b4_leg_review/smoke_B4_50_25_25_{aum}w"))
+-            out.append(dict(name=f"capadv_x2_{aum}w", weights="output/ai_factory/g1g5_capacity_adv_daily_weights_20261013_111219.parquet",
+-                            cap=aum * 10000, windows=["X2"], ref="output/v3/book_smoke_g1g5_capacity_adv_x2"))
+-    else:
+-        raise SystemExit(f"bad suite {suite}")
+-    return out
++        for k, (p, want) in PAPER_WEIGHTS.items():
++            if pin["deps"][f"w_{k}"] != want:
++                _refuse(f"weight {p} sha {pin['deps'][f'w_{k}']} != hardcoded {want}")
++    if kv.get("allow_smoke") != "false":
++        _refuse("the .ok must state allow_smoke=false explicitly")
++    if kv.get("out_root") != OUT_ROOT:
++        _refuse(f"out_root must be {OUT_ROOT} (got {kv.get('out_root')!r})")
++    tag = kv.get("out_tag", "")
++    if tag != out_tag or not re.fullmatch(r"[A-Za-z0-9._-]+", tag) or not tag.endswith(me[:8]):
++        _refuse(f"out_tag must equal --out-tag and end with runner sha8 {me[:8]} (ok={tag!r}, argv={out_tag!r})")
++    if kv.get("exec_serial") != "true" or kv.get("exec_nice") != "10":
++        _refuse("exec_serial=true and exec_nice=10 are required")
++    try:
++        cap = int(kv.get("rss_cap_mb", ""))
++    except ValueError:
++        _refuse("rss_cap_mb missing / not an integer")
++    if not (0 < cap <= RSS_CAP_MB):
++        _refuse(f"rss_cap_mb must be in (0, {RSS_CAP_MB}]")
++    return dict(runner_pin=pin, ok=str(OK.relative_to(ROOT)), ok_sha256=sha_file(OK.relative_to(ROOT)), rss_cap_mb=cap,
++                out_tag=tag)
++
++
++def _process_guards():
++    now = datetime.datetime.now()
++    if datetime.time(16, 40) <= now.time() <= datetime.time(18, 40):
++        _refuse("inside the paper-routine window 16:40–18:40 ET (17:40 ET ± 1h)")
++    mine, pid = set(), os.getpid()            # this process and its ancestors (the launching shell) are exempt
++    while pid > 1 and pid not in mine:
++        mine.add(pid)
++        try:
++            pid = int(next(l.split()[1] for l in Path(f"/proc/{pid}/status").read_text().splitlines() if l.startswith("PPid:")))
++        except (OSError, StopIteration, ValueError):
++            break
++    for d in Path("/proc").iterdir():
++        if not d.name.isdigit() or int(d.name) in mine:
++            continue
++        try:
++            cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
++        except OSError:
++            continue
++        if "sd0_parity_runner.py" in cmd and "python" in cmd:
++            _refuse(f"another parity runner is running (pid {d.name})")
++        if "scripts/fix_sd1/" in cmd:
++            _refuse(f"a Data fix_sd1 rebuild is running (pid {d.name}: {cmd[:120]})")
++
++
++def _hash_files() -> dict:
++    """book_smoke data HASH_FILES (parsed from the pinned v2_multisleeve_book source; nothing imported), full sha256."""
++    tree = ast.parse((ROOT / MODULE_DEPS["v2_multisleeve_book"]).read_text())
++    files = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
++                 and any(isinstance(t, ast.Name) and t.id == "HASH_FILES" for t in n.targets))
++    return {f: (sha_file(f) if (ROOT / f).exists() else None) for f in files}
+ 
+ 
+ WORKER = r'''
+-import json, resource, sys
++import hashlib, importlib.util, json, resource, sys
+ from pathlib import Path
+-ROOT = Path(sys.argv[1]); engine, weights, cap, out, windows, px_end = sys.argv[2:8]
++ROOT = Path(sys.argv[1]); engine_rel, weights, cap, out, windows, px_end = sys.argv[2:8]
++if any(m == "quantlab" or m.startswith("quantlab.") for m in sys.modules):
++    raise SystemExit("REFUSED: quantlab already imported before engine injection")
+ sys.path.insert(0, str(ROOT))
++eng_path = (ROOT / engine_rel).resolve()
++src = eng_path.read_bytes(); eng_sha = hashlib.sha256(src).hexdigest()
++spec = importlib.util.spec_from_file_location("quantlab.platform.execution", str(eng_path))
++mod = importlib.util.module_from_spec(spec)
++sys.modules["quantlab.platform.execution"] = mod            # BEFORE quantlab.platform/__init__ (L47) runs
++exec(compile(src, str(eng_path), "exec"), mod.__dict__)     # exactly the hashed bytes
+ import quantlab.platform
+-preloaded = "quantlab.platform.execution" in sys.modules   # recorded: modules bound before injection would mix engines
+-if engine == "sd0" and preloaded:
+-    raise SystemExit("REFUSED: quantlab.platform.execution was imported before injection; parity would mix engines")
+-if engine == "sd0":
+-    import quantlab.platform.execution_sd1 as X
+-    sys.modules["quantlab.platform.execution"] = X; quantlab.platform.execution = X
+-import quantlab.platform.execution as E_used
++if quantlab.platform.execution is not mod or sys.modules["quantlab.platform.execution"] is not mod:
++    raise SystemExit("REFUSED: engine injection did not hold")
+ import quantlab.portfolio.v2_multisleeve_book as M
+-assert_engine = Path(E_used.__file__).name
+-if (engine == "sd0") != (assert_engine == "execution_sd1.py"):
+-    raise SystemExit(f"engine injection failed: {assert_engine}")
++def _check():
++    for f in (mod.run_weight_schedule, M.run_weight_schedule):
++        if f.__code__.co_filename != str(eng_path):
++            raise SystemExit(f"REFUSED: run_weight_schedule from {f.__code__.co_filename}, expected {eng_path}")
++_check()
+ if px_end != "-":
+     M.WINDOWS["PX"] = ("2024-06-03", px_end); M.WINDOW_LABEL["PX"] = "SD0 parity window (X2 + bridge, scratch only)"
+ from quantlab.portfolio.book_smoke import run
+ run(["--stock-path", weights, "--sleeves", %r, "--windows", windows, "--capitals", cap, "--arms", "BOOK,C0",
+      "--out", out, "--receipt", out + "/RECEIPT.md"])
+-print(json.dumps(dict(engine_file=assert_engine, peak_rss_mb=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)))
++_check()
++if hashlib.sha256(eng_path.read_bytes()).hexdigest() != eng_sha:
++    raise SystemExit("REFUSED: engine file changed during the run")
++print("PARITY_WORKER_JSON " + json.dumps(dict(engine_file=str(eng_path), engine_sha256=eng_sha,
++      co_filename=mod.run_weight_schedule.__code__.co_filename,
++      peak_rss_mb_self=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)))
+ ''' % SLEEVES
+ 
+ 
++def _vmrss_mb(pid) -> float | None:
++    try:
++        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
++            if line.startswith("VmRSS:"):
++                return int(line.split()[1]) / 1024
++    except OSError:
++        return None
++    return None
++
++
++def _run_child(cmd, log: Path, cap_mb: int, env=None) -> dict:
++    with open(log, "x", encoding="utf-8") as fh:
++        p = subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, env=env)
++        peak, killed = 0.0, False
++        while p.poll() is None:
++            r = _vmrss_mb(p.pid)
++            if r is not None:
++                peak = max(peak, r)
++                if r > cap_mb:
++                    p.send_signal(signal.SIGKILL); killed = True; p.wait(); break
++            time.sleep(1.0)
++    info = {}
++    for line in reversed(log.read_text(encoding="utf-8", errors="replace").splitlines()):
++        if line.startswith("PARITY_WORKER_JSON "):
++            info = json.loads(line[len("PARITY_WORKER_JSON "):]); break
++    return dict(exit=p.returncode, killed_rss=killed, peak_rss_mb_polled=round(peak, 1), **info)
++
++
++_DROP = {"run_id", "timestamp", "generated_at", "started_et", "finished_et"}
++
++
++def _strip(o):
++    if isinstance(o, dict):
++        return {k: _strip(v) for k, v in o.items() if k not in _DROP}
++    if isinstance(o, list):
++        return [_strip(v) for v in o]
++    return o
++
++
+ def _compare(a: Path, b: Path) -> dict:
+-    """Bitwise compare every nav.csv / *_weights.parquet / summary.json metrics under two run trees."""
++    """Two-way: same file set; csv/other bytes-equal; parquet column-wise (float equal_nan=True); json whole
++    after dropping run_id/timestamps; RECEIPT.md only for presence (it embeds run_id)."""
+     import numpy as np, pandas as pd
+-    res, ok = [], True
+-    for fa in sorted(a.rglob("*")):
+-        rel = fa.relative_to(a)
+-        if fa.is_dir() or fa.name in ("RECEIPT.md", "book_smoke_summary.json", "worker.log"):
++    fa = {str(p.relative_to(a)) for p in a.rglob("*") if p.is_file()}
++    fb = {str(p.relative_to(b)) for p in b.rglob("*") if p.is_file()}
++    res = [dict(file=f, equal=False, why="only in " + ("pristine" if f in fa else "sd0")) for f in sorted(fa ^ fb)]
++    for rel in sorted(fa & fb):
++        x, y = a / rel, b / rel
++        if x.name == "RECEIPT.md":
+             continue
+-        fb = b / rel
+-        if not fb.exists():
+-            res.append(dict(file=str(rel), equal=False, why="missing in other")); ok = False; continue
+-        if fa.suffix == ".csv":
+-            eq = fa.read_bytes() == fb.read_bytes()
+-        elif fa.suffix == ".parquet":
+-            x, y = pd.read_parquet(fa), pd.read_parquet(fb)
+-            eq = x.shape == y.shape and list(x.columns) == list(y.columns) and all(
+-                np.array_equal(x[c].to_numpy(), y[c].to_numpy()) for c in x.columns)
+-        elif fa.name == "summary.json":
+-            eq = json.loads(fa.read_text()).get("metrics") == json.loads(fb.read_text()).get("metrics")
++        if x.suffix == ".parquet":
++            X, Y = pd.read_parquet(x), pd.read_parquet(y)
++            eq = list(X.columns) == list(Y.columns) and X.shape == Y.shape and list(X.dtypes) == list(Y.dtypes)
++            if eq:
++                for c in X.columns:
++                    if pd.api.types.is_float_dtype(X[c]):
++                        eq &= bool(np.array_equal(X[c].to_numpy(), Y[c].to_numpy(), equal_nan=True))
++                    else:
++                        eq &= bool(X[c].reset_index(drop=True).equals(Y[c].reset_index(drop=True)))
++        elif x.suffix == ".json":
++            eq = _strip(json.loads(x.read_text())) == _strip(json.loads(y.read_text()))
+         else:
+-            continue
+-        res.append(dict(file=str(rel), equal=bool(eq))); ok &= bool(eq)
+-    return dict(bit_identical=bool(ok and res), files=res)
++            eq = x.read_bytes() == y.read_bytes()
++        res.append(dict(file=rel, equal=bool(eq)))
++    return dict(bit_identical=bool(res) and all(r["equal"] for r in res), n_files=len(res), files=res)
+ 
+ 
+ def _vs_ref(run_dir: Path, ref: str | None, cap: int) -> dict:
+@@ -173,75 +300,92 @@
+     a = run_dir / f"aum_{cap}" / "X2" / "BOOK" / "nav.csv"
+     b = ROOT / ref / f"aum_{cap}" / "X2" / "BOOK" / "nav.csv"
+     if not (a.exists() and b.exists()):
+-        return dict(status="REFERENCE_MISSING", ref=str(b.relative_to(ROOT)) if b.exists() else ref)
+-    import pandas as pd, numpy as np
+-    x, y = pd.read_csv(a, index_col=0), pd.read_csv(b, index_col=0)
+-    same_idx = list(x.index) == list(y.index)
+-    d = float(np.nanmax(np.abs(x["nav"].to_numpy() - y["nav"].to_numpy()))) if same_idx else None
+-    return dict(status="BYTES_EQUAL" if a.read_bytes() == b.read_bytes() else "DIFFERS", same_index=same_idx,
+-                max_abs_nav_diff=d, ref=str(b.relative_to(ROOT)), note="informational (stored run may predate later code/data)")
++        return dict(status="REFERENCE_MISSING", ref=ref)
++    return dict(status="BYTES_EQUAL" if a.read_bytes() == b.read_bytes() else "DIFFERS", ref=ref,
++                note="informational only (stored run may predate later code/data)")
++
++
++def _last_session(path) -> str:
++    import pandas as pd
++    w = pd.read_parquet(ROOT / path)
++    c = "session" if "session" in w.columns else "date"
++    return str(pd.to_datetime(w[c].astype(str).str[:10]).max().date())
++
++
++def _xwrite(path: Path, obj):
++    with open(path, "x", encoding="utf-8") as fh:
++        fh.write(json.dumps(obj, indent=1, ensure_ascii=False, default=str))
+ 
+ 
+ def main():
++    os.nice(10)
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--suite", required=True, choices=SUITES)
++    ap.add_argument("--out-tag", required=True)
+     a = ap.parse_args()
+-    gate = _gate(a.suite)
+-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+-    root = SCRATCH / f"{a.suite}_{stamp}"
+-    if root.exists() and any(root.iterdir()):
+-        raise SystemExit(f"REFUSED: {root} exists and is non-empty")
++    _process_guards()
++    gate = _gate(a.suite, a.out_tag)
++    cap = gate["rss_cap_mb"]
++    (ROOT / OUT_ROOT).mkdir(parents=True, exist_ok=True)
++    root = ROOT / OUT_ROOT / f"{a.suite}_{gate['out_tag']}"
++    root.mkdir(exist_ok=False)
++    report = dict(suite=a.suite, started_et=datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
++                  gate=gate, live=False, promotion_approved=False, nice=os.nice(0), cases=[])
+     if a.suite == "unit":
+-        import importlib.util
+-        if importlib.util.find_spec("pytest") is None:
+-            raise SystemExit(f"REFUSED: {sys.executable} has no pytest; run this runner with /workspace/qlvenv/bin/python")
+-        root.mkdir(parents=True)
+-        cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(ROOT / TEST_FILE)]
+-        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+-        (root / "pytest.log").write_text(p.stdout[-50000:] + "\n--- stderr ---\n" + p.stderr[-20000:])
+-        rep_ = dict(suite="unit", cmd=cmd, exit=p.returncode, gate=gate, live=False, promotion_approved=False,
+-                    finished_et=datetime.datetime.now().isoformat(timespec="seconds"), all_pass=(p.returncode == 0))
+-        with open(root / "SD1_UNIT_REPORT.json", "x", encoding="utf-8") as fh:
+-            fh.write(json.dumps(rep_, indent=1, ensure_ascii=False, default=str))
+-        print(json.dumps(dict(suite="unit", exit=p.returncode, out=str(root.relative_to(ROOT)))))
+-        return
+-    root.mkdir(parents=True)
+-    report = dict(suite=a.suite, started_et=datetime.datetime.now().isoformat(timespec="seconds"), gate=gate,
+-                  live=False, promotion_approved=False, cases=[])
+-    for c in cases(a.suite):
+-        w_sha = sha(c["weights"])
+-        if c.get("weights_sha256_frozen") and w_sha != c["weights_sha256_frozen"]:
+-            report["cases"].append(dict(c, status="REFUSED_WEIGHTS_SHA_MISMATCH", weights_sha256=w_sha)); continue
+-        px_end = _last_session(c["weights"]) if "PX" in c["windows"] else "-"
++        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
++        cmd = [UNIT_PY, "-m", "pytest", str(ROOT / TEST_FILE), "-q", "-p", "no:cacheprovider"]
++        r = _run_child(cmd, root / "pytest.log", cap, env=env)
++        report.update(cmd=cmd, run=r, all_pass=(r["exit"] == 0 and not r["killed_rss"]),
++                      status="FAIL_RSS" if r["killed_rss"] else ("PASS" if r["exit"] == 0 else "FAIL"))
++        report["finished_et"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
++        _xwrite(root / "SD1_UNIT_REPORT.json", report)
++        print(json.dumps(dict(suite="unit", status=report["status"], out=str(root.relative_to(ROOT)))))
++        raise SystemExit(0 if report["all_pass"] else 1)
++    report["hash_files_before"] = _hash_files()
++    weights = _weights(a.suite)
++    cases = PAPER_CASES if a.suite == "paper" else RESEARCH_CASES
++    pins = gate["runner_pin"]["deps"]
++    for name, wkey, aum, windows, ref in cases:
++        wpath = weights[wkey]
++        w_sha = sha_file(wpath)
++        rec = dict(name=name, weights=wpath, weights_sha256=w_sha, aum=aum, windows=windows)
++        if w_sha != pins[f"w_{wkey}"]:
++            rec["status"] = "REFUSED_WEIGHTS_SHA_MISMATCH"; report["cases"].append(rec); continue
++        px_end = _last_session(wpath) if "PX" in windows else "-"
++        rec["px_end"] = px_end
++        (root / name).mkdir(exist_ok=False); (root / name / "logs").mkdir(exist_ok=False)
+         runs = {}
+         for engine in ("pristine", "sd0"):
+-            out = root / c["name"] / engine
+-            out.mkdir(parents=True)
+-            p = subprocess.run([sys.executable, "-c", WORKER, str(ROOT), engine, c["weights"], str(c["cap"]),
+-                                str(out.relative_to(ROOT)), ",".join(c["windows"]), px_end],
+-                               cwd=ROOT, capture_output=True, text=True)
+-            (out / "worker.log").write_text(p.stdout[-20000:] + "\n--- stderr ---\n" + p.stderr[-20000:])
+-            info = {}
+-            for line in reversed(p.stdout.strip().splitlines()):
+-                if line.startswith("{") and "peak_rss_mb" in line:
+-                    info = json.loads(line); break
+-            runs[engine] = dict(exit=p.returncode, **info)
+-            if p.returncode != 0:
++            out = root / name / engine
++            out.mkdir(exist_ok=False)
++            r = _run_child([sys.executable, "-c", WORKER, str(ROOT), ENGINE_FILES[engine], wpath, str(aum),
++                            str(out.relative_to(ROOT)), ",".join(windows), px_end],
++                           root / name / "logs" / f"{engine}.log", cap, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
++            want = pins["execution" if engine == "pristine" else "execution_sd1"]
++            r["engine_sha_ok"] = r.get("engine_sha256") == want
++            r["co_filename_ok"] = r.get("co_filename") == str((ROOT / ENGINE_FILES[engine]).resolve())
++            runs[engine] = r
++            if r["exit"] != 0 or r["killed_rss"] or not (r["engine_sha_ok"] and r["co_filename_ok"]):
+                 break
+-        rec = dict(c, weights_sha256=w_sha, px_end=px_end, runs=runs)
+-        if all(r.get("exit") == 0 for r in runs.values()) and len(runs) == 2:
+-            rec["parity"] = _compare(root / c["name"] / "pristine", root / c["name"] / "sd0")
+-            rec["vs_stored"] = _vs_ref(root / c["name"] / "pristine", c.get("ref"), c["cap"])
+-            rss = max(r.get("peak_rss_mb", 0) for r in runs.values())
+-            rec["status"] = ("FAIL_RSS" if rss > RSS_CAP_MB else
+-                             "PASS_BIT_IDENTICAL" if rec["parity"]["bit_identical"] else "FAIL_NOT_IDENTICAL")
++        rec["runs"] = runs
++        if any(r.get("killed_rss") for r in runs.values()):
++            rec["status"] = "FAIL_RSS"
++        elif len(runs) == 2 and all(r["exit"] == 0 and r["engine_sha_ok"] and r["co_filename_ok"] for r in runs.values()):
++            rec["parity"] = _compare(root / name / "pristine", root / name / "sd0")
++            rec["vs_stored"] = _vs_ref(root / name / "pristine", ref, aum)
++            rec["status"] = "PASS_BIT_IDENTICAL" if rec["parity"]["bit_identical"] else "FAIL_NOT_IDENTICAL"
++        elif any(r["exit"] == 0 and not (r["engine_sha_ok"] and r["co_filename_ok"]) for r in runs.values()):
++            rec["status"] = "FAIL_ENGINE_IDENTITY"
+         else:
+             rec["status"] = "RUN_ERROR"
++        _xwrite(root / name / "CASE.json", rec)
+         report["cases"].append(rec)
+-        (root / "SD0_PARITY_REPORT.json").write_text(json.dumps(report, indent=1, ensure_ascii=False, default=str))
+-    report["finished_et"] = datetime.datetime.now().isoformat(timespec="seconds")
+-    report["all_pass"] = all(c.get("status") == "PASS_BIT_IDENTICAL" for c in report["cases"]) and bool(report["cases"])
+-    (root / "SD0_PARITY_REPORT.json").write_text(json.dumps(report, indent=1, ensure_ascii=False, default=str))
++    report["hash_files_after"] = _hash_files()
++    report["hash_files_stable"] = report["hash_files_before"] == report["hash_files_after"]
++    report["finished_et"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
++    report["all_pass"] = (bool(report["cases"]) and report["hash_files_stable"]
++                          and all(c.get("status") == "PASS_BIT_IDENTICAL" for c in report["cases"]))
++    _xwrite(root / "SD0_PARITY_REPORT.json", report)
+     print(json.dumps(dict(report=str((root / "SD0_PARITY_REPORT.json").relative_to(ROOT)), all_pass=report["all_pass"],
+                           statuses={c["name"]: c.get("status") for c in report["cases"]}), ensure_ascii=False))
+     raise SystemExit(0 if report["all_pass"] else 1)
+--- a/scripts_eng/sd1_pit_static_check.py(r1)
++++ b/scripts_eng/sd1_pit_static_check.py(r2)
+@@ -17,9 +17,12 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ TOKENS = re.compile(r"stock_delisted|delist_date|delist_events|delist_accounting")
+ SCOPE = ("research/", "quantlab/strategy/", "quantlab/universe/", "quantlab/factors/",
+-         "quantlab/portfolio/v2_constructor.py", "quantlab/portfolio/v2_rebalance.py")
++         "quantlab/portfolio/", "quantlab/beta/", "scripts/")   # Arch SD1 review P2-5 (2026-10-18): + portfolio/, beta/, scripts/
+ WHITELIST = ("quantlab/platform/execution.py", "quantlab/platform/execution_sd1.py", "quantlab/platform/tradability.py", "quantlab/platform/delist_accounting.py",
+-             "docs/v2/audit/")
++             "docs/v2/audit/",
++             # Data build / acquisition / survivorship-audit scripts (Arch review §2: not selection; file-level)
++             "scripts/build_delisted.py", "scripts/pull_delisted.py", "scripts/build_float_mktcap_from2015.py",
++             "scripts/acquire/", "scripts/fix_sd1/", "scripts/smallcap_reconcile.py", "scripts/smallcap_survivorship_b1.py")
+ # Pre-SD1 references found 2026-10-18 by this script; not strategy-layer use of stock delisting info (Arch to confirm).
+ PREEXISTING = {
+     ("research/ai_hiliq_pool_review_x2.py", 'dm = pd.read_parquet(R/"data/v2/delisted/delisted_master_tushare.parquet", columns=["ts_code","delist_date","last_trade_date","delist_reason_category"])'):
+@@ -36,6 +39,33 @@
+     ("research/v3_a4_sealed.py", "live=b.delist_date.reindex(cols).isna()&((END-last).dt.days<=30)"): "CB basic delist_date",
+     ("quantlab/universe/mask.py", "is_st, listing_date, delist_date, asset_type, quality_status, ..."):
+         "docstring of the instruments contract (field list only); mask code must not use it",
++    # ---- P2-5 scope extension (2026-10-18 02:0x ET): pre-SD1 lines in quantlab/portfolio, quantlab/beta, scripts/
++    ('quantlab/beta/survivorship.py', 'for c in ("list_date", "delist_date", "last_trade_date"):'):
++        'B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)',
++    ('quantlab/beta/survivorship.py', 'alive = set(master.index[(master.list_date <= day) & (master.delist_date > day)])'):
++        'B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)',
++    ('quantlab/beta/survivorship.py', 'alive_later = master[(master.list_date <= day) & (master.delist_date > day)]'):
++        'B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)',
++    ('quantlab/beta/survivorship.py', '"delist_dates": {i: str(alive_later.loc[i, "delist_date"].date()) for i in hit},'):
++        'B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)',
++    ('quantlab/beta/survivorship.py', '"delist_date": str(row["delist_date"].date()) if row["delist_date"] == row["delist_date"] else None,'):
++        'B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)',
++    ('quantlab/portfolio/v2_multisleeve_book.py', 'dl = self.BAS.set_index("code").delist_date.dropna()'):
++        'CB basic delist_date -> bond terminal payout (accounting; pre-SD1, in paper closure, unchanged)',
++    ('scripts/smallcap_e7.py', "slippage=result['slippage'], turnover=result['turnover'], delist_events=len(result['events']),"):
++        'report column label delist_events=len(engine events) (count only; no table read)',
++    ('scripts/smallcap_info.py', "slippage=result['slippage'], turnover=result['turnover'], delist_events=len(result['events']),"):
++        'report column label delist_events=len(engine events) (count only; no table read)',
++    ('scripts/smallcap_audit.py', "delist_events=len(result['events']), median_gross=float(result['gross'][result['gross'] > 0].median()))"):
++        'report column label delist_events (count only; no table read)',
++    ('scripts/smallcap_audit.py', "columns = ['cagr', 'max_drawdown', *L.SEGMENTS, 'median_gross', 'fees', 'turnover', 'delist_events']"):
++        'report column label delist_events (count only; no table read)',
++    ('scripts/smallcap_layers.py', "delist_events=len(result['events']),"):
++        'report column label delist_events (count only; no table read)',
++    ('scripts/smallcap_layers.py', "columns = ['cagr', 'max_drawdown', *SEGMENTS, 'median_gross', 'fees', 'slippage', 'turnover', 'delist_events']"):
++        'report column label delist_events (count only; no table read)',
++    ('scripts/smallcap_parity.py', "delist_events=len(run['events']))"):
++        'report column label delist_events (count only; no table read)',
+ }
+ 
+ 

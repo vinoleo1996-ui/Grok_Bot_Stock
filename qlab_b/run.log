@@ -1,0 +1,105 @@
+[qlab_b] replay qlab_mom12_1/enforced
+   annual=-1.54% net=-57,492 cashw=20.0%
+[qlab_b] replay qlab_mom12_1/omit_for_diagnostic
+   annual=-0.62% net=-23,886 cashw=7.7%
+[qlab_b] replay monthly_equal/enforced
+   annual=1.06% net=42,572 cashw=16.6%
+[qlab_b] replay vol_matched_equal/enforced
+   annual=0.46% net=18,054 cashw=16.9%
+[qlab_b] replay monthly_equal/omit_for_diagnostic
+   annual=4.33% net=190,133 cashw=90.6%
+[qlab_b] replay vol_matched_equal/omit_for_diagnostic
+   annual=-1.90% net=-70,296 cashw=32.8%
+
+| arm | policy | annual | total | mdd | mean_w | fees+slip |
+|---|---|---:|---:|---:|---:|---:|
+| qlab_mom12_1 | enforced | -1.54% | -9.58% | -16.19% | 20.0% | 35,686 |
+| qlab_mom12_1 | omit_for_diagnostic | -0.62% | -3.98% | -20.45% | 7.7% | 19,123 |
+| monthly_equal | enforced | 1.06% | 7.10% | -5.55% | 16.6% | 10,224 |
+| vol_matched_equal | enforced | 0.46% | 3.01% | -6.84% | 16.9% | 12,135 |
+| monthly_equal | omit_for_diagnostic | 4.33% | 31.69% | -27.37% | 90.6% | 43,627 |
+| vol_matched_equal | omit_for_diagnostic | -1.90% | -11.72% | -19.29% | 32.8% | 65,247 |
+
+Paired mean-daily net excess (annualized) + block CI:
+{
+  "enforced__qlab_vs_monthly_equal": {
+    "annualized_mean_daily_net_excess": -0.02658062819975358,
+    "ci20": {
+      "status": "estimated",
+      "lower": -0.050875480275765474,
+      "upper": -0.0013533516699868486,
+      "block": 20,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    },
+    "ci60": {
+      "status": "estimated",
+      "lower": -0.05304960421145679,
+      "upper": -0.00848476559215626,
+      "block": 60,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    }
+  },
+  "enforced__qlab_vs_vol_matched_equal": {
+    "annualized_mean_daily_net_excess": -0.020353245765717606,
+    "ci20": {
+      "status": "estimated",
+      "lower": -0.04560837806100806,
+      "upper": 0.0057325290235932976,
+      "block": 20,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    },
+    "ci60": {
+      "status": "estimated",
+      "lower": -0.04864254999087362,
+      "upper": -0.0020552652871331,
+      "block": 60,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    }
+  },
+  "omit_for_diagnostic__qlab_vs_monthly_equal": {
+    "annualized_mean_daily_net_excess": -0.06560217743315351,
+    "ci20": {
+      "status": "estimated",
+      "lower": -0.22037530178292355,
+      "upper": 0.06595687562283413,
+      "block": 20,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    },
+    "ci60": {
+      "status": "estimated",
+      "lower": -0.22558740421111273,
+      "upper": 0.022166338119167066,
+      "block": 60,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    }
+  },
+  "omit_for_diagnostic__qlab_vs_vol_matched_equal": {
+    "annualized_mean_daily_net_excess": 0.01360298570993157,
+    "ci20": {
+      "status": "estimated",
+      "lower": -0.077983819007418,
+      "upper": 0.10494475306299081,
+      "block": 20,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    },
+    "ci60": {
+      "status": "estimated",
+      "lower": -0.07823873902219212,
+      "upper": 0.06748073686764541,
+      "block": 60,
+      "samples": 2000,
+      "estimator": "annualized_mean_daily_excess"
+    }
+  }
+}
+
+Verdict per hypothesis.md (do not change thresholds):
+  enforced: qlab annual=-1.54% vs eq=1.06%, vol=0.46% -> P1(a) FAIL; P1(b) TBD(positive excess?)
+  omit_for_diagnostic: qlab annual=-0.62% vs eq=4.33%, vol=-1.90% -> P1(a) FAIL; P1(b) TBD(positive excess?)

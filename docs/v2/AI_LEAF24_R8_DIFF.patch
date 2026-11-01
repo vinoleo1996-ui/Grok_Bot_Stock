@@ -1,0 +1,77 @@
+--- a/research/g1g5_imax_intraday_alpha.py
++++ b/research/g1g5_imax_intraday_alpha.py
+@@ -1,6 +1,9 @@
+ #!/usr/bin/env python3
+ """Leaf24 imax_intraday — g1g5_ashare_imax_intraday_v1 (research leaf, not production; long-only, no short arm). Script r1 (Arch b997cba8 fixes).
+ Prereg: docs/v2/AI_G1G5_IMAX_OVERNIGHT_WHO_PAYS_PREREG_ZH.md (FROZEN 2026-10-18 01:44:40 ET; sha256 pinned below + in the Arch .ok).
++r8 (Arch P2, 2026-10-18 ET, NOT RUN — static checks only): RSS watchdog also checks VmHWM (limit unchanged 1536000 kB) and an explicit
++    peak check (VmHWM and ru_maxrss) runs at the end of each build year, each pool_benchmarks year and each universe in eval
++    (RSS_GUARD_KILL, os._exit(137)); same code as leaf 23 r2.10 (d). No other change.
+ Written 2026-10-18 ET by QuantLab AI. NOT RUN at write time (syntax check only). Same guards as leaf 23 r2.1: every stage refuses
+ to start without an Arch run-auth .ok (quantlab_run_auth_v1) pinning (64-hex, recomputed at runtime) this script, the prereg,
+ cs_panel_dir + cs_panel_manifest_sha256, the evaluation tools and the leaf18/18v X2 α files.
+@@ -93,17 +96,35 @@
+ 
+ 
+ # ---------------------------------------------------------------- guards (same as leaf 23 r2.1)
++def vm_status():
++    """VmRSS / VmHWM (kB) from /proc/self/status."""
++    d = {}
++    for l in open("/proc/self/status"):
++        if l.startswith(("VmRSS:", "VmHWM:")): d[l.split(":")[0]] = int(l.split()[1])
++    return d
++
++
+ def rss_watchdog():
++    """r8 (Arch P2; = leaf 23 r2.10 (d)): kill on current RSS or on the high-water mark (VmHWM), so a peak between two samples is not missed."""
+     def loop():
+         while True:
+             try:
+-                kb = int(next(l for l in open("/proc/self/status") if l.startswith("VmRSS")).split()[1])
+-                if kb > RSS_LIMIT_KB: print(f"RSS_GUARD_KILL rss_kb={kb} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
++                v = vm_status()
++                if v["VmRSS"] > RSS_LIMIT_KB or v["VmHWM"] > RSS_LIMIT_KB:
++                    print(f"RSS_GUARD_KILL rss_kb={v['VmRSS']} hwm_kb={v['VmHWM']} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
+             except Exception: pass
+             time.sleep(1)
+     threading.Thread(target=loop, daemon=True).start()
+ 
+ 
++def peak_check(tag):
++    """r8 (Arch P2; = leaf 23 r2.10 (d)): explicit peak check at segment ends (VmHWM and ru_maxrss); over the limit → same kill as the watchdog."""
++    v = vm_status(); mx = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if v["VmHWM"] > RSS_LIMIT_KB or mx > RSS_LIMIT_KB:
++        print(f"RSS_GUARD_KILL at {tag} hwm_kb={v['VmHWM']} maxrss_kb={mx} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
++    print(f"peak_check {tag} rss_kb={v['VmRSS']} hwm_kb={v['VmHWM']}", flush=True)
++
++
+ def ancestors():
+     """own pid + full ancestor chain (Arch P2-4: wrappers carry 'research/' in their cmdline too)."""
+     out, p = set(), os.getpid()
+@@ -444,7 +465,7 @@
+                 reasons["not_suspended"] += int((~r.suspended.fillna(False).astype(bool)).sum())
+                 for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
+             for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has)), ("S_dd", S_dd), ("MV_dd", MV_dd)): parts[k_].append(f_.loc[w])
+-        del pr, mk, has, val, lmv, sus, carry, A, B, S, MV, S_dd, MV_dd; gc.collect()
++        del pr, mk, has, val, lmv, sus, carry, A, B, S, MV, S_dd, MV_dd; gc.collect(); peak_check(f"pool_benchmarks {carry_col} year {y}")   # r8
+     cat = lambda k, _p=parts: pd.concat(_p[k]).reindex(index=idx)   # r7 P3-7: bind parts (pyflakes: later del)
+     S, MV, VAL, LMV = cat("S"), cat("MV"), cat("VAL"), cat("LMV"); U = S.columns
+     S = S.fillna(0.0).astype(bool); MV = MV.reindex(columns=U); VAL = VAL.reindex(columns=U); LMV = LMV.reindex(columns=U)
+@@ -634,7 +655,7 @@
+             cov.append((d, int(ok.sum())))
+         if AL: xparquet(pd.concat(AL), out/f"alpha_{uni}_{y}.parquet"); written.append(f"alpha_{uni}_{y}.parquet")
+         if GL: xparquet(pd.concat(GL), out/f"gate_{uni}_{y}.parquet"); written.append(f"gate_{uni}_{y}.parquet")
+-        print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; gc.collect()
++        print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; gc.collect(); peak_check(f"build {uni} year {y}")   # r8
+     xparquet(pd.DataFrame(cov, columns=["date", "n"]), out/f"coverage_{uni}.parquet"); written.append(f"coverage_{uni}.parquet")
+     write_meta(out, f"build_{uni}", auth, written, up, p3c_nv120_lt100_share_x2=gap_share, uni=uni, ret_on_missing_rows_in_mask=on_missing)
+ 
+@@ -815,7 +836,7 @@
+                                    verdict_cap=("FAIL" if not floor else ("WATCH" if not tpass else "PENDING_EXTERNAL_GATES")),
+                                    note="非判定规格一律「未做多重检验校正，仅披露」" if not is_primary(a) else "判定规格；Gate B/GATE_V3/衰减另由钉 sha 工具出")
+         summ["res"][uni] = res
+-        del A, G, PX; FE._RET.clear(); gc.collect(); print(uni, "eval done", f"rss={rss():.0f}", flush=True)
++        del A, G, PX; FE._RET.clear(); gc.collect(); print(uni, "eval done", f"rss={rss():.0f}", flush=True); peak_check(f"eval {uni}")   # r8
+     summ["peak_rss_mb_eval"] = rss(); xtext(out/f"summary_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
+     write_meta(out, "eval", auth, [f"summary_{stamp}.json"] + sorted(p.name for p in out.glob(f"eval_weights_*_{stamp}.parquet")), up,
+                stamp=stamp, external_outputs=ext_out); print("STAMP", stamp)

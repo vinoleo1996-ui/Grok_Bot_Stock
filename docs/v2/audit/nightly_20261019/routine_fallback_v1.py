@@ -1,0 +1,284 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+"""10-19 例程兜底 v3.1（Arch 2dada5ed D-P0-2 + 主 Agent 12:32 第 3 条 + Arch 行级审 ec1ac8e1 P1-1 / P1-2 / P2-4）。
+由 Data 例程在驱动命令结束后调用，也可由 Arch 06:00–16:40 每 20 分钟例程调用。只用标准库。
+
+步骤：
+  0  本日已有兜底回执且其中 exit==5 或 restore.ok==false → 退出 5，什么都不做（P2-4a：不重试）。
+  1  pgrep 三条锚定、括号转义模式（驱动 / nightly_update / tier1_pull；scripts/acquire/*.py；import tier1_materialize）：
+     命中的进程只有 94322 / 94403（按确切 PID，cmdline 核对）且其 /proc/<pid>/stat 为 T 时才排除；其余任何命中 → 退出 6，什么都不做（P1-2）。
+  2  trade_cal sha == PIN 141078fa 则不恢复。
+  3  != PIN：DONE 已存在 → 只报 P0，不恢复（P2-4b）；否则在 _recovery/data/nightly_<D>/run_*/ 找 sha == PIN 的 trade_cal.parquet.141078fa（取最新），
+     .ok 有 allow_routine_fallback_restore_<D>=true 才原子恢复（同目录 O_EXCL 临时文件 → fsync → os.replace → fsync 目录）并复核。
+  4  DONE / FAILED 都不存在时：只有存在 run_<STAMP> 目录且 STAMP（ET）晚于 .ok issued_at（驱动确实起跑过的证据）才代写唯一 FAILED
+     （writer=routine_fallback，reason=driver_killed；O_EXCL + os.link，绝不覆盖）；否则退出 7（no_run_evidence），只报不写（P1-1）。
+退出码：0 无需动作；1 已代写 FAILED（日历 == PIN）；2 参数错误；3 已有 marker、日历已由兜底恢复到 PIN；5 日历仍不是 PIN（含 DONE 在而 sha 不符、或本日已有失败兜底回执）；
+       6 驱动 / nightly / 步骤脚本仍在，未动；7 无起跑证据，未写 marker。
+不发任何信号；不删除任何文件（只删自己刚建的临时名）；不碰锁与 .ok。
+--test-pin / --test-guarded 只在所有路径都位于 /tmp 下时可用（只供假文件自测）；测试模式下 pgrep 只认 cwd 在 /tmp/ 下的进程，避免把真实进程算进假测试。
+"""
+import argparse, datetime, glob, hashlib, json, os, re, secrets, subprocess, sys
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+PIN = "141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086"
+ROOT = "/workspace/QuantLab"
+PGREPS = (r"(^|[ /])([r]un_nightly_v1|[n]ightly_update|[t]ier1_pull)\.py( |$)",
+          r"(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\.py( |$)",
+          r"[i]mport tier1_materialize")
+GUARDED = {94322: "remaining_after_stk_surv.py", 94403: "relay_outage_backfill.py"}
+
+
+def ts():
+    return datetime.datetime.now(ET).isoformat(timespec="seconds")
+
+
+def sha256(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def fsync_dir(d):
+    fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_new(path, text):
+    d = os.path.dirname(path)
+    tmp = os.path.join(d, ".%s.tmp.%d.%s" % (os.path.basename(path), os.getpid(), secrets.token_hex(4)))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        os.write(fd, text.encode("utf-8")); os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.link(tmp, path)
+    finally:
+        os.unlink(tmp)
+    fsync_dir(d)
+
+
+def proc_state(pid):
+    """进程级 /proc/<pid>/stat 的 state 字段；不存在返回 None。"""
+    try:
+        s = open("/proc/%d/stat" % pid, "rb").read().decode("utf-8", "replace")
+        return s[s.rindex(")") + 2:].split()[0]
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def cmdline(pid):
+    try:
+        return open("/proc/%d/cmdline" % pid, "rb").read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        return ""
+
+
+def proc_cwd(pid):
+    try:
+        return os.readlink("/proc/%d/cwd" % pid)
+    except OSError:
+        return ""
+
+
+def ok_kv(p):
+    """ASCII key=value；读不了返回 {}。只取值，不校验（.ok 的完整校验在驱动里）。"""
+    kv = {}
+    try:
+        for ln in open(p, encoding="ascii").read().split("\n"):
+            m_ = re.fullmatch(r"([A-Za-z0-9_]+)=(.*)", ln.strip())
+            if m_:
+                kv[m_.group(1)] = m_.group(2).strip()
+    except Exception:
+        return {}
+    return kv
+
+
+def busy(guarded, test_mode):
+    me = os.getpid(); blocking, excluded, raw = [], [], []
+    for pat in PGREPS:
+        pg = subprocess.run(["pgrep", "-af", pat], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20)
+        for ln in pg.stdout.splitlines():
+            if not ln.strip():
+                continue
+            pid = int(ln.split()[0])
+            if pid == me or any(x["pid"] == pid for x in raw):
+                continue
+            st = proc_state(pid)
+            x = dict(pid=pid, state=st, cmd=ln[:200], pattern=pat)
+            raw.append(x)
+            if st is None or st == "Z":
+                continue
+            if test_mode and not proc_cwd(pid).startswith("/tmp/"):
+                excluded.append(dict(x, why="测试模式：cwd 不在 /tmp/，不计入")); continue
+            if pid in guarded and guarded[pid] in cmdline(pid) and st == "T":
+                excluded.append(dict(x, why="受保护 PID 且为 T，按确切 PID 排除")); continue
+            blocking.append(x)
+    return blocking, excluded, raw
+
+
+def parse_issued(v):
+    try:
+        t = datetime.datetime.fromisoformat(v)
+        return t if t.tzinfo else None
+    except Exception:
+        return None
+
+
+def run_evidence(run_root, issued):
+    ev = []
+    if issued is None:
+        return ev
+    for d in sorted(glob.glob(os.path.join(run_root, "run_*"))):
+        m_ = re.fullmatch(r"run_(\d{8}T\d{6})", os.path.basename(d))
+        if not (m_ and os.path.isdir(d)):
+            continue
+        st = datetime.datetime.strptime(m_.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=ET)
+        if st > issued:
+            ev.append(dict(run_dir=d, stamp_et=st.isoformat()))
+    return ev
+
+
+def prior_failed(receipt_dir, D):
+    out = []
+    for p in sorted(glob.glob(os.path.join(receipt_dir, "routine_fallback_receipt_*.json"))):
+        try:
+            r = json.load(open(p, encoding="utf-8"))
+        except Exception:
+            continue
+        if r.get("date") == D and (r.get("exit") == 5 or (r.get("restore") or {}).get("ok") is False):
+            out.append(dict(path=p, exit=r.get("exit"), restore=r.get("restore")))
+    return out
+
+
+def restore_atomic(backup, target, pin):
+    d = os.path.dirname(target)
+    tmp = os.path.join(d, ".%s.fallback.%d.%s" % (os.path.basename(target), os.getpid(), secrets.token_hex(4)))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with open(backup, "rb") as s:
+            for b in iter(lambda: s.read(1 << 20), b""):
+                os.write(fd, b)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    if sha256(tmp) != pin:
+        os.unlink(tmp)
+        return False
+    os.replace(tmp, target); fsync_dir(d)
+    return sha256(target) == pin
+
+
+def finish(rec, code, receipt_dir, write_receipt=True):
+    rec["exit"] = code; rec["finished_et"] = ts()
+    if write_receipt:
+        rp = os.path.join(receipt_dir, "routine_fallback_receipt_%s_%d.json" % (datetime.datetime.now(ET).strftime("%Y%m%dT%H%M%S"), os.getpid()))
+        try:
+            write_new(rp, json.dumps(rec, ensure_ascii=False, indent=1))
+            rec["receipt"] = rp
+        except Exception as e:
+            rec["receipt_error"] = repr(e)[:200]
+    print(json.dumps(rec, ensure_ascii=False, indent=1), flush=True)
+    sys.exit(code)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", default="20261019")
+    ap.add_argument("--ok", default=None)
+    ap.add_argument("--target", default=ROOT + "/data/v2/tushare_raw/trade_cal.parquet")
+    ap.add_argument("--run-root", default=None)
+    ap.add_argument("--marker-dir", default=ROOT + "/output/nightly_markers")
+    ap.add_argument("--receipt-dir", default=ROOT + "/docs/v2/audit/nightly_20261019")
+    ap.add_argument("--test-pin", default=None)
+    ap.add_argument("--test-guarded", action="append", default=[], help="仅测试：PID=名称片段，替代 94322 / 94403")
+    a = ap.parse_args()
+    D = a.date
+    if not re.fullmatch(r"\d{8}", D):
+        print("bad --date"); sys.exit(2)
+    okp = a.ok or ROOT + "/output/ai_factory/ARCH_RUN_AUTH_DATA_NIGHTLY_%s.ok" % D
+    run_root = a.run_root or ROOT + "/_recovery/data/nightly_%s" % D
+    pin, guarded, test_mode = PIN, dict(GUARDED), False
+    if a.test_pin or a.test_guarded:
+        paths = [a.target, run_root, a.marker_dir, a.receipt_dir, okp]
+        if not a.test_pin or not all(os.path.realpath(p).startswith("/tmp/") for p in paths):
+            print("--test-pin / --test-guarded 只允许全部路径在 /tmp 下（且须同时给 --test-pin）"); sys.exit(2)
+        pin, test_mode = a.test_pin, True
+        guarded = {}
+        for g in a.test_guarded:
+            k, v = g.split("=", 1); guarded[int(k)] = v
+    rec = dict(tool="routine_fallback_v1", version="v3.1", date=D, started_et=ts(), target=a.target, pin=pin, ok=okp, test_mode=test_mode)
+    pf = prior_failed(a.receipt_dir, D)
+    if pf:
+        rec.update(action="refused_prior_failed_receipt", prior_failed=pf)
+        print("ALERT 本日已有失败的兜底回执（exit 5 或 restore.ok=false），不再动手（Arch P2-4a）", flush=True)
+        finish(rec, 5, a.receipt_dir)
+    blocking, excluded, raw = busy(guarded, test_mode)
+    rec["pgrep"] = dict(patterns=list(PGREPS), blocking=blocking, excluded=excluded, matched=raw)
+    if blocking:
+        rec["action"] = "busy_no_action"
+        finish(rec, 6, a.receipt_dir, write_receipt=False)
+    done = os.path.join(a.marker_dir, "nightly_%s.DONE.json" % D); failed = os.path.join(a.marker_dir, "nightly_%s.FAILED.json" % D)
+    rec["marker_present"] = [p for p in (done, failed) if os.path.lexists(p)]
+    before = sha256(a.target); rec["sha_before"] = before
+    rec["restore"] = None
+    if before != pin:
+        if os.path.lexists(done):
+            rec["restore"] = dict(ok=False, why="DONE 已存在而日历 sha 不符：只报 P0，不恢复（Arch P2-4b）")
+            print("ALERT P0 DONE 已存在但 trade_cal sha 不是 PIN；兜底不恢复", flush=True)
+        else:
+            cands = []
+            for b in sorted(glob.glob(os.path.join(run_root, "run_*", "trade_cal.parquet.141078fa")), reverse=True):
+                s = sha256(b); cands.append(dict(path=b, sha256=s))
+                if s == pin:
+                    break
+            rec["backups_checked"] = cands
+            good = [c for c in cands if c["sha256"] == pin]
+            allowed = ok_kv(okp).get("allow_routine_fallback_restore_%s" % D) == "true"
+            rec["allow_routine_fallback_restore"] = allowed
+            if good and allowed:
+                rec["restore"] = dict(backup=good[0]["path"], ok=restore_atomic(good[0]["path"], a.target, pin), at=ts())
+            else:
+                rec["restore"] = dict(ok=False, why="无 sha==PIN 的备份" if not good else ".ok 未授权 allow_routine_fallback_restore_%s" % D)
+    after = sha256(a.target); rec["sha_after"] = after
+    wrote, no_ev = False, False
+    if not rec["marker_present"]:
+        issued = parse_issued(ok_kv(okp).get("issued_at", ""))
+        ev = run_evidence(run_root, issued)
+        rec["run_evidence"] = dict(issued_at=issued.isoformat() if issued else None, run_dirs_after_issued=ev)
+        if ev:
+            m = dict(schema="quantlab.v2.nightly_marker.v1", status="FAILED", writer="routine_fallback", reason="driver_killed", date=D,
+                     trade_cal_sha256_before=before, trade_cal_sha256_after=after, trade_cal_pin=pin, restore=rec["restore"],
+                     run_evidence=ev, pgrep=rec["pgrep"], live=False, promotion_approved=False, written_at_et=ts())
+            os.makedirs(a.marker_dir, exist_ok=True)
+            try:
+                write_new(failed, json.dumps(m, ensure_ascii=False, indent=1))
+                rec["marker_written"] = dict(path=failed, sha256=sha256(failed)); wrote = True
+            except FileExistsError:
+                rec["marker_written"] = dict(path=failed, error="已存在，不写第二份")
+        else:
+            no_ev = True
+            rec["action"] = "no_run_evidence"
+            print("无起跑证据（没有晚于 .ok issued_at 的 run_<STAMP> 目录）：只报不写 marker（Arch P1-1）", flush=True)
+    if after != pin:
+        print("ALERT trade_cal sha 仍不是 PIN（主 Agent 12:32：P1；同时报 Arch）", flush=True)
+        code = 5
+    elif wrote:
+        code = 1
+    elif no_ev:
+        code = 7
+    elif (rec["restore"] or {}).get("ok"):
+        code = 3
+    else:
+        code = 0
+    finish(rec, code, a.receipt_dir)
+
+
+if __name__ == "__main__":
+    main()

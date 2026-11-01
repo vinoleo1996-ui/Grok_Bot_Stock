@@ -1,0 +1,11 @@
+--- a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -1,7 +1,7 @@
+ # 预注册：申万行业 as-of（PIT）修复，改前/改后对照（r3e，Arch 已审：r3d 审查 PASS_WITH_CONDITIONS c08065f3；r3e 依据 Arch 2026-10-18 12:09 ET 裁定）
+ 
+ - 日期：2026-10-18（美东）；提出：QuantLab Strategy；状态：r3e，Arch 已审；对照运行未授权、未运行（需 Arch 签 run .ok）
+-- 代码提案：docs/v2/audit/STRATEGY_SW_PIT_ASOF_FIX_PROPOSAL_20261018_r2.diff（取代 r1 98633d9b；按 Arch 审查 3f195231 修改）
++- 代码提案（完整链 B r2 → r3d → r3e；B r2 与 r3d 于 2026-10-18 11:47 ET 连续落地，r3e 于 12:21 ET 增量落地）：B r2 `docs/v2/audit/STRATEGY_SW_PIT_ASOF_FIX_PROPOSAL_20261018_r2.diff`（sha256 d0fb1d3faa6962d19e8405280975e8818766ef406b00f390edcc9b02f81ee250；取代 r1 98633d9b；按 Arch 审查 3f195231 修改）→ r3d 完整 diff `docs/v2/audit/STRATEGY_SW_PIT_ASOF_TRADEDAY_PROPOSAL_20261018_r3d.diff`（sha256 090e9c2a4ebbd40cd056f6438e2216a1292b00b172d8be99675c778ab5eceaa8；Arch 审查 c08065f3）→ r3e 增量 `docs/v2/audit/STRATEGY_SW_PIT_ASOF_TRADEDAY_PROPOSAL_20261018_r3e_incremental.diff`（sha256 4f1952ef0e278613ec6283ef071ccde6ae2471a35cfb9f65f641c01fd907f670），r3e 完整 `docs/v2/audit/STRATEGY_SW_PIT_ASOF_TRADEDAY_PROPOSAL_20261018_r3e.diff`（sha256 db151957a9bf17e90284e915edfd3b936c1083545a855b4b9b4171063eab533d）；r3e 自测回执 `docs/v2/audit/strategy_r3e/SELFTEST_R3E_RECEIPT_20261018.md`（sha256 ec10c0569813b16c2d9a7fb6317856afb8a182cfd00a371e5558e5691037ce91，85 passed）
+ - live=false，promotion=false。纸面（FROZEN_CONFIG、capadv/B4/S6 纸面轨、10-19 17:40 ET 纸面运行）和已封存产物都不动，也不读本结果。
+ 
+ ## 1. 要回答的问题

@@ -1,0 +1,23 @@
+{
+  "checked_at_et": "2026-10-10 12:42:49 ET",
+  "proxy": "http://100.102.49.98:7897",
+  "base": "http://datahubco.com/app-api/openapi/v1/tushare/<api>",
+  "verdict": {
+    "pro_bar": {
+      "vs_workbuddy": "PASS_CONFIRMED",
+      "detail": "HTTP 400 local_validation unknown_api; msg: api_name is not supported over HTTP: pro_bar"
+    },
+    "stk_factor_pro": {
+      "vs_workbuddy": "FAIL_CONTRADICTED",
+      "detail": "With ts_code returns 200 code=0 upstream MISS (21 rows). Without ts_code: 400 requires ts_code. Not universally 502/timeout."
+    },
+    "specialty_8": {
+      "vs_workbuddy": "PASS_CONFIRMED_USABLE_FALSE",
+      "nuance": "All 8 unusable. Some HTTP 502 empty; most return upstream code 40101 请指定正确的接口名"
+    },
+    "margin_detail_p0": {
+      "vs_workbuddy": "PASS_CONFIRMED_WITH_CAVEAT",
+      "detail": "20260930 no fields → sqlite LOCAL SH-only 2001; +fields(name...) → upstream 4454 SH+SZ+BJ. Caveat: not every date; 20260929 local already complete; 20261009 upstream itself SH-only even with fields."
+    }
+  }
+}

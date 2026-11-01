@@ -1,0 +1,11 @@
+--- docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_PIN_LIST_v3.md	2026-10-18 13:27:08.575931890 -0400
++++ docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_PIN_LIST_v3_1.md	2026-10-18 14:26:17.353070428 -0400
+@@ -35,7 +35,7 @@
+ 
+ ## 三、第二前置：Strategy sw_pit r3e 自测
+ - r3e 自测 2026-10-18 12:55:50–12:55:53 ET，85 passed / 0 failed，EXIT=0（回执 docs/v2/audit/strategy_r3e/SELFTEST_R3E_RECEIPT_20261018.md，sha256 ec10c0569813b16c2d9a7fb6317856afb8a182cfd00a371e5558e5691037ce91；.ok bf4ee8c7）。r3e 落地件：research/sw_members_asof.py dec73305…，测试 e80f98ed…，预注册 28b89a61…（落地回执 cd379089…）。
+-- commit sha：**未提交，按文件 sha 钉**。research/sw_members_asof.py dec73305f8cd49d2c4ad695f72158e10bceb20de83fa19b2a1580be08579a9a7；自测回执 docs/v2/audit/strategy_r3e/SELFTEST_R3E_RECEIPT_20261018.md ec10c0569813b16c2d9a7fb6317856afb8a182cfd00a371e5558e5691037ce91，Arch 12:58 ET 受理。
++- commit sha：commit da9fde6a（仅作交叉引用，钉住以文件 sha 为准）。research/sw_members_asof.py dec73305f8cd49d2c4ad695f72158e10bceb20de83fa19b2a1580be08579a9a7；自测回执 docs/v2/audit/strategy_r3e/SELFTEST_R3E_RECEIPT_20261018.md ec10c0569813b16c2d9a7fb6317856afb8a182cfd00a371e5558e5691037ce91，Arch 12:58 ET 受理。
+ - 说明：步骤 −1 脚本本身不读申万表、不调用 sw_members_asof；此前置是为叶25 冻结链。
+ 
+ ## 四、本次运行的一行预注册

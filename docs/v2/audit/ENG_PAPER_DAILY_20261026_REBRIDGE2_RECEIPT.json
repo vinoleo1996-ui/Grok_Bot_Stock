@@ -1,0 +1,190 @@
+{
+  "schema": "quantlab.eng.paper_daily_rebridge2_receipt.v1",
+  "D": "20261026",
+  "written_at_et": "2026-10-26T19:43:45-04:00",
+  "status": "OK",
+  "paper_daily_bus_exit": 0,
+  "paper_daily_bus": {
+    "exits": [
+      0,
+      0,
+      0
+    ],
+    "nav": true,
+    "holdings": true,
+    "gate": true,
+    "receipt": true
+  },
+  "rehash_exits": {
+    "b4": 0,
+    "s6": 0
+  },
+  "rehash": {
+    "b4": "APPLIED",
+    "s6": "APPLIED",
+    "b4_receipt": "docs/v2/B4_PAPER_REHASH_20261026_194022_ZH.md",
+    "s6_receipt": "docs/v2/S6_PAPER_REHASH_20261026_194028_ZH.md"
+  },
+  "forced": false,
+  "live": false,
+  "promotion_approved": false,
+  "weights_modified": false,
+  "done_sha8": "fbddcd2b",
+  "readiness_sha8": "3b76da6b",
+  "abort_kept_sha8": "665232a5",
+  "log": "/tmp/paper_daily_20261026_rebridge2_20261026T194014_3361020.log",
+  "out_dir": "output/loop/paper_daily_20261026",
+  "scripts": {
+    "b4": "da62b28a",
+    "s6": "93b00354",
+    "b4_full": "da62b28a43a88bb9e28d725eba84040be7c99ae5b08e93e9960e4a0057aad1c6",
+    "s6_full": "93b0035431929ea6fddd955a30673e588606ab8aa97c94c0637dbc0d5a05bd45"
+  },
+  "parquets": {
+    "b4_60w": "7c99ab58",
+    "b4_100w": "48cbb6e2",
+    "s6_60w": "8d76180a",
+    "s6_100w": "0d6ce661"
+  },
+  "frozen_pre_rebridge2": {
+    "b4_file_sha8": "c06023f9",
+    "s6_file_sha8": "e4b9227e",
+    "note": "parent Eng re-pin of frozen_script_sha256 only; weights tip still 20261014 until this run"
+  },
+  "frozen_tips": {
+    "b4": {
+      "600000": {
+        "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_60w_20261026_r2.parquet",
+        "sha8": "7c99ab58",
+        "sha256": "7c99ab58d2e7647ea4868703620eb0341ad81333977d912a6794c5a0d0e6be75"
+      },
+      "1000000": {
+        "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_100w_20261026_r2.parquet",
+        "sha8": "48cbb6e2",
+        "sha256": "48cbb6e2c9c1e0340796cda64671a6ff353a053cb87518bfa0185973311dbac0"
+      }
+    },
+    "s6": {
+      "600000": {
+        "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_60w_20261026.parquet",
+        "sha8": "8d76180a",
+        "sha256": "8d76180a31c1ea6cfa341b943692cdd3e34de2ef369395501d2c96f8bcb12441"
+      },
+      "1000000": {
+        "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_100w_20261026.parquet",
+        "sha8": "0d6ce661",
+        "sha256": "0d6ce6617baeaaa38212c7feead736fbd561ee3d2ab474e5c5cf2ddfb1a76b8c"
+      }
+    },
+    "b4_file_sha8": "650b5f2a",
+    "s6_file_sha8": "eb456b52"
+  },
+  "frozen_script_pins_after": {
+    "b4": {
+      "research/b4_paper_extend.py": "da62b28a",
+      "research/capacity_adv_paper_extend.py": "bfb05630",
+      "research/g1g5_capacity_adv_weights.py": "c7a05486",
+      "research/g1g5_earnings_event_weights.py": "059ab23a",
+      "research/g1g5_insider_increase_weights.py": "16d93948"
+    },
+    "s6": {
+      "research/s6_paper_extend.py": "93b00354",
+      "research/b4_paper_extend.py": "da62b28a",
+      "research/capacity_adv_paper_extend.py": "bfb05630",
+      "research/g1g5_capacity_adv_weights.py": "c7a05486",
+      "research/g1g5_earnings_event_weights.py": "059ab23a",
+      "research/g1g5_equity_incentive_weights.py": "2a396239"
+    }
+  },
+  "content_gate": {
+    "b4": {
+      "pass": true,
+      "line": "REHASH APPLIED; receipt docs/v2/B4_PAPER_REHASH_20261026_194022_ZH.md"
+    },
+    "s6": {
+      "pass": true,
+      "line": "REHASH APPLIED; receipt docs/v2/S6_PAPER_REHASH_20261026_194028_ZH.md"
+    }
+  },
+  "track_status": {
+    "capacity_adv": "OK_HOLD_EXTEND",
+    "b4": "OK",
+    "s6": "OK"
+  },
+  "tracks": {
+    "capacity_adv_600000": {
+      "nav_last": 810864.5111,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1382463352,
+      "mdd_x2": -0.1007402256,
+      "calmar_x2": 1.3723051973,
+      "win_monthly_x2": 0.5,
+      "win_daily_x2": 0.5272407733,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "capacity_adv_1000000": {
+      "nav_last": 1311336.9508,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1223377608,
+      "mdd_x2": -0.1162408466,
+      "calmar_x2": 1.0524507037,
+      "win_monthly_x2": 0.5714285714,
+      "win_daily_x2": 0.5360281195,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "b4_600000": {
+      "nav_last": 823047.4819,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.151074087,
+      "mdd_x2": -0.1384535055,
+      "calmar_x2": 1.0911539325,
+      "win_monthly_x2": 0.6428571429,
+      "win_daily_x2": 0.525483304,
+      "status": "OK"
+    },
+    "b4_1000000": {
+      "nav_last": 1336310.2916,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1423532931,
+      "mdd_x2": -0.1317137586,
+      "calmar_x2": 1.0807777003,
+      "win_monthly_x2": 0.5714285714,
+      "win_daily_x2": 0.5289982425,
+      "status": "OK"
+    },
+    "s6_600000": {
+      "nav_last": 852856.1581,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1714513292,
+      "mdd_x2": -0.1194934042,
+      "calmar_x2": 1.434818351,
+      "win_monthly_x2": 0.6428571429,
+      "win_daily_x2": 0.5202108963,
+      "status": "OK"
+    },
+    "s6_1000000": {
+      "nav_last": 1392491.4002,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1637447276,
+      "mdd_x2": -0.1266122444,
+      "calmar_x2": 1.29327719,
+      "win_monthly_x2": 0.6071428571,
+      "win_daily_x2": 0.5237258348,
+      "status": "OK"
+    }
+  },
+  "pending_reasons": {},
+  "receipt_md": "docs/v2/audit/ENG_PAPER_DAILY_20261026_REBRIDGE2_RECEIPT_ZH.md",
+  "anomalies": [
+    "log file only captured X2H bridge stdout (Python block-buffering); extend/rehash evidence taken from paper_daily_recon.json steps + FROZEN rehash_history + REHASH APPLIED receipts",
+    "FWD still WAITING (weights end 2026-10-26 < forward start 2026-11-02) — expected",
+    "B4/S6 tip NAV moved from 2026-10-14 end to 2026-10-26 after rehash+bridge (cap already at 10-26)"
+  ],
+  "receipt_md_sha8": "4bff2666"
+}

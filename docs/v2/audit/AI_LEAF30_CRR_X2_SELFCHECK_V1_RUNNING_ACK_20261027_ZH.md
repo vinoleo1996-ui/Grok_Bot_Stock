@@ -1,0 +1,22 @@
+# AI 叶30 CRR X2 selfcheck_v1 RUNNING_ACK
+
+- ET: 2026-10-27 01:48 ET（America/New_York；`2026-10-27T01:48:46-04:00`）
+- status: **RUNNING**
+- ET_TS: `20261027_014833`
+- pid: `3705608` alive=True nice=10
+- script: `research/leaf30_crr_x2_selfcheck_v1.py` sha8 **`797724d4`** / 全长 `797724d411704ffc8dfe1fcc77039c87ffadda4e6dcd38fb60af60ee8bb27344`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF30_CRR_X2_SELFCHECK_V1_HILIQ_X2.ok` sha8 **`aa25e989`** / 全长 `aa25e989cf31e0810a0b485c7db7f7e0272cd2e8af9093bf3722e2c9b0b304ea`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`0eb56fe2`** holder=`leaf30_CRR_X2_SELFCHECK_V1`（**未擅 lift**；do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF30_CRR_X2_SELFCHECK_OK_SIGNED_20261027_ZH.md` sha8 **`21078eb5`**
+- CMD: **`c25f1321`**（禁 `--arch-ok-path`）
+- 钉 alpha **`c8c7a5a5`** / meta **`a6acfe27`** / overlap **`f9991d9d`**；构建 **`3ee9fed2` UNCHANGED**
+- out: `output/ai_factory/_leaf30_crr/20261027_003132/_selfcheck/`
+- report: `output/ai_factory/leaf_reports/leaf30_crr/selfcheck_v1.json`
+- log: `output/ai_factory/_leaf30_crr/20261027_003132/_selfcheck/_logs/run_20261027_014833.log`
+- samp: `/tmp/quantlab_leaf30_x2_selfcheck_20261027_014833`
+- approved_cmd: **exact**（**无** `--arch-ok-path`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf30_crr_x2_selfcheck_v1.py --universe HILIQ --window x2 --execute`
+- prelaunch: QUIET MATCH `0eb56fe2`；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈12.9Gi≥soft；script/build/pins MATCH；dry-compile-only PASS（rss_mb≈99；pin_sha_match=true；forbid∋`7e239487`+`5af20222`+`5ae077fa` n=16）
+- rss_limit_mb: **1500 禁抬**；硬 ABORT + peak_proof REQUIRED
+- ≠X2 ACCEPT / ≠Book-Smoke / ≠重跑 alpha；live=false；禁 RESTORED `7e239487`/`5af20222`/`5ae077fa`
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**

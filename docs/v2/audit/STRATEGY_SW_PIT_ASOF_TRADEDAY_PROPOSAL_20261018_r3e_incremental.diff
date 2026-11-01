@@ -1,0 +1,241 @@
+# DIFF C r3e — INCREMENTAL vs r3d (PRIMARY review item). Base = r3d as landed: sw_members_asof.py 72e4e4c3 /
+#   test 3fa3878d / hx2 7b8235dc / fulla fa2e4629 / prereg 2e1347b5 (= /tmp/swr5/c3d, sha-verified). Companion: ..._r3e.diff (base b2).
+# r3e DELTA vs r3d (landed 2026-10-18 11:47 ET; r3d full diff 090e9c2a), per Arch 2026-10-18 12:09 ET ruling on the
+#   r3d selftest (8cef6e9d CONSUMED_FAIL: 8 failed / 75 passed, receipt 13e9ddff, output 12404088):
+#   ① missing -> real None (implementation fixed, the 83 existing tests are unchanged). Root cause located on
+#      synthetic data (pandas 3.0.6, future.infer_string=True; /tmp/swr5/r3e_work_log/out_diag1.txt):
+#      (a) l1_asof / sw_l1_asof_chunked returned pd.Series(<object ndarray of str/None>) without dtype -> pandas 3
+#          infers dtype "str", whose missing value is nan (7 of 8 failures: l1_asof, gap carry, chunked);
+#      (b) _norm_a_share started from pd.Series(None, index=..., dtype=object), which pandas 3 fills with nan, not
+#          None (tsh00018 failure). The out[mask]= assignments and the merges were NOT the cause.
+#      Fix: one exit helper _none_for_missing(s) = s.astype(object).where(s.notna(), None); used by _norm_a_share
+#      (+ its initial Series now built from an object ndarray), l1_asof (=> sw_l1_asof_with_gap_carry) and
+#      sw_l1_asof_chunked (=> IndustryAsOf.by_session / reclass_share), and the CLEAN adapter output ts_code /
+#      l1_name. Non-missing values unchanged (all 83 old tests pass). Intel row filter sw_members_asof returns rows
+#      of the input frame (no new missing values) -> unchanged, verbatim Intel copy kept.
+#   ② P2-1 prereg L1 / L3 (DRAFT / 草稿 vs §5 L43 "Arch 11:28 ET 确认") -> r3e status wording; no other prereg line
+#      changed. Prereg now contains no DRAFT / 草稿 (rg -i).
+#   ③ P2-2 sw_l1_table_check: as_of -> pd.Timestamp(as_of).normalize().as_unit("us") (TS_UNIT) before comparing
+#      with coverage_day and in the cross-call aggregation; unparseable / empty as_of -> SwPitIntegrityError; result
+#      as_of (and the legacy sw_pit_freshness call) get the ISO day string strftime("%Y-%m-%d").
+#   ④ module docstring r3e paragraph (Arch 2026-10-18 12:09 ET). NOT in r3e: sw_code multi-name disclosure (P3,
+#      separate). hx2 / fulla unchanged (7b8235dc / fa2e4629).
+# Tests (synthetic, /tmp only, NOT the real repo): 85 = 83 + 2 new (test_r3e_missing_is_none_on_every_public_exit,
+#   test_r3e_table_check_as_of_yyyymmdd_equals_iso). Final /tmp run 2026-10-18 12:15 ET: "85 passed", 0 failed /
+#   error / skipped, EXIT=0 (receipt docs/v2/audit/STRATEGY_SW_PIT_R3E_TMP_SELFTEST_RECEIPT_20261018.md).
+#   py_compile EXIT=0; pyflakes EXIT=1 = only the 2 baseline findings (hx2 charts2, fulla nav_path).
+# Targets: research/sw_members_asof.py dec73305f8cd49d2c4ad695f72158e10bceb20de83fa19b2a1580be08579a9a7
+#          research/tests_sw_pit/test_sw_members_asof.py e80f98ed778dbb82d096716fc87c76306fe14d887c177015e623e534514794cc
+#          docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md 28b89a61310a582f34f7447e2695d1698f75ff8e31e39c3e6e08a73b186bd2b5
+#          unchanged: hx2 7b8235dc75a8003993e155fe28924882e1d112117a2a8542c26e292db66b60a1, fulla
+#          fa2e4629eea11e81ab9928ef071759e813f50fd0aae162f79f68e44df1b5bf1b, sw_pit_freshness.py 5191997e,
+#          test_sw_pit_freshness.py cee59fc5.
+# Not applied to the real tree, not committed, no .ok touched, no real data read. Author: QuantLab Strategy, 2026-10-18 ET.
+diff --git a/research/sw_members_asof.py b/research/sw_members_asof.py
+index 836af2b19bc3f5ef9ffc4b49a4d244c78b287ead..c68e36246bc1771093ff92c5fc960c794fe16825 100644
+--- a/research/sw_members_asof.py
++++ b/research/sw_members_asof.py
+@@ -59,6 +59,14 @@ r3c (Arch 016ae55e P3s, Arch 2026-10-18 11:11 ET rulings ①-④, Data §14② 0
+   - r3d (Arch 11:29 ET ②): CLEAN manifest check also compares n_l1 (nunique sw_code) and available_at_nulls.
+   - Arch 11:20 ET: Tsh.00018 excluded only on an exact (stripped) match and never normalised to an A share (①); dates
+     and keys cast explicitly to TS_UNIT = datetime64[us] on both sides before any comparison (③; no merge_asof).
++r3e (Arch 2026-10-18 12:09 ET; r3d selftest 8 failed / 75 passed, pandas 3.0.6 returned nan for missing):
++  - missing l1_name / ts_code is returned as a real None: every public Series exit (_norm_a_share, l1_asof,
++    sw_l1_asof_with_gap_carry, sw_l1_asof_chunked, IndustryAsOf via those, CLEAN adapter ts_code / l1_name) goes
++    through _none_for_missing (astype(object) then where(notna, None)); non-missing values are unchanged. Root
++    cause: pandas 3 infer_string makes pd.Series(<object ndarray of str/None>) a "str" Series (missing = nan), and
++    pd.Series(None, index=..., dtype=object) is filled with nan, not None;
++  - P2-2: sw_l1_table_check parses as_of to pd.Timestamp (TS_UNIT) before comparing (no string compare);
++    '20261009' and '2026-10-09' give the same result; unparseable as_of -> SwPitIntegrityError.
+ """
+ from __future__ import annotations
+ 
+@@ -89,6 +97,13 @@ MAX_KEYS_PER_CALL = 1_000_000  # r3c P3-6 / Arch 11:11 ④: DEFAULT of the max_k
+ TS_UNIT = "datetime64[us]"  # r3c (Arch 11:20 ET ③): CLEAN dates are [us]; all dates / keys cast to this first
+ 
+ 
++def _none_for_missing(s: pd.Series) -> pd.Series:
++    """r3e (Arch 2026-10-18 12:09 ET): single exit normalisation for returned l1_name / ts_code Series: object dtype,
++    every missing value (nan / NA / None) is the Python None; non-missing values, index and name are unchanged."""
++    s = s.astype(object)
++    return s.where(s.notna(), None)
++
++
+ def _check_on_overlap(on_overlap) -> str:
+     if not isinstance(on_overlap, str) or on_overlap not in ON_OVERLAP_CHOICES:
+         raise ValueError(f"on_overlap must be one of {ON_OVERLAP_CHOICES}, got {on_overlap!r}")
+@@ -233,10 +248,10 @@ def _norm_a_share(codes: pd.Series) -> pd.Series:
+     pfx = s.str.extract(A_PFX, flags=re.I)
+     dot_ok = s.str.fullmatch(A_DOT, flags=re.I).fillna(False).astype(bool)
+     pfx_ok = s.str.fullmatch(A_PFX, flags=re.I).fillna(False).astype(bool)
+-    out = pd.Series(None, index=codes.index, dtype=object)
++    out = pd.Series(np.full(len(codes), None, dtype=object), index=codes.index, dtype=object)  # r3e: not Series(None)
+     out[dot_ok] = (dot[0] + "." + dot[1].str.upper())[dot_ok].astype(object)
+     out[pfx_ok] = (pfx[1] + "." + pfx[0].str.upper())[pfx_ok].astype(object)
+-    return out
++    return _none_for_missing(out)  # r3e: missing -> None
+ 
+ 
+ def normalize_sw_l1_layout(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+@@ -276,7 +291,8 @@ def normalize_sw_l1_layout(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+                         "n_l1": int(df["sw_code"].nunique()),
+                         "available_at_nulls": int(df["available_at"].isna().sum())}}
+         keep = ~known
+-        return df[keep].assign(ts_code=ts[keep], l1_name=df.loc[keep, "sw_name"]), info
++        return df[keep].assign(ts_code=_none_for_missing(ts[keep]),
++                               l1_name=_none_for_missing(df.loc[keep, "sw_name"])), info  # r3e: missing -> None
+     raise SwPitIntegrityError(f"SW L1 table layout not recognised (need ts_code/l1_name or instrument_id/sw_name): "
+                               f"columns {sorted(cols)}")
+ 
+@@ -372,7 +388,18 @@ def sw_l1_table_check(root: Path, sw: pd.DataFrame, as_of, cal: "TradeCal", *, a
+     Aggregated per path across calls (latest as_of, union of warns / lag_notes); read back with
+     sw_l1_table_check_last(path)."""
+     p = Path(sw.attrs.get("path", "")).resolve()
+-    a = None if as_of is None else str(as_of)[:10]
++    # r3e P2-2 (Arch 2026-10-18 12:09 ET): parse as_of to a TS_UNIT Timestamp before any comparison (the r3d string
++    # compare read '20261009' > '2026-10-16' -> false coverage_gap); a = ISO day string for the result / legacy check
++    a_ts = None
++    if as_of is not None:
++        try:
++            a_ts = pd.Timestamp(as_of)
++        except (TypeError, ValueError) as e:
++            raise SwPitIntegrityError(f"sw_l1_table_check: as_of unparseable: {as_of!r} ({e})")
++        if pd.isna(a_ts):
++            raise SwPitIntegrityError(f"sw_l1_table_check: as_of is NaT/empty: {as_of!r}")
++        a_ts = a_ts.normalize().as_unit("us")  # TS_UNIT
++    a = None if a_ts is None else a_ts.strftime("%Y-%m-%d")
+     if p == (Path(root) / SW_L1_LEGACY_REL).resolve():
+         r = dict(_sw_pit_ensure_checked(Path(root), as_of=a, as_of_defaulted=as_of_defaulted),
+                  check="research.sw_pit_freshness (manifest data/v2/sw_pit)", path=str(p))
+@@ -391,7 +418,7 @@ def sw_l1_table_check(root: Path, sw: pd.DataFrame, as_of, cal: "TradeCal", *, a
+             warns.append(f"lag_tdays={lag}>{CLEAN_STALE_LAG_TDAYS}")
+         else:
+             notes.append(f"lag_tdays={lag} (<= {CLEAN_STALE_LAG_TDAYS}: not stale)")
+-        if a is not None and a > base["coverage_day"]:
++        if a_ts is not None and a_ts > pd.Timestamp(base["coverage_day"]).as_unit("us"):  # r3e P2-2: Timestamps
+             warns.append(f"coverage_gap: as_of={a} > coverage_day={base['coverage_day']}")
+         base = dict(base, stale_lag_tdays=CLEAN_STALE_LAG_TDAYS)
+     if as_of_defaulted:
+@@ -401,7 +428,7 @@ def sw_l1_table_check(root: Path, sw: pd.DataFrame, as_of, cal: "TradeCal", *, a
+              checked_at_et=(now_et or _dt.datetime.now(_ET)).isoformat(timespec="seconds"), warns=warns,
+              lag_notes=notes, n_calls=1)
+     if prev is not None:
+-        if prev.get("as_of") is not None and (a is None or prev["as_of"] > a):
++        if prev.get("as_of") is not None and (a_ts is None or pd.Timestamp(prev["as_of"]).as_unit("us") > a_ts):
+             r["as_of"], r["as_of_defaulted"] = prev["as_of"], prev["as_of_defaulted"]
+         r["warns"] = list(dict.fromkeys(prev["warns"] + warns))
+         r["lag_notes"] = list(dict.fromkeys(prev.get("lag_notes", []) + notes))
+@@ -565,7 +592,7 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+                                        "(主 Agent 2026-10-18 06:01 ET; window relaxed C r2 06:16 ET)")
+             stats["trade_cal_sha256"] = cal.sha256
+         stats["n_rows_unknown"] = int(pd.isna(out).sum())
+-    return pd.Series(out, index=keys.index, name="l1_name")
++    return _none_for_missing(pd.Series(out, index=keys.index, name="l1_name", dtype=object))  # r3e: missing -> None
+ 
+ 
+ def sw_l1_asof_with_gap_carry(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+@@ -666,7 +693,7 @@ def sw_l1_asof_chunked(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "in
+                 stats[lk] = _merge_code_lists([st.get(lk, []) for st in sts])
+                 stats[nk] = len(stats[lk])
+         stats["n_chunks"] = len(groups)
+-    return pd.Series(out, index=keys.index, name="l1_name")
++    return _none_for_missing(pd.Series(out, index=keys.index, name="l1_name", dtype=object))  # r3e: missing -> None
+ 
+ 
+ def l1_static_last(sw: pd.DataFrame) -> dict:
+diff --git a/research/tests_sw_pit/test_sw_members_asof.py b/research/tests_sw_pit/test_sw_members_asof.py
+index 24261b1ca4335b355185f5598ae15c829ed667d9..64bc150d0bb4f28a4932cd1a62dc77a7fee85ccd 100644
+--- a/research/tests_sw_pit/test_sw_members_asof.py
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -813,3 +813,78 @@ def test_check_allow_ok_rejects_draft(tmp_path, rel, extra):
+     p = _ok_file(tmp_path, _GOOD_OK + (extra or ""), rel)
+     with pytest.raises(SystemExit, match="DRAFT"):
+         A.check_allow_ok(p, "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
++
++
++# ---- r3e (Arch 2026-10-18 12:09 ET): missing -> real None on every public exit; P2-2 as_of parsed to Timestamp ----
++def _assert_none_missing(s, expected):
++    # explicit: object dtype, element-wise `is None` for missing, non-missing values unchanged
++    assert isinstance(s, pd.Series) and s.dtype == object, (type(s), getattr(s, "dtype", None))
++    got = s.tolist()
++    assert len(got) == len(expected)
++    for g, e in zip(got, expected):
++        if e is None:
++            assert g is None, f"missing must be None, got {g!r}"
++        else:
++            assert isinstance(g, str) and g == e
++
++
++def test_r3e_missing_is_none_on_every_public_exit():
++    _assert_none_missing(A._norm_a_share(pd.Series(["Tsh.00018", "sh.600018", "000001.sz", "bad", None])),
++                         [None, "600018.SH", "000001.SZ", None, None])
++    _assert_none_missing(A._norm_a_share(pd.Series(["Tsh.00018"])), [None])  # all-missing
++    _assert_none_missing(A._none_for_missing(pd.Series(["a", None, float("nan")], dtype="str")), ["a", None, None])
++    sw = A.prep_sw(SW)
++    k = _k([("X.SZ", "2025-03-10"), ("NOPE.SZ", "2025-03-10"), ("Z.SH", "2025-03-11"), ("H.SZ", "2025-03-11")])
++    _assert_none_missing(A.l1_asof(sw, k), ["电子", None, None, None])
++    _assert_none_missing(A.l1_asof(sw, _k([("NOPE.SZ", "2025-03-10")])), [None])  # all-missing
++    _assert_none_missing(A.l1_asof(sw, _k([])), [])  # empty
++    st: dict = {}
++    _assert_none_missing(A.sw_l1_asof_with_gap_carry(sw, k, stats=st, cal=CAL), ["电子", None, "医药生物", None])
++    assert st["n_rows_unknown"] == 2
++    kc = _k([("X.SZ", "2025-03-10"), ("NOPE.SZ", "2025-03-11"), ("H.SZ", "2025-03-11"), ("G.SZ", "2025-03-12"),
++             ("NOPE.SZ", "2025-03-12")])
++    one = A.sw_l1_asof_with_gap_carry(sw, kc, cal=CAL).tolist()
++    st = {}
++    ch = A.sw_l1_asof_chunked(sw, kc, stats=st, cal=CAL, max_keys=2)
++    assert st["n_chunks"] == 3 and ch.tolist() == one
++    _assert_none_missing(ch, ["电子", None, None, "计算机", None])
++    st = {}
++    _assert_none_missing(A.sw_l1_asof_chunked(sw, kc, stats=st, cal=CAL), ["电子", None, None, "计算机", None])
++    assert st["n_chunks"] == 1
++    ia = A.IndustryAsOf(SW, cal=CAL)
++    bs = ia.by_session(kc)
++    assert all(isinstance(v, str) for m in bs.values() for v in m.values())  # missing codes dropped, never nan
++    assert bs["2025-03-10"] == {"X.SZ": "电子"} and bs["2025-03-12"] == {"G.SZ": "计算机"}
++    rs = ia.reclass_share(kc)
++    assert rs["n_rows_asof_missing"] == 3 and rs["n_rows_unknown"] == 3
++    d = _clean_frame(["Tsh.00018", "sh.600018", "sz.000018"], ["综合", "钢铁", "银行"], ["2020-01-02"] * 3,
++                     [None] * 3, ["Y"] * 3)
++    out, _ = A.normalize_sw_l1_layout(d)
++    _assert_none_missing(out["ts_code"], ["600018.SH", "000018.SZ"])
++    _assert_none_missing(out["l1_name"], ["钢铁", "银行"])
++
++
++def test_r3e_table_check_as_of_yyyymmdd_equals_iso(tmp_path):
++    # P2-2: as_of parsed to a TS_UNIT Timestamp before comparing; r3d compared strings ('20261009' > '2026-10-09')
++    sw = _clean_root(tmp_path)
++    now = dt.datetime(2026, 10, 12, 7, 0, tzinfo=A._ET)  # coverage_day 2026-10-09 (see test above)
++    res = {}
++    for a in ("20261009", "2026-10-09", pd.Timestamp("2026-10-09"), dt.date(2026, 10, 9), "2026-10-09 15:00:00"):
++        A._reset_table_checks_for_tests()
++        r = A.sw_l1_table_check(tmp_path, sw, a, CAL, now_et=now)
++        assert r["coverage_day"] == "2026-10-09" and r["as_of"] == "2026-10-09"
++        assert r["stale"] is False and r["warns"] == [] and r["stale_reasons"] == []  # no false coverage_gap
++        res[str(a)] = {k: v for k, v in r.items() if k != "checked_at_et"}
++    assert len({json.dumps(v, sort_keys=True, default=str) for v in res.values()}) == 1  # identical results
++    for a in ("20261012", "2026-10-12"):  # a real gap is still reported in both formats
++        A._reset_table_checks_for_tests()
++        r = A.sw_l1_table_check(tmp_path, sw, a, CAL, now_et=now)
++        assert r["as_of"] == "2026-10-12" and r["stale_reasons"] == ["coverage_gap"]
++    A._reset_table_checks_for_tests()  # aggregation keeps the LATEST as_of across mixed formats
++    A.sw_l1_table_check(tmp_path, sw, "2026-10-12", CAL, now_et=now)
++    r = A.sw_l1_table_check(tmp_path, sw, "20261009", CAL, now_et=now)
++    assert r["as_of"] == "2026-10-12" and r["n_calls"] == 2
++    for bad in ("not-a-date", ""):
++        with pytest.raises(SwPitIntegrityError, match="as_of"):
++            A.sw_l1_table_check(tmp_path, sw, bad, CAL, now_et=now)
++    A._reset_table_checks_for_tests()
+diff --git a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+index 6060c70f5c8dd3d36d4db855020fb439d2b3f158..158020f937fbb53d398b456199d196acb8ea0cd1 100644
+--- a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -1,6 +1,6 @@
+-# 预注册：申万行业 as-of（PIT）修复，改前/改后对照（r2 草稿，待 Arch 审签）
++# 预注册：申万行业 as-of（PIT）修复，改前/改后对照（r3e，Arch 已审：r3d 审查 PASS_WITH_CONDITIONS c08065f3；r3e 依据 Arch 2026-10-18 12:09 ET 裁定）
+ 
+-- 日期：2026-10-18（美东）；提出：QuantLab Strategy；状态：DRAFT，未运行
++- 日期：2026-10-18（美东）；提出：QuantLab Strategy；状态：r3e，Arch 已审；对照运行未授权、未运行（需 Arch 签 run .ok）
+ - 代码提案：docs/v2/audit/STRATEGY_SW_PIT_ASOF_FIX_PROPOSAL_20261018_r2.diff（取代 r1 98633d9b；按 Arch 审查 3f195231 修改）
+ - live=false，promotion=false。纸面（FROZEN_CONFIG、capadv/B4/S6 纸面轨、10-19 17:40 ET 纸面运行）和已封存产物都不动，也不读本结果。
+ 

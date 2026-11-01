@@ -1,0 +1,42 @@
+# AI_LEAF27_CHUNKED_NDAYS40_DIFF_DRAFT_20261025
+# role: QuantLab AI
+# written_et: 2026-10-25T15:56:48-04:00
+# status: DRAFT_ONLY · ok_requested=false · live=false · HOLD_UNTIL_MAIN_SUBMIT
+# kind: CLI-ONLY change note (NO research/*.py byte change) · NO_CODE_CHANGE
+# script_path: research/leaf27_chunked_members_mktcap_r1.py
+# script_sha256: 262f9bf6878d5c64956529a680abbf36e45adfe72fc7dedc4c68dc1c40291a10
+# script_status: UNCHANGED (already supports --chunk-mode ndays --chunk-ndays N)
+# month_abort_receipt_sha256: 03c58db58e7f3e0e2ff1aa22e8e519a11bf3506d1526bec361f0b5c832039177
+# month_abort_receipt_sha8: 03c58db5
+# spent_month_ok_sha8_forbid_restored: 8e51de63
+# prior_void_ok_forbid: 3a6caa4f / 8bcd79dc / 725be3e0
+# prior_month_cover_sha8: c8b33519
+# prior_month_cmd_sha8: 5323d614
+# prior_month_diff_sha8: 5fa2a29e
+# prior_month_review_sha8: 85c6fb82
+# rss_limit_mb: 1500 (NO raise)
+# factor_pins: UNCHANGED
+#
+# Summary:
+#   SCRIPT BYTES UNCHANGED — no unified hunk against research/*.py.
+#   Package delta vs month CMD is CLI flag only (SEPARATE ticket; PRIMARY only):
+#     --chunk-mode month
+#       →  --chunk-mode ndays --chunk-ndays 40
+#   NO same-ticket FALLBACK. If ndays40 ABORT_RSS → separate hist-prune package
+#   (not invented here; NO raise).
+#   Do NOT invent code changes; hist-accumulation residual risk in COVER.
+#
+# Empty code hunk (intentional · NO_CODE_CHANGE):
+--- a/research/leaf27_chunked_members_mktcap_r1.py
++++ b/research/leaf27_chunked_members_mktcap_r1.py
+@@ -0,0 +0 @@
+# (no textual change; sha256 remains 262f9bf6878d5c64956529a680abbf36e45adfe72fc7dedc4c68dc1c40291a10)
+#
+# CLI delta (documentation; not applied to any file under research/):
+--- a/approved_cli_month_PRIMARY
++++ b/approved_cli_ndays40_PRIMARY
+@@ -1,1 +1,1 @@
+-PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode month
++PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode ndays --chunk-ndays 40
+#
+# live=false; NOT authorization; do not run; do not request .ok this turn.

@@ -1,0 +1,225 @@
+diff --git a/research/strategy_moneyflow_stack_diag_v1.py b/research/strategy_moneyflow_stack_diag_v1.py
+index 2dae9a91..f7a6a775 100644
+--- a/research/strategy_moneyflow_stack_diag_v1.py
++++ b/research/strategy_moneyflow_stack_diag_v1.py
+@@ -11,6 +11,9 @@
+ decay_outcome、out_dir、expires 等）。本文件不授权读权重/行情/跑 book-smoke。
+ lowmem v1.1（Arch b2340c67…）：book-smoke 分档串行、--arms BOOK、aum_* 子目录+gc；
+ code_change 不开跑。
++deeper P0（Arch 27d6b462…）：run.ok 钉 reuse_blended_path+sha 时硬链/拷贝 blended，
++跳过再读 trunk/sat 与重算混合；仍串行 BOOK；book-smoke 前 del 大对象+gc
++（Eng dig c416f43d…）；不开跑直至另签 run.ok。
+ 
+ live=false; promotion=false; 禁纸面; 禁再单独 moneyflow X2 烟; 禁扩展 CMC。
+ 
+@@ -31,6 +34,7 @@
+ import json
+ import os
+ import re
++import shutil
+ import subprocess
+ import sys
+ import time
+@@ -42,7 +46,7 @@
+     "g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet"
+ )
+ DEFAULT_SAT = "output/ai_factory/g1g5_moneyflow_resid_daily_weights_20261013_050716.parquet"
+-DEFAULT_OUT = "output/strategy_hiliq/moneyflow_stack_8020_20261025"
++DEFAULT_OUT = "output/strategy_hiliq/moneyflow_stack_8020_reuse_blended_20261025"
+ DEFAULT_NAV_60 = "output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK/nav.csv"
+ DEFAULT_NAV_100 = "output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK/nav.csv"
+ SCRIPT_REL = "research/strategy_moneyflow_stack_diag_v1.py"
+@@ -378,6 +382,56 @@
+     return s
+ 
+ 
++def install_reused_blended(
++    src: Path, dst: Path, expected_sha256: str, *, root: Path = ROOT
++) -> dict:
++    """Hardlink or copy a pinned blended parquet; no trunk/sat read, no re-blend.
++
++    Deeper P0 (Arch 27d6b462…): src sha must MATCH expected; dst overwritten only
++    after sha check. Prefer hardlink; fall back to copy2.
++    """
++    src = Path(src)
++    dst = Path(dst)
++    if not src.is_absolute():
++        src = Path(root) / src
++    if not src.exists():
++        raise SystemExit(f"mf_stack_diag blocked: reuse_blended missing: {src}")
++    got = file_sha256(src)
++    if got != expected_sha256:
++        raise SystemExit(
++            f"mf_stack_diag blocked: reuse_blended sha mismatch: "
++            f"measured {got} != expected {expected_sha256}"
++        )
++    dst.parent.mkdir(parents=True, exist_ok=True)
++    if dst.exists():
++        dst.unlink()
++    method = "hardlink"
++    try:
++        os.link(src, dst)
++    except OSError:
++        shutil.copy2(src, dst)
++        method = "copy2"
++    # verify destination bytes
++    got_dst = file_sha256(dst)
++    if got_dst != expected_sha256:
++        raise SystemExit(
++            f"mf_stack_diag blocked: reused blended dst sha mismatch after {method}: "
++            f"{got_dst}"
++        )
++    try:
++        src_rel = str(src.resolve().relative_to(Path(root).resolve()))
++    except ValueError:
++        src_rel = str(src)
++    return dict(
++        mode="reuse_blended",
++        method=method,
++        src=src_rel,
++        sha256=got_dst,
++        skip_trunk_sat_read=True,
++        skip_reblend=True,
++    )
++
++
+ def prepare_smoke_weights(blended, dst: Path) -> Path:
+     import pandas as pd
+ 
+@@ -758,38 +812,84 @@
+     )
+     check_out_dir(out)
+ 
+-    # Heavy imports only after auth.
+-    import numpy as np  # noqa: F401
+-    import pandas as pd  # noqa: F401
+-
+     out.mkdir(parents=True, exist_ok=True)
+     t0 = time.time()
+ 
+-    trunk_w = _load_weights(trunk_p)
+-    sat_w = _load_weights(sat_p)
+-    sat_stripped, empty_sess = strip_and_renorm(sat_w, strip_codes)
+-    if empty_sess:
+-        void(
+-            out,
+-            f"satellite empty after strip on {len(empty_sess)} session(s); "
+-            f"first5={empty_sess[:5]} strip={sorted(strip_codes)}",
++    w_path = out / "blended_weights_8020.parquet"
++    reuse_path = (kv.get("reuse_blended_path") or "").strip()
++    reuse_sha = (
++        (kv.get("reuse_blended_sha256") or kv.get("expected_blended_sha256") or "")
++        .strip()
++        .lower()
++    )
++    reuse_meta = None
++    blended = None
++    coverage = None
++    trunk_w = None
++    sat_w = None
++    sat_stripped = None
++
++    if reuse_path:
++        if not re.fullmatch(r"[0-9a-f]{64}", reuse_sha):
++            raise SystemExit(
++                "mf_stack_diag blocked: reuse_blended_path set but "
++                "reuse_blended_sha256/expected_blended_sha256 missing or not 64-hex"
++            )
++        # P0: no trunk/sat DataFrame load; no re-blend. Pin check of trunk/sat
++        # already done in enforce_run_auth via file sha only.
++        reuse_meta = install_reused_blended(
++            Path(reuse_path), w_path, reuse_sha, root=ROOT
++        )
++        coverage = dict(
++            mode="reuse_blended",
++            src=reuse_meta["src"],
++            sha256=reuse_meta["sha256"],
++            method=reuse_meta["method"],
++            note_zh="跳过再读 trunk/sat 与重算混合；blended 来自 Arch 钉死的 recovery 产物",
++        )
++        # Light import only for turnover on the small reused parquet
++        import pandas as pd  # noqa: F401
++
++        blended = pd.read_parquet(w_path)
++        if "weight" not in blended.columns:
++            void(out, "reused blended missing weight column")
++    else:
++        # Heavy imports only on recompute path after auth.
++        import numpy as np  # noqa: F401
++        import pandas as pd  # noqa: F401
++
++        trunk_w = _load_weights(trunk_p)
++        sat_w = _load_weights(sat_p)
++        sat_stripped, empty_sess = strip_and_renorm(sat_w, strip_codes)
++        if empty_sess:
++            void(
++                out,
++                f"satellite empty after strip on {len(empty_sess)} session(s); "
++                f"first5={empty_sess[:5]} strip={sorted(strip_codes)}",
++            )
++        if sat_stripped.empty:
++            void(out, "satellite has no rows after strip/renorm")
++
++        blended, coverage = blend_weights(
++            trunk_w, sat_stripped, args.blend_trunk, args.blend_sat
+         )
+-    if sat_stripped.empty:
+-        void(out, "satellite has no rows after strip/renorm")
++        if blended.empty:
++            void(out, "no common sessions between trunk and stripped satellite")
+ 
+-    blended, coverage = blend_weights(
+-        trunk_w, sat_stripped, args.blend_trunk, args.blend_sat
+-    )
+-    if blended.empty:
+-        void(out, "no common sessions between trunk and stripped satellite")
++        prepare_smoke_weights(blended, w_path)
++        # post-write sha vs optional expected pin
++        if reuse_sha and file_sha256(w_path) != reuse_sha:
++            void(
++                out,
++                f"blended sha mismatch after recompute: "
++                f"{file_sha256(w_path)} != expected {reuse_sha}",
++            )
+ 
+-    w_path = out / "blended_weights_8020.parquet"
+-    prepare_smoke_weights(blended, w_path)
+     meta = dict(
+         banner="RESEARCH moneyflow_stack_diag_v1; live=false; promotion=false; paper untouched",
+         interface_sha256_prefix="17ac041f",
+-        arch_decision="A_new_script",
+-        code_change_ok_sha256_prefix="951f3ce2",
++        arch_decision="A_new_script_plus_deeper_P0_reuse_blended",
++        code_change_ok_sha256_prefix="27d6b462",
+         run_auth=dict(
+             file=str(arch_ok.resolve().relative_to(ROOT.resolve())),
+             sha256=file_sha256(arch_ok),
+@@ -811,7 +911,13 @@
+             post="clip_nonneg_renorm_per_session",
+             topN=None,
+             name_cap=None,
+-            note_zh="简单混合：不做 topN/单名上限；与 CMC 溢出 510300 相反（剥舱）",
++            reuse_blended=bool(reuse_meta),
++            reuse=reuse_meta,
++            note_zh=(
++                "P0 复用钉死 blended：不读腿、不重算混合"
++                if reuse_meta
++                else "简单混合：不做 topN/单名上限；与 CMC 溢出 510300 相反（剥舱）"
++            ),
+         ),
+         coverage=coverage,
+         tiers=list(tiers),
+@@ -822,6 +928,13 @@
+ 
+     to_mean = turnover_2s_mean(blended)
+ 
++    # Eng dig c416f43d… L3：子进程前释放主进程大对象，避免与 book-smoke 叠树峰
++    blended = None
++    trunk_w = None
++    sat_w = None
++    sat_stripped = None
++    gc.collect()
++
+     smoke_dir = out / "book_smoke"
+     smoke_dir.mkdir(parents=True, exist_ok=True)
+     # lowmem v1.1: serial single-capital BOOK-only (Arch decision LOWMEM_V11)

@@ -1,0 +1,18 @@
+# 删除 06:09 pyc 留证（主 Agent 06:23 ET 授权，Arch 已记 sha 0dd9ea74…cc11）
+T=2026-10-18 06:23:37 EDT
+## ps 原文（intel 相关）
+(以上为空 = 无 intel 进程)
+## 删除前
+2026-10-18 06:09:54.357122197 -0400 29502 research/intel/__pycache__/intel_common.cpython-313.pyc
+0dd9ea7446a8a05517c1b1a0eb004f3bc27c585c5a0fda4ee7776077b928cc11  research/intel/__pycache__/intel_common.cpython-313.pyc
+## 删除
+命令：rm -- research/intel/__pycache__/intel_common.cpython-313.pyc
+时间：2026-10-18 06:23:45 EDT
+rm exit=0
+## 删除后
+ls: cannot access 'research/intel/__pycache__/intel_common.cpython-313.pyc': No such file or directory
+intel_common.cpython-312.pyc
+intel_run.cpython-312.pyc
+intel_run.cpython-313.pyc
+test_news_classifier.cpython-312-pytest-9.1.1.pyc
+(git 无变化)

@@ -1,0 +1,1275 @@
+# AI leaf23/24 fix-2 per Arch appendix docs/v2/ARCH_LEAF23_24_FIXDIFF_REVIEW_ZH.md (129d67c5) + 主 Agent 02:23 ruling via Alpha preread docs/v2/ALPHA_LEAF23_24_PREREAD_ZH.md (8586ffd0); written 2026-10-18 02:26:39 ET by QuantLab AI; NOT RUN (py_compile only, PYTHONDONTWRITEBYTECODE=1, no tests)
+# leaf23 81c2b4e6a30e8b2f66773c1fcc163cf58f2eca1bbcf3aa84ddaf16b76aee635d -> f011b27714cd153f3e1a1ef6e6466ad855ca798942a9899ffb497b884fdfa14f
+# leaf24 de87c839ec4e278d798d7789669b5e75dfc8e284399b590d38b9763d99d7ea47 -> 6f57c82d6e37e76308270dae4add51f0919912cdf296e6f7ea130d6366b7311c
+--- a/research/g1g5_sue_desens_cs_alpha.py
++++ b/research/g1g5_sue_desens_cs_alpha.py
+@@ -14,7 +14,7 @@
+     --denom daily     MV_{t−1} (previous session, updated daily) instead of MV_fix.
+     --no-forecast     S_F: forecast branch off (formal reports only) — §6.5a; also the only spec ever allowed on the sealed window.
+     --blackout 40     40-session forecast-information blackout.
+-Residualization (pool, daily OLS): SW L1 dummies + logmv_{t−1} + mom20 + mom60 + vol20 + logADV20 + leaf19 α + leaf20 α;
++Residualization (pool, daily OLS; 主 Agent 02:23): SW L1 dummies + Alpha frozen style set at t−1 (logmv, beta120, mom t−120→t−20, logADV20) + capacity_adv leg weight + leaf19 α + leaf20 α;
+     size-domain rank (logmv_{t−1} P70/P90) → resid on ind + logmv_{t−1} → size-domain rank = base-α. Gate: 3-day ind+logmv_{t−1}
+     residual-return left tail 5% → gate 0 (not in α). Financials + 600519/002371 excluded from the factor (benchmarks keep full pool).
+ Panel (P0-1, prereg §3.7): output/ai_factory/panel_cache_v2_resumefix (build_version cs_panel_v2_resumefix). Signal/selection read
+@@ -39,6 +39,12 @@
+     (no leaf_selfcheck_v3 import) + alpha_decay_gate/leaf_selfcheck_common pinned; N2 all read inputs pinned and re-hashed before use;
+     N4 excluded-name count + wb weight share; N5 strict .ok parser + explicit keys; N6 non-empty out_dir refused + stage meta chain;
+     N8 ind_names.csv only from the panel dir.
++fix-2 (Arch 129d67c5, NOT RUN — py_compile only): P1-1 B3 state recursed from 2018, carry only on mask-suspended no-row days, mask pinned
++    (data_mask_sha256 == D1b receipt pins.mask_sha256), carried name-days by mask reason must all be suspended; P1-2 variant must be one item of
++    sensitivity_specs; P1-3/P2-4 process check (research/ python, scripts/fix_sd1/, scripts_eng/, scripts/nightly_update.py block; scripts/acquire/
++    logged; ancestors excluded; niceness ≥ 10; MemAvailable ≥ 2GB; ps snapshot in meta); P2-1 .ok whitelist + fixed values + tool_cmds file;
++    P2-2 stage chains across variants and leaf 24; P2-3 exclusive create; P2-6 all years 2018–2026 verified;
++    P3 asserts → raise, carry_col for FULLA, panel re-hash per stage.
+ live=false; promotion_approved=false; no GP; no Book-Smoke.
+ """
+ import argparse, hashlib, json, os, re, sys, gc, threading, time, resource
+@@ -61,7 +67,8 @@
+ L20_W = {"HILIQ": R/"output/ai_factory/leaf20_sue_resid/eval_weights_HILIQ_x2_20261014_220029.parquet",
+          "FULLA": R/"output/ai_factory/leaf20_sue_resid/eval_weights_FULLA_x2_20261014_220029.parquet"}
+ CAPADV = {6: R/"output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK", 10: R/"output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK"}
+-FIN_PIT = FP/"financials_pit_tushare.parquet"; ETF = R/"data/v2/etf/etf_daily_adj.parquet"
++CAPLEG = R/"output/strategy_hiliq/legs/g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet"
++FIN_PIT = FP/"financials_pit_tushare.parquet"; ETF = R/"data/v2/etf/etf_daily_adj.parquet"; MASK = R/"output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
+ TOOLS = {"dep_fe_sha256": R/"research/g1g5_fund_resid_alpha.py", "dep_selfcheck_sha256": R/"research/leaf_selfcheck_v3.py",
+          "dep_combo_sha256": R/"research/alpha_combo_marginal.py",
+          "dep_adg_sha256": R/"research/alpha_decay_gate.py", "dep_lc_sha256": R/"research/leaf_selfcheck_common.py",   # N1 import closure of leaf_selfcheck_v3
+@@ -70,16 +77,24 @@
+          "dep_l20w_hiliq_sha256": L20_W["HILIQ"], "dep_l20w_fulla_sha256": L20_W["FULLA"],                               # N2
+          "dep_capadv600_tw_sha256": CAPADV[6]/"target_weights.parquet", "dep_capadv600_nav_sha256": CAPADV[6]/"nav.csv",
+          "dep_capadv1000_tw_sha256": CAPADV[10]/"target_weights.parquet", "dep_capadv1000_nav_sha256": CAPADV[10]/"nav.csv",
+-         "data_forecast_sha256": FC, "data_financials_sha256": FIN_PIT, "data_etf_daily_adj_sha256": ETF}
+-LEAF_NO = "23"; OUT_ROOT = R/"output/ai_factory/leaf23_sue_desens_cs"; D1B_STEP = "D1b_resume_execute"; PANEL_YEARS = (2023, 2024, 2025, 2026)
++         "data_forecast_sha256": FC, "data_financials_sha256": FIN_PIT, "data_etf_daily_adj_sha256": ETF, "data_mask_sha256": MASK,
++         "dep_capadv_leg_sha256": CAPLEG}   # prereg r2.1 §1/§4: residualize on capacity_adv (HI_LIQ v1.1 leg weights, 3b288c83…)
++LEAF_NO = "23"; OUT_ROOT = R/"output/ai_factory/leaf23_sue_desens_cs"; D1B_STEP = "D1b_resume_execute"; PANEL_YEARS = tuple(range(2018, 2027))   # P2-6: every year the B3 recursion reads
+ OK_LINE = re.compile(r"^([a-z0-9_]+)=(\S+)$")
++AIF = R/"output/ai_factory"; TOOL_CMDS = AIF/"ARCH_TOOL_CMDS_LEAF{LEAF_NO}_X2.cmd"   # Arch 129d67c5 §5-1: tool command lines live in a pinned .cmd file
++TOOL_CLOSURE = {"tool_closure_adj_price_sha256": R/"research/adj_price.py", "tool_closure_panel_stitch_sha256": R/"research/g1g5_x2_panel_stitch.py",
++                "tool_closure_moneyflow_sha256": R/"research/g1g5_moneyflow_resid_weights.py", "tool_closure_nontextbook_sha256": R/"research/g1g5_nontextbook_weights.py"}
+ OK_FIXED = {"format": "quantlab_run_auth_v1", "signed_by": "arch", "scope": "X2", "leaf": LEAF_NO, "live": "false", "promotion": "false",
+-            "allow_full": "true", "allow_smoke": "false", "allow_sealed": "false", "cs_panel_build_version": PANEL_VERSION}   # N5: must be explicit
+-OK_OPTIONAL_FIXED = {"promotion_approved": "false"}
+-OK_REQUIRED = ("script_sha256", "prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "out_dir")
++            "promotion_approved": "false", "allow_full": "true", "allow_smoke": "false", "allow_sealed": "false", "cs_panel_build_version": PANEL_VERSION,
++            "mechanism_tag": "g1g5_ashare_sue_desens_cs_v1", "window_start": X2S, "window_end": X2E, "rss_limit_mb": "1500",
++            "serial_order": "fund>build_HILIQ>build_FULLA>eval>sensitivities>leaf24", "sensitivity_specs": "sig-sue,denom-daily,nofc,bo40", "run_niceness": "10",
++            "tool_cmds_path": str(TOOL_CMDS)}   # N5 / P2-1: explicit, fixed values
++OK_REQUIRED = ("script_sha256", "prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "out_dir", "allow_sensitivity", "tool_cmds_sha256", "issued_at")
++BLOCK_CMDS = ("scripts/fix_sd1/", "scripts_eng/", "scripts/nightly_update.py"); LOG_ONLY_CMDS = ("scripts/acquire/",)
++MIN_NICE, MIN_MEMAVAIL_KB = 10, 2*1024*1024
+ TIERS = {6: 600_000, 10: 1_000_000}; TIER_W, TIER_IND_CAP, DISC_N, DISC_W, CORE_IND_CAP = 0.06, 0.25, 20, 0.04, 0.20  # 25% = Arch P1-3 (review l.96); 20% = disclosure
+ X2S, X2E = "2024-06-03", "2026-10-09"; WARM = "2024-01-01"; FUND_YEARS = (2023, 2024, 2025, 2026)
+-STALE_DAYS, CLIP_C, SUE_CLIP, RSS_LIMIT_KB, T_DECISIVE, HAC_H = 200, 0.5, 5.0, 1536000, 2.50, 20
++STALE_DAYS, CLIP_C, SUE_CLIP, RSS_LIMIT_KB, T_DECISIVE, HAC_H = 200, 0.5, 5.0, 1536000, 2.50, 20   # 1536000 KB = rss_limit_mb 1500
+ rss = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024
+ sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+ ND = NormalDist()
+@@ -97,14 +112,37 @@
+     threading.Thread(target=loop, daemon=True).start()
+ 
+ 
+-def other_research_jobs():
+-    me = os.getpid(); busy = []
++def ancestors():
++    """own pid + full ancestor chain (Arch P2-4: wrappers carry 'research/' in their cmdline too)."""
++    out, p = set(), os.getpid()
++    while p > 1 and p not in out:
++        out.add(p)
++        try: p = int(Path(f"/proc/{p}/stat").read_text().rsplit(")", 1)[1].split()[1])
++        except Exception: break
++    return out
++
++
++def process_check():
++    """Arch P1-3/P2-4 (129d67c5 §5-4). Refuse if another process cmdline has 'research/' (python) or scripts/fix_sd1/, scripts_eng/,
++    scripts/nightly_update.py; scripts/acquire/ resident fetchers are only logged. Own ancestor chain excluded. Refuse if own niceness < 10
++    or MemAvailable < 2GB. Returns the ps snapshot + niceness for the stage meta."""
++    anc = ancestors(); busy, logged, snap = [], [], []
+     for p in Path("/proc").iterdir():
+-        if not p.name.isdigit() or int(p.name) in (me, os.getppid()): continue
+-        try: cmd = (p/"cmdline").read_bytes().replace(b"\0", b" ").decode(errors="ignore")
++        if not p.name.isdigit() or int(p.name) in anc: continue
++        try:
++            cmd = (p/"cmdline").read_bytes().replace(b"\0", b" ").decode(errors="ignore").strip()
++            st = (p/"stat").read_text().rsplit(")", 1)[1].split(); pn = int(st[16]); rkb = int(st[21])*os.sysconf("SC_PAGE_SIZE")//1024
+         except Exception: continue
+-        if "python" in cmd and any(t in cmd for t in ("research/", "scripts/", "scripts_eng/")) and "run_rss_guard" not in cmd: busy.append((p.name, cmd[:160]))
+-    return busy
++        if not cmd: continue
++        hit = ("python" in cmd and "research/" in cmd) or any(t in cmd for t in BLOCK_CMDS); log = any(t in cmd for t in LOG_ONLY_CMDS)
++        if hit or log or "python" in cmd: snap.append(dict(pid=int(p.name), nice=pn, rss_mb=round(rkb/1024, 1), cmd=cmd[:200]))
++        if hit: busy.append((p.name, cmd[:160]))
++        elif log: logged.append((p.name, cmd[:160]))
++    mem_kb = int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1]); nice = os.nice(0)
++    if busy: raise SystemExit(f"refused: blocking job running {busy[:3]} (one full-window job at a time; nightly/fix_sd1/eng/research)")
++    if nice < MIN_NICE: raise SystemExit(f"refused: niceness {nice} < {MIN_NICE} (run under nice -n 10)")
++    if mem_kb < MIN_MEMAVAIL_KB: raise SystemExit(f"refused: MemAvailable {mem_kb//1024}MB < 2048MB")
++    return dict(niceness=nice, mem_available_mb=mem_kb//1024, log_only_resident=logged, ps_snapshot=snap)
+ 
+ 
+ def read_ok(path):
+@@ -127,9 +165,9 @@
+ 
+ 
+ def verify_panel(panel, ok):
+-    """P0-1/P0-2 + Arch B2: only <panel>/manifest.json (the name Data's D1b build writes), sha == .ok cs_panel_manifest_sha256,
+-    step == D1b_resume_execute, mode == execute, version/fixes/status; RECEIPT_D1b_resume_execute.json status PASS and its
+-    manifest_sha256 == .ok value; per-year file sha + build_version; N8: ind_names.csv only from this panel dir, sha == manifest."""
++    """P0-1/P0-2 + Arch B2 + P2-6: only <panel>/manifest.json, sha == .ok cs_panel_manifest_sha256, step == D1b_resume_execute, mode == execute,
++    version/fixes/status; RECEIPT_D1b_resume_execute.json status PASS, manifest_sha256 == .ok value, pins.mask_sha256 == .ok data_mask_sha256;
++    every year actually read (2018–2026) sha == manifest + build_version; N8: ind_names.csv only from this panel dir, sha == manifest."""
+     if panel.name in REJECT_PANELS: raise SystemExit(f"refused: panel {panel.name} is not the rebuilt {PANEL_VERSION}")
+     if Path(ok["cs_panel_dir"]).resolve() != panel: raise SystemExit(f"refused: --panel-dir {panel} != .ok cs_panel_dir {ok['cs_panel_dir']}")
+     mf, rf, want = panel/"manifest.json", panel/f"RECEIPT_{D1B_STEP}.json", ok["cs_panel_manifest_sha256"]
+@@ -144,40 +182,65 @@
+     rec = json.loads(rf.read_text(encoding="utf-8"))
+     if rec.get("step") != D1B_STEP or rec.get("status") != "PASS" or rec.get("manifest_sha256") != want:
+         raise SystemExit(f"refused: {rf.name} step/status/manifest_sha256 {rec.get('step')}/{rec.get('status')}/{str(rec.get('manifest_sha256'))[:12]}")
++    if (rec.get("pins") or {}).get("mask_sha256") != ok["data_mask_sha256"]:
++        raise SystemExit("refused: .ok data_mask_sha256 != D1b receipt pins.mask_sha256 (Arch P1-1 §3-6)")
+     ind = panel/"ind_names.csv"
+     if not ind.is_file() or sha(ind) != man.get("ind_names_sha256"): raise SystemExit("refused: <panel>/ind_names.csv missing or sha != manifest ind_names_sha256 (N8: no v1 fallback)")
++    years = {}
+     for y in PANEL_YEARS:
+         f = panel/f"cs_panel_{y}.parquet"; wy = man.get("years", {}).get(str(y), {}).get("sha256")
+         if not f.exists() or wy != sha(f): raise SystemExit(f"refused: {f.name} sha does not match manifest")
+         bv = pd.read_parquet(f, columns=["build_version"]).build_version.unique()
+         if list(bv) != [PANEL_VERSION]: raise SystemExit(f"refused: {f.name} build_version {bv}")
+-    return dict(manifest=str(mf), manifest_sha256=msha, receipt=str(rf), receipt_sha256=sha(rf), version=man["version"], ind_names_sha256=sha(ind))
++        years[str(y)] = wy
++    return dict(manifest=str(mf), manifest_sha256=msha, receipt=str(rf), receipt_sha256=sha(rf), version=man["version"], ind_names_sha256=sha(ind), years=years)
++
++
++def panel_recheck(auth, panel):
++    """Arch P3-5: re-hash every panel year file (and the pinned mask) against the manifest right before a stage reads them."""
++    for y, h in auth["cs_panel"]["years"].items():
++        if sha(panel/f"cs_panel_{y}.parquet") != h: raise SystemExit(f"refused: cs_panel_{y}.parquet changed since authorize")
++    repin(auth, "data_mask_sha256")
+ 
+ 
+ def out_dir(a): return OUT_ROOT if is_primary(a) else OUT_ROOT.with_name(OUT_ROOT.name + "_" + variant_tag(a))
+ 
+ 
++def tz_iso(v):
++    try: d = datetime.fromisoformat(v)
++    except ValueError: return False
++    return d.tzinfo is not None and d.utcoffset() is not None
++
++
+ def authorize(a):
+     panel = Path(a.panel_dir).resolve()
+     if not panel.is_dir(): raise SystemExit(f"--panel-dir {panel} not found (rebuilt cs_panel from Data required)")
+     if not a.arch_ok or not Path(a.arch_ok).is_file(): raise SystemExit("refused: Arch run-auth .ok required (--arch-ok)")
+     ok = read_ok(a.arch_ok); me = sha(__file__); pr = sha(PREREG)
+-    miss = [k for k in tuple(OK_FIXED) + OK_REQUIRED + tuple(TOOLS) if k not in ok]
+-    if miss: raise SystemExit(f"refused: .ok lacks required keys {miss} (N5: must be explicit)")
++    allowed = set(OK_FIXED) | set(OK_REQUIRED) | set(TOOLS) | set(TOOL_CLOSURE)
++    unknown = sorted(set(ok) - allowed)
++    if unknown: raise SystemExit(f"refused: .ok has unknown keys {unknown} (P2-1 whitelist)")
++    miss = [k for k in sorted(allowed) if k not in ok]
++    if miss: raise SystemExit(f"refused: .ok lacks required keys {miss} (N5/P2-1: must be explicit)")
+     checks = {k: ok[k] == v for k, v in OK_FIXED.items()}
+-    checks.update({k: ok.get(k, v) == v for k, v in OK_OPTIONAL_FIXED.items()})
+     checks["script_sha256"] = ok["script_sha256"] == me; checks["prereg_sha256"] = ok["prereg_sha256"] == PREREG_SHA == pr
+     checks["out_dir"] = Path(ok["out_dir"]).resolve() == OUT_ROOT.resolve()   # primary dir; sensitivity variants use <out_dir>_<variant>
+-    for k, f in TOOLS.items(): checks[k] = len(ok[k]) == 64 and ok[k] == sha(f)
+-    if not is_primary(a): checks["allow_sensitivity"] = ok.get("allow_sensitivity") == "true"
++    checks["allow_sensitivity"] = ok["allow_sensitivity"] in ("true", "false")
++    checks["issued_at"] = tz_iso(ok["issued_at"])
++    checks["tool_cmds_sha256"] = len(ok["tool_cmds_sha256"]) == 64 and TOOL_CMDS.is_file() and ok["tool_cmds_sha256"] == sha(TOOL_CMDS)
++    for k, f in {**TOOLS, **TOOL_CLOSURE}.items(): checks[k] = len(ok[k]) == 64 and Path(f).is_file() and ok[k] == sha(f)
++    if not is_primary(a):   # P1-2: single-factor variant, exactly one item of sensitivity_specs
++        checks["allow_sensitivity_true"] = ok["allow_sensitivity"] == "true"
++        checks["variant_in_sensitivity_specs"] = variant_tag(a) in ok["sensitivity_specs"].split(",")
+     bad = [k for k, v in checks.items() if not v]
+-    if bad: raise SystemExit(f"refused: Arch .ok check failed {bad} (script {me[:12]}, prereg {pr[:12]})")
++    if bad: raise SystemExit(f"refused: Arch .ok check failed {bad} (script {me[:12]}, prereg {pr[:12]}, variant {variant_tag(a)})")
+     pm = verify_panel(panel, ok)
+-    busy = other_research_jobs()
+-    if busy: raise SystemExit(f"refused: another research/data/eng job is running {busy[:3]} (one full-window job at a time)")
++    proc = process_check()
+     rss_watchdog()
+     return panel, dict(script_sha256=me, prereg_sha256=pr, arch_ok=str(Path(a.arch_ok).resolve()), arch_ok_sha256=sha(a.arch_ok), cs_panel=pm,
+-                       tools={k: sha(f) for k, f in TOOLS.items()}, variant=variant_tag(a), primary=is_primary(a), out_dir=str(out_dir(a)))
++                       tools={k: sha(f) for k, f in TOOLS.items()}, tool_closure={k: sha(f) for k, f in TOOL_CLOSURE.items()},
++                       tool_cmds=str(TOOL_CMDS), tool_cmds_sha256=sha(TOOL_CMDS), issued_at=ok["issued_at"], process=proc,
++                       variant=variant_tag(a), primary=is_primary(a), out_dir=str(out_dir(a)))
+ 
+ 
+ def repin(auth, *keys):
+@@ -186,32 +249,57 @@
+         if sha(TOOLS[k]) != auth["tools"][k]: raise SystemExit(f"refused: pinned input {k} changed since authorize ({TOOLS[k]})")
+ 
+ 
++def xtext(p, s):
++    """Arch P2-3: exclusive create — never overwrite."""
++    with open(p, "x", encoding="utf-8") as f: f.write(s)
++
++
++def xparquet(df, p):
++    with open(p, "xb") as f: df.to_parquet(f, index=False)
++
++
+ def write_meta(out, stage, auth, files, upstream, **extra):
+-    """Arch N6: stage meta = script sha + .ok sha + prereg sha + panel manifest sha + variant + sha of every output + upstream meta sha."""
++    """Arch N6: stage meta = script/.ok/prereg/manifest sha + variant + sha of every output + upstream meta shas (paths relative to
++    output/ai_factory) + tool_cmds sha + niceness + ps snapshot (P2-4)."""
+     m = dict(stage=stage, script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
+              cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], variant=auth["variant"], outputs={f: sha(out/f) for f in files},
+-             upstream=upstream, peak_rss_mb=rss(), **extra)
+-    (out/f"{stage}_meta.json").write_text(json.dumps(m, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
++             upstream=upstream, tool_cmds_sha256=auth["tool_cmds_sha256"], niceness=auth["process"]["niceness"],
++             mem_available_mb=auth["process"]["mem_available_mb"], ps_snapshot=auth["process"]["ps_snapshot"],
++             log_only_resident=auth["process"]["log_only_resident"], peak_rss_mb=rss(), **extra)
++    xtext(out/f"{stage}_meta.json", json.dumps(m, ensure_ascii=False, indent=1, default=float))
++
++
++def check_meta(mf, want):
++    """verify one stage meta: listed fields, every output (relative to the meta's dir) and every upstream meta (relative to output/ai_factory)."""
++    if not mf.is_file(): raise SystemExit(f"refused: required stage meta {mf} missing (serial order)")
++    m = json.loads(mf.read_text(encoding="utf-8"))
++    bad = [k for k, v in want.items() if m.get(k) != v]
++    if bad: raise SystemExit(f"refused: {mf} mismatch {bad} (produced by another script/.ok/panel/variant)")
++    for f, h in m.get("outputs", {}).items():
++        if not (mf.parent/f).is_file() or sha(mf.parent/f) != h: raise SystemExit(f"refused: output {f} of {mf} changed or missing")
++    for f, h in m.get("upstream", {}).items():
++        if not (AIF/f).is_file() or sha(AIF/f) != h: raise SystemExit(f"refused: upstream {f} of {mf} changed or missing")
++    return m
++
++
++def same_run(auth, **kw):
++    return dict(script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
++                cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], **kw)
+ 
+ 
+ def verify_upstream(out, auth, stages):
+-    """Arch N6: refuse unless every upstream stage meta came from this script sha + this .ok + this prereg/panel/variant and every
+-    output (and the upstream metas it chained) still hashes the same."""
+     up = {}
+     for st in stages:
+-        mf = out/f"{st}_meta.json"
+-        if not mf.is_file(): raise SystemExit(f"refused: upstream stage {st} meta missing (serial order)")
+-        m = json.loads(mf.read_text(encoding="utf-8"))
+-        want = dict(stage=st, script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
+-                    cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], variant=auth["variant"])
+-        bad = [k for k, v in want.items() if m.get(k) != v]
+-        if bad: raise SystemExit(f"refused: upstream {st} meta mismatch {bad} (produced by another script/.ok/variant)")
+-        for f, h in {**m.get("outputs", {}), **m.get("upstream", {})}.items():
+-            if not (out/f).is_file() or sha(out/f) != h: raise SystemExit(f"refused: upstream file {f} of stage {st} changed or missing")
+-        up[mf.name] = sha(mf)
++        mf = out/f"{st}_meta.json"; check_meta(mf, same_run(auth, stage=st, variant=auth["variant"])); up[str(mf.relative_to(AIF))] = sha(mf)
+     return up
+ 
+ 
++def verify_primary_eval(auth):
++    """Arch P2-2: a sensitivity variant's first stage requires the primary eval_meta chain (same script/.ok/manifest) and records its sha."""
++    mf = OUT_ROOT/"eval_meta.json"; check_meta(mf, same_run(auth, stage="eval", variant="primary"))
++    return {str(mf.relative_to(AIF)): sha(mf)}
++
++
+ def guard_fresh(out, patterns):
+     hits = sorted({p.name for pat in patterns for p in out.glob(pat)})
+     if hits: raise SystemExit(f"refused: outputs of this stage already exist {hits[:5]} (N6: no silent overwrite; Arch decides on cleanup)")
+@@ -232,7 +320,7 @@
+ 
+ 
+ def read_panel(panel, y, cols, lo=None):
+-    assert not (set(cols) & FORBIDDEN_SIGNAL_COLS), "signal/selection code must not read is_resume_day/hiliq_carry (P2-8)"
++    if set(cols) & FORBIDDEN_SIGNAL_COLS: raise RuntimeError("signal/selection code must not read is_resume_day/hiliq_carry (P2-8)")
+     flt = [("date", ">=", pd.Timestamp(lo).to_pydatetime())] if lo is not None else None
+     x = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=cols, filters=flt); x["date"] = pd.to_datetime(x.date); return x
+ 
+@@ -276,40 +364,78 @@
+     """B1/N8: SW L1 codes of banks + non-bank financials, from the panel's own ind_names.csv only (sha checked in verify_panel)."""
+     names = pd.read_csv(panel/"ind_names.csv").iloc[:, 0].tolist()
+     fin = {i for i, n in enumerate(names) if n in ("银行", "非银金融")}
+-    assert len(fin) == 2, f"FIN must hold exactly 2 SW L1 codes, got {fin}"
++    if len(fin) != 2: raise SystemExit(f"STOP: FIN must hold exactly 2 SW L1 codes, got {fin}")
+     return fin
+ 
+ 
+-def pool_benchmarks(panel, PX, col, carry_col, idx, cols, lo):
+-    """Arch B3 + clarification C1 (no refreeze): M_{i,T−1} = latest membership state as of T−1. On no-row (suspended) days the last row's
+-    membership and float mcap are carried; after an instrument's last row in the panel (delisted) nothing is carried. Seeded with each
+-    name's last row before `lo` (2023 + early-2024 files) so suspensions starting before the eval window still carry. Asserts Mp == carry
+-    column on restored resume rows (stop on any mismatch). Also returns the old no-carry construction for disclosure."""
+-    PX = PX.assign(_m=PX[col].fillna(False).astype("float32"))
+-    Mraw = PX.pivot_table(index="date", columns="instrument", values="_m", aggfunc="max").reindex(index=idx, columns=cols)   # NaN = no row
+-    LMraw = PX.pivot_table(index="date", columns="instrument", values="logmv").reindex(index=idx, columns=cols)
+-    Mpo = Mraw.fillna(0.0).astype(bool).shift(1, fill_value=False); wvo = (np.exp(LMraw).shift(1)*Mpo).fillna(0.0)   # old (no carry)
+-    sd = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv"], filters=[("date", "<", lo.to_pydatetime())])
+-                    for y in (2023, 2024)])
+-    sd["date"] = pd.to_datetime(sd.date); sd = sd.sort_values("date").groupby("instrument").tail(1).set_index("instrument").reindex(cols)
+-    nr = Mraw.iloc[0].isna()
+-    Mraw.iloc[0] = Mraw.iloc[0].where(~nr, sd[col].astype("float64")); LMraw.iloc[0] = LMraw.iloc[0].where(~nr, sd.logmv.astype("float64"))
+-    del sd
+-    last = PX.groupby("instrument").date.max().reindex(cols)
+-    after = idx.values[:, None] > last.values[None, :]                       # after the name's last panel row (delisted) → no carry
+-    Mc = Mraw.ffill().mask(after).fillna(0.0).astype(bool)
+-    MVc = np.exp(LMraw.ffill().mask(after)).where(Mc)                        # float mcap carried through suspension
+-    Mp = Mc.shift(1, fill_value=False); wv = (MVc.shift(1)*Mp).fillna(0.0)
+-    del Mraw, LMraw, Mc, MVc
++def pool_benchmarks(panel, PX, col, carry_col, idx, s, e):
++    """Arch P1-1 (129d67c5 §3; replaces the r2.2 'no row = carry'). Membership state S(i,d), recursed year by year from 2018
++    (one state vector carried across years, no seed window):
++      panel row                                  → S = that row's col (restored rows are False);
++      no panel row, mask row with suspended=True → S = previous S (carry through the suspension);
++      no panel row, mask row with suspended=False (ST / adv / young) → S = False and the carry chain breaks;
++      no mask row (not yet listed / delisted)    → S = False (delisting = no mask rows afterwards; end-of-window suspensions keep carrying).
++    Float mcap is carried only inside suspension spans (last panel-row logmv before the span), otherwise follows S.
++    Mp = S.shift(1); wv = MV.shift(1)·Mp. Frames on idx × U (U = every name seen). Also returns the old (no carry) and r2.2 (no row = carry)
++    constructions for disclosure, carried name-days by mask reason (must all be suspended) and the restored-resume-row check vs carry_col."""
++    lo = idx[0]; sp, mp_ = pd.Series(dtype="float64"), pd.Series(dtype="float64")
++    lr_v, lr_m, lr_i = pd.Series(dtype="float64"), pd.Series(dtype="float64"), pd.Series(dtype="float64")
++    parts = defaultdict(list); reasons = defaultdict(int)
++    for y in PANEL_YEARS:
++        if pd.Timestamp(f"{y}-01-01") > idx[-1]: break
++        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind"]); pr["date"] = pd.to_datetime(pr.date)
++        mk = pd.read_parquet(MASK, columns=["date", "instrument", "suspended", "st", "young", "adv_fail"],
++                             filters=[("date", ">=", pd.Timestamp(f"{y}-01-01").to_pydatetime()), ("date", "<=", pd.Timestamp(f"{y}-12-31").to_pydatetime())])
++        mk["date"] = pd.to_datetime(mk.date)
++        days = pd.DatetimeIndex(sorted(pr.date.unique())); days = days[days <= idx[-1]]
++        names = pd.Index(sorted(set(pr.instrument) | set(mk.instrument) | set(sp.index)))
++        pv = lambda df, v, agg="max": df.pivot_table(index="date", columns="instrument", values=v, aggfunc=agg).reindex(index=days, columns=names)
++        has = pv(pr.assign(_h=1.0), "_h").notna()
++        val = pv(pr.assign(_v=pr[col].fillna(False).astype("float64")), "_v")
++        lmv = pv(pr, "logmv", "mean")
++        sus = pv(mk.assign(_s=mk.suspended.astype("float64")), "_s")          # NaN = no mask row
++        carry = (~has) & (sus == 1.0)
++        A = val.where(has, 0.0).mask(carry)                                    # anchors: panel col / False (break) / NaN (carry)
++        B = lmv.where(has & lmv.notna(), -np.inf).mask(carry)                  # mcap anchors: -inf = break
++        p0 = pd.Timestamp("1970-01-01")
++        S = pd.concat([pd.DataFrame([sp.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A]).ffill().iloc[1:].fillna(0.0)
++        MV = pd.concat([pd.DataFrame([mp_.reindex(names).fillna(-np.inf).to_numpy()], index=[p0], columns=names), B]).ffill().iloc[1:]
++        sp, mp_ = S.iloc[-1], MV.iloc[-1].fillna(-np.inf)
++        MV = MV.replace(-np.inf, np.nan)
++        pre = pr[pr.date < lo].sort_values("date").groupby("instrument").tail(1).set_index("instrument")   # r2.2 seed / N4 ind seed
++        if len(pre): lr_v = pre[col].fillna(False).astype("float64").combine_first(lr_v); lr_m = pre.logmv.combine_first(lr_m); lr_i = pre.ind.astype("float64").combine_first(lr_i)
++        w = (days >= lo)
++        if w.any():
++            cw = (S.astype(bool) & ~has).loc[w]                                 # carried name-days
++            st_ = cw.loc[(cw.index >= s) & (cw.index <= e)].stack(); st_ = st_[st_].reset_index().iloc[:, :2]; st_.columns = ["date", "instrument"]
++            if len(st_):
++                r = st_.merge(mk, on=["date", "instrument"], how="left")
++                reasons["carried_name_days_x2"] += len(r); reasons["suspended"] += int(r.suspended.fillna(False).astype(bool).sum())
++                reasons["not_suspended"] += int((~r.suspended.fillna(False).astype(bool)).sum())
++                for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
++            for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has))): parts[k_].append(f_.loc[w])
++        del pr, mk, has, val, lmv, sus, carry, A, B, S, MV; gc.collect()
++    cat = lambda k: pd.concat(parts[k]).reindex(index=idx)
++    S, MV, VAL, LMV = cat("S"), cat("MV"), cat("VAL"), cat("LMV"); U = S.columns
++    S = S.fillna(0.0).astype(bool); MV = MV.reindex(columns=U); VAL = VAL.reindex(columns=U); LMV = LMV.reindex(columns=U); del parts
++    Mp = S.shift(1, fill_value=False); wv = (np.exp(MV).where(S).shift(1)*Mp).fillna(0.0)
++    Mpo = VAL.fillna(0.0).astype(bool).shift(1, fill_value=False); wvo = (np.exp(LMV).shift(1)*Mpo).fillna(0.0)          # old: no carry
++    V2, L2 = VAL.copy(), LMV.copy(); nr = V2.iloc[0].isna()                                                                 # r2.2: no row = carry
++    V2.iloc[0] = V2.iloc[0].where(~nr, lr_v.reindex(U)); L2.iloc[0] = L2.iloc[0].where(~nr, lr_m.reindex(U))
++    last = pd.Series({c: VAL[c].last_valid_index() for c in U}).reindex(U).fillna(pd.Timestamp("1970-01-01"))
++    after = idx.values[:, None] > pd.DatetimeIndex(last.values).values[None, :]
++    M2 = V2.ffill().mask(after).fillna(0.0).astype(bool); Mp2 = M2.shift(1, fill_value=False); wv2 = (np.exp(L2.ffill().mask(after)).where(M2).shift(1)*Mp2).fillna(0.0)
++    del V2, L2, M2, MV, VAL, LMV
+     rs = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", carry_col, "row_origin", "restore_reason"],
+-                                    filters=[("row_origin", "==", "restored"), ("restore_reason", "==", "resume")]) for y in (2024, 2025, 2026)])
+-    rs["date"] = pd.to_datetime(rs.date); rs = rs[(rs.date > idx[0]) & (rs.date <= idx[-1])]   # idx[0] has no T−1 inside the window
+-    ri, ci = idx.get_indexer(rs.date), cols.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
+-    mp = np.zeros(len(rs), bool); mp[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
+-    bad = (mp != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
+-    diag = dict(carry_col=carry_col, resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
+-                mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"))
+-    return Mp, wv, Mpo, wvo, diag
++                                    filters=[("row_origin", "==", "restored"), ("restore_reason", "==", "resume")]) for y in PANEL_YEARS])
++    rs["date"] = pd.to_datetime(rs.date); rs = rs[(rs.date > idx[0]) & (rs.date <= idx[-1])]   # idx[0] has no T−1 inside the frame
++    ri, ci = idx.get_indexer(rs.date), U.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
++    mpv = np.zeros(len(rs), bool); mpv[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
++    bad = (mpv != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
++    diag = dict(carry_col=carry_col, rule="Arch 129d67c5 §3 (carry only on mask-suspended no-row days, recursed from 2018)",
++                resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
++                mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"), carried_by_mask_reason_x2=dict(reasons))
++    return dict(Mp=Mp, wv=wv, Mpo=Mpo, wvo=wvo, Mp2=Mp2, wv2=wv2, U=U, seed_ind=lr_i.reindex(U), diag=diag)
+ 
+ 
+ # ---------------------------------------------------------------- stage fund (PIT event table; reads financials, forecasts, panel logmv only)
+@@ -322,7 +448,7 @@
+ 
+ 
+ def fund(a, panel, out, auth, up):
+-    repin(auth, "dep_fe_sha256", "data_financials_sha256", "data_forecast_sha256")
++    panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", "data_financials_sha256", "data_forecast_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+     cal = calendar(panel)
+     fi = FE.first_version(pd.read_parquet(FIN_PIT, columns=["ts_code", "end_date", "available_at", "report_type", "n_income_attr_p"])
+@@ -356,7 +482,7 @@
+             bl.append(pd.DataFrame({"date": cal[i0:i1], "instrument": t}))
+         parts.append(fc.dropna(subset=["eff", "niq"]).assign(src="forecast")[["ts_code", "end_date", "eff", "niq", "src"]])
+     (pd.concat(bl).drop_duplicates() if bl else pd.DataFrame({"date": pd.DatetimeIndex([]), "instrument": pd.Series([], dtype=str)})
+-     ).to_parquet(out/"blackout_pairs.parquet", index=False)
++     ).pipe(lambda df_: xparquet(df_, out/"blackout_pairs.parquet"))
+     # B4: formal records take part in the current-record choice as soon as they have eff (niq may be NaN); forecast records whose niq
+     # cannot be computed were already dropped above (not a usable record — unchanged, stated in the receipt)
+     E = pd.concat(parts, ignore_index=True).dropna(subset=["eff"])
+@@ -368,7 +494,7 @@
+     E.loc[~(E.f1 <= E.eff), "sd"] = np.nan                       # SUE std uses formal q−8..q−1 only
+     E["d1"] = E.niq - E.n4
+     Eo = current_records(E.dropna(subset=["d1"]))   # OLD r2.1 order (drop rows, then choose) — kept only to disclose fallback name-days
+-    Eo[["ts_code", "end_date", "eff", "d1"]].to_parquet(out/"event_table_oldsel.parquet", index=False); n_old = int(len(Eo)); del Eo
++    xparquet(Eo[["ts_code", "end_date", "eff", "d1"]], out/"event_table_oldsel.parquet"); n_old = int(len(Eo)); del Eo
+     E = current_records(E)                          # B4: choose the current record first (latest end_date) …
+     n_d1_nan = int(E.d1.isna().sum())               # … then d1 = NI_q − NI_{q−4}; NaN → no α (no fallback to an older quarter)
+     # P1-5 (a): fixed denominator = log float mcap on the session before eff (panel logmv, log 元)
+@@ -378,16 +504,34 @@
+     ci = LM.columns.get_indexer(E.ts_code); okk = (pi >= 0) & (ci >= 0)
+     E["lmv_fix"] = np.nan; E.loc[okk, "lmv_fix"] = LM.to_numpy()[pi[okk], ci[okk]]
+     del LM; gc.collect()
+-    E[["ts_code", "end_date", "eff", "src", "d1", "sd", "lmv_fix"]].to_parquet(out/"event_table.parquet", index=False)
++    xparquet(E[["ts_code", "end_date", "eff", "src", "d1", "sd", "lmv_fix"]], out/"event_table.parquet")
+     write_meta(out, "fund", auth, ["event_table.parquet", "event_table_oldsel.parquet", "blackout_pairs.parquet"], up,
+                rows=int(len(E)), rows_current_d1_nan=n_d1_nan, rows_oldsel=n_old,
+                input_sha={"forecast": sha(FC), "financials": sha(FIN_PIT)})
+     print("fund done", f"rss={rss():.0f}", flush=True)
+ 
+ 
++def style_feats(RW, LM, AD, bench):
++    """主 Agent 02:23 ruling (via Alpha preread 8586ffd0 §4): Alpha's frozen style set, every exposure as of t−1 —
++    log float mcap (logmv_{t−1}), beta120 vs 510300 (120-session window, ≥60, same construction as research/alpha_hiliq_s8_paradigm.py),
++    momentum t−120→t−20 (cumulative return over sessions t−120..t−21, ≥80 valid), logADV20 (adv20_yuan_{t−1}). SW L1 dummies are added in the
++    regression. Replaces the r2.x mom20/mom60/vol20 + same-day logADV20."""
++    R64 = RW.astype("float64"); b = bench.reindex(RW.index).astype("float64")
++    beta = R64.rolling(120, min_periods=60).cov(b).div(b.rolling(120, min_periods=60).var(), axis=0)
++    mom = np.expm1(np.log1p(R64).shift(21).rolling(100, min_periods=80).sum())
++    return {"lmv1": LM.shift(1), "beta120": beta.shift(1).astype("float32"), "mom_120_20": mom.astype("float32"),
++            "ladv1": np.log(AD.clip(lower=1e4)).shift(1).astype("float32")}
++
++
++def bench_ret():
++    e = pd.read_parquet(ETF, columns=["ts_code", "trade_date", "close_hfq"], filters=[("ts_code", "==", "510300.SH")])
++    return pd.Series(e.close_hfq.to_numpy(float), index=pd.to_datetime(e.trade_date.astype(str), format="%Y%m%d")).sort_index().pct_change()
++
++
+ # ---------------------------------------------------------------- stage build (year chunks)
+ def build(a, panel, out, auth, up):
+-    repin(auth, "dep_fe_sha256", f"dep_l19_{a.uni.lower()}_sha256", f"dep_l20_{a.uni.lower()}_sha256")
++    panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", f"dep_l19_{a.uni.lower()}_sha256", f"dep_l20_{a.uni.lower()}_sha256",
++                                     "data_etf_daily_adj_sha256", "dep_capadv_leg_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+     uni = a.uni; col = FE.UCOL[uni]
+     FIN = load_fin(panel)   # B1: real code line (was inside a comment → NameError); asserts len(FIN) == 2; N8: panel dir only
+@@ -398,21 +542,24 @@
+     lo_x2 = pd.Timestamp(X2S).to_pydatetime()
+     A19 = pd.read_parquet(L19[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a19"})
+     A20 = pd.read_parquet(L20[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a20"})
++    # prereg r2.1 §1 "去敏 = residualize on style, capacity_adv, industry, leaf19/20": capacity_adv exposure = its HI_LIQ v1.1 leg target weight
++    # on the same session (0 if not held; 510300 balance row dropped; PIT like the leaf19/20 α), demeaned in the daily OLS
++    CAPW = pd.read_parquet(CAPLEG, columns=["date", "instrument", "target_weight"], filters=[("date", ">=", lo_x2)]).rename(columns={"target_weight": "acap"})
++    CAPW["date"] = pd.to_datetime(CAPW.date); CAPW = CAPW[CAPW.instrument != FE.BAL]
+     for t in (A19, A20): t["date"] = pd.to_datetime(t.date)
+-    tail = defaultdict(lambda: deque(maxlen=3)); cov = []
++    BR = bench_ret(); tail = defaultdict(lambda: deque(maxlen=3)); cov = []
+     for y in (2024, 2025, 2026):
+-        lo = pd.Timestamp(WARM) if y == 2024 else pd.Timestamp(f"{y-1}-09-01")
++        lo = pd.Timestamp("2023-06-01") if y == 2024 else pd.Timestamp(f"{y-1}-05-01")   # ≥ 121 sessions for mom t−120→t−20 / beta120
+         P = pd.concat([read_panel(panel, yy, ["date", "instrument", "ret", "logmv", "ind", "adv20_yuan", col], lo) for yy in sorted({lo.year, y})])
+         RW = P.pivot_table(index="date", columns="instrument", values="ret").sort_index().astype("float32")
+-        LM = P.pivot_table(index="date", columns="instrument", values="logmv").sort_index().astype("float32")
+-        feats = {"mom20": RW.shift(1).rolling(20, min_periods=15).sum(), "mom60": RW.shift(1).rolling(60, min_periods=40).sum(),
+-                 "vol20": RW.shift(1).rolling(20, min_periods=15).std(), "lmv1": LM.shift(1)}  # previous-session logmv (ε erratum)
++        LM = P.pivot_table(index="date", columns="instrument", values="logmv").reindex_like(RW).astype("float32")
++        AD = P.pivot_table(index="date", columns="instrument", values="adv20_yuan").reindex_like(RW).astype("float32")
++        feats = style_feats(RW, LM, AD, BR); del AD   # Alpha frozen style set, all t−1 (lmv1 = previous-session logmv, ε erratum)
+         gstart = pd.Timestamp(X2S) - pd.Timedelta(days=10) if y == 2024 else pd.Timestamp(f"{y}-01-01")
+         P = P[(P.date >= gstart) & (P.date.dt.year == y) & (P.date <= X2E) & P[col].fillna(False).astype(bool) & (P.ind >= 0) & ~P.ind.isin(FIN)].copy()
+         for nm, M in feats.items(): P = P.join(M.stack().rename(nm).astype("float32"), on=["date", "instrument"])
+         del RW, LM, feats; gc.collect()
+-        P["ladv"] = np.log(P.adv20_yuan.clip(lower=1e4))
+-        P = P.dropna(subset=["mom20", "mom60", "vol20", "ret", "lmv1"]); P = P[~P.instrument.isin(FE.EXCL)].sort_values("date")
++        P = P.dropna(subset=["lmv1", "beta120", "mom_120_20", "ladv1", "ret"]); P = P[~P.instrument.isin(FE.EXCL)].sort_values("date")
+         P = pd.merge_asof(P, ev[["instrument", "eff", "end_date", "src", "d1", "sd", "lmv_fix"]], left_on="date", right_on="eff", by="instrument", direction="backward")
+         P = pd.merge_asof(P, evo, left_on="date", right_on="eff_o", by="instrument", direction="backward")   # B4 disclosure only
+         fallback[str(y)] = int(((P.date >= X2S) & P.d1.isna() & P.d1_o.notna() & (P.end_o < P.end_date)
+@@ -423,12 +570,13 @@
+         else: P["sig"] = (P.d1/P.sd.where(P.sd > 0)).clip(-SUE_CLIP, SUE_CLIP)
+         P.loc[(P.date - P.eff).dt.days > STALE_DAYS, "sig"] = np.nan
+         P = P.merge(A19, on=["date", "instrument"], how="left").merge(A20, on=["date", "instrument"], how="left").merge(blk, on=["date", "instrument"], how="left")
+-        P[["a19", "a20"]] = P[["a19", "a20"]].fillna(0.0); P["blk"] = P.blk.fillna(0).astype("int8")
++        P = P.merge(CAPW, on=["date", "instrument"], how="left")
++        P[["a19", "a20", "acap"]] = P[["a19", "a20", "acap"]].fillna(0.0); P["blk"] = P.blk.fillna(0).astype("int8")
+         AL, GL = [], []
+         for d, g in P.groupby("date", sort=True):
+             if len(g) < 100: continue
+             ind = g.ind.to_numpy(); D = (ind[:, None] == np.unique(ind)[None, :]).astype(float)
+-            S = g[["lmv1", "mom20", "mom60", "vol20", "ladv"]].to_numpy(float); S = (S - S.mean(0))/S.std(0)
++            S = g[["lmv1", "beta120", "mom_120_20", "ladv1"]].to_numpy(float); S = (S - S.mean(0))/S.std(0)
+             eps = FE.ols_resid(g.ret.to_numpy(float).clip(-.21, .31), np.column_stack([D, S[:, :1]])); qd = np.quantile(eps, .05)
+             ins = g.instrument.to_numpy()
+             for i_, e_ in zip(ins, eps): tail[i_].append(e_ < qd)
+@@ -437,16 +585,16 @@
+             sv = g.sig.to_numpy(float); ok = np.isfinite(sv)
+             if ok.sum() < 50: cov.append((d, int(ok.sum()))); continue
+             raw = rank_ind(sv, ind)[ok]
+-            X = np.column_stack([D, S, g.a19.to_numpy(float) - g.a19.mean(), g.a20.to_numpy(float) - g.a20.mean()])
++            X = np.column_stack([D, S, g.a19.to_numpy(float) - g.a19.mean(), g.a20.to_numpy(float) - g.a20.mean(), g.acap.to_numpy(float) - g.acap.mean()])
+             r1 = FE.ols_resid(raw, X[ok]); mv = g.lmv1.to_numpy(float)[ok]
+             al, dom = FE.dom_rank(r1, mv); al = FE.ols_resid(al, np.column_stack([D[ok], S[ok][:, :1]])); al, _ = FE.dom_rank(al, mv)
+             AL.append(pd.DataFrame({"date": d, "instrument": ins[ok], "alpha": al.astype("float32"), "size_domain": dom.astype("int8"), "ind": ind[ok],
+                                     "raw": raw.astype("float32"), "src": g.src.to_numpy()[ok], "blk": g.blk.to_numpy()[ok]}))
+             cov.append((d, int(ok.sum())))
+-        if AL: pd.concat(AL).to_parquet(out/f"alpha_{uni}_{y}.parquet", index=False); written.append(f"alpha_{uni}_{y}.parquet")
+-        if GL: pd.concat(GL).to_parquet(out/f"gate_{uni}_{y}.parquet", index=False); written.append(f"gate_{uni}_{y}.parquet")
++        if AL: xparquet(pd.concat(AL), out/f"alpha_{uni}_{y}.parquet"); written.append(f"alpha_{uni}_{y}.parquet")
++        if GL: xparquet(pd.concat(GL), out/f"gate_{uni}_{y}.parquet"); written.append(f"gate_{uni}_{y}.parquet")
+         print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; gc.collect()
+-    pd.DataFrame(cov, columns=["date", "n"]).to_parquet(out/f"coverage_{uni}.parquet", index=False); written.append(f"coverage_{uni}.parquet")
++    xparquet(pd.DataFrame(cov, columns=["date", "n"]), out/f"coverage_{uni}.parquet"); written.append(f"coverage_{uni}.parquet")
+     write_meta(out, f"build_{uni}", auth, written, up, uni=uni, b4_oldorder_fallback_name_days_x2=fallback)
+ 
+ 
+@@ -465,17 +613,17 @@
+                 if i in blocked.get(d, ()) and i not in held: skips += 1; continue
+                 if iw.get(ind, 0) + w > ind_cap + 1e-12: continue
+                 pk.append(i); iw[ind] = iw.get(ind, 0) + w
+-            assert max(iw.values(), default=0) <= ind_cap + 1e-12 and len(pk) <= N
++            if max(iw.values(), default=0) > ind_cap + 1e-12 or len(pk) > N: raise RuntimeError(f"pick_book: industry cap / N breached on {d}")
+             cur = [(i, w) for i in pk] + [(BAL, 1 - w*len(pk))]; held = set(pk)
+         if cur is not None: rows += [(d, i, x) for i, x in cur]
+     W = pd.DataFrame(rows, columns=["date", "instrument", "target_weight"])
+-    assert (W[W.instrument != BAL].target_weight <= w + 1e-12).all()
++    if not (W[W.instrument != BAL].target_weight <= w + 1e-12).all(): raise RuntimeError("pick_book: single-name weight above cap")
+     W.attrs["blocked_skips"] = skips
+     return W
+ 
+ 
+ def evaluate(a, panel, out, auth, up):
+-    repin(auth, "dep_fe_sha256", "data_etf_daily_adj_sha256")
++    panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", "data_etf_daily_adj_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+     FIN = load_fin(panel); ext_out = {}
+     FE.PC = panel; FE._RET.clear()  # all booking on the rebuilt panel
+@@ -485,10 +633,13 @@
+                 note_zh="X2 只是入场券；唯一晋级测试为 2026-11-02 起 FWD。Gate B/GATE_V3/衰减/ρ/Jaccard(叶15–22) 由钉 sha 的评价工具另算。",
+                 notes_arch_b997cba8_zh=[
+                     "外部工具口径：leaf_selfcheck_v3.py 的 PANEL 仍写死读 v1 panel_cache（池成员与 IC 价格指数）；alpha_combo_marginal / leaf_selfcheck_common 的书收益来自原始复权价，不是 FE.book_ret。Gate B/GATE_V3/衰减/IC 与本脚本判定读数不是同一引擎、同一面板，与叶15–22 相同，可横向比较；以后另提 --panel-dir（新 sha、单独审）。",
+-                    "mom20/mom60/vol20 用面板全部行的 ret（shift(1)，PIT），重建后含复牌补回行收益，与 v1 面板下的叶15–22 不完全可比。",
++                    "beta120 与动量 t−120→t−20 用面板全部行的 ret（t−1，PIT），重建后含复牌补回行收益，与 v1 面板下的叶15–22 不完全可比（规模需授权运行后才能报）。",
+                     "补回行 hiliq=False：复牌日的已持仓股不在 α 名单里会被调出，blocked 入场闸门基本不触发（books.*.blocked_skips 计数）；SD0 下属乐观处理。",
+                     "B4：当前记录先按最新 end_date 选（正式报表 niq 为 NaN 也参与），再算 ΔE/P，算不出即无 α；预告记录 niq 算不出的仍不算可用记录。旧写法会退回旧季度的名·日数见 build_*_meta.json。",
+-                    "B3：池 EW/wb 按 Arch 澄清 C1 沿用停牌期成员与流通市值（退市后不沿用）；旧写法（不沿用）的 EW/wb 与年化差见 res.*.b3_pool_carry。",
++                    "B3（Arch 129d67c5 §3 执行口径）：只在面板无行且 mask 当日停牌时沿用上一状态和停牌前流通市值；ST/成交额不足/次新无行日记 False 并中断沿用；mask 无行（未上市/退市）记 False；自 2018 逐年递推。沿用名·日按 mask 原因计数（必须全为停牌）；旧写法（不沿用）与 r2.2 写法（无行即沿用）的 EW/wb 年化差只作披露，见 res.*.b3_pool_carry。",
++                    "残差化（主 Agent 02:23 裁定，经 Alpha 预读 8586ffd0）：风格集改为 Alpha 冻结集，全部取 t−1——SW L1、logmv、beta120（对 510300）、动量 t−120→t−20、logADV20；替代预注册 §4 第 3 条的 mom20/mom60/vol20/当日 logADV20（预注册未改，按裁定执行并披露）。另按预注册 §1 实际加入 capacity_adv：回归项含 capacity_adv HI_LIQ v1.1 腿当日权重（未持有记 0，3b288c83…），叶19/20 α 照旧。",
++                    "B4 补充（Arch P3-6）：正式报表 niq 为 NaN 的唯一来源是上一期 ytd 缺失，此时同季预告的 niq 也算不出，所以不存在「正式报表盖掉可用预告」的情况。",
++                    "行业帽 25% 的出处是 Arch 审核 0d9bd147 第 96 行（P1-3），并经主 Agent 01:52 认可；不是主 Agent 01:42 裁定。",
+                     "密封窗已被叶20 读过，不是干净样本外；引擎 SD0，SD1 合入后是否重算由 Arch 另定。"])
+     for uni in ("HILIQ", "FULLA"):
+         col = FE.UCOL[uni]
+@@ -499,29 +650,32 @@
+         days = sorted(A.date.unique()); rd = set(days[::FE.REBAL])
+         # panel for benchmarks/booking (eval only: may read is_resume_day/hiliq_carry for entry gate + disclosure)
+         lo_px = pd.Timestamp("2024-05-20"); carry_col = "hiliq_carry" if uni == "HILIQ" else "fulla_carry"
+-        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "logmv", "close", "ind", col, "is_resume_day", "hiliq_carry"],
++        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "logmv", "close", "ind", col, "is_resume_day", carry_col],
+                                         filters=[("date", ">=", lo_px.to_pydatetime())]) for y in (2024, 2025, 2026)])
+         PX["date"] = pd.to_datetime(PX.date); PX = PX[PX.date <= e]
+         blocked = {d: set(g.instrument) for d, g in PX[PX.is_resume_day.fillna(False).astype(bool)].groupby("date")}
+         rr = PX.pivot_table(index="date", columns="instrument", values="ret").sort_index()
+-        # B3 (Arch clarification C1): members/float mcap carried through suspension, then T−1; ret at T; suspended → 0, kept in denominator
+-        Mp, wv, Mpo, wvo, b3 = pool_benchmarks(panel, PX, col, carry_col, rr.index, rr.columns, lo_px)
+-        if b3["carry_mismatch"]:
+-            (out/f"B3_carry_mismatch_{uni}.json").write_text(json.dumps(b3, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+-            raise SystemExit(f"STOP (B3): Mp != {carry_col} on {b3['carry_mismatch']} restored resume rows — report to Arch; see B3_carry_mismatch_{uni}.json")
+-        r0 = rr.fillna(0.0)
+-        ew = ((r0*Mp).sum(1)/Mp.sum(1)).loc[s:e]; wb = ((r0*wv).sum(1)/wv.sum(1)).loc[s:e]
+-        ew_o = ((r0*Mpo).sum(1)/Mpo.sum(1)).loc[s:e]; wb_o = ((r0*wvo).sum(1)/wvo.sum(1)).loc[s:e]
++        # B3 (Arch P1-1, 129d67c5 §3): S carried only on mask-suspended no-row days, recursed from 2018; then T−1; ret at T; suspended → 0, kept
++        repin(auth, "data_mask_sha256"); pb = pool_benchmarks(panel, PX, col, carry_col, rr.index, s, e); b3 = pb["diag"]
++        if b3["carry_mismatch"] or b3["carried_by_mask_reason_x2"].get("not_suspended", 0):
++            xtext(out/f"B3_carry_mismatch_{uni}.json", json.dumps(b3, ensure_ascii=False, indent=1, default=str))
++            raise SystemExit(f"STOP (B3): Mp != {carry_col} on {b3['carry_mismatch']} restored resume rows / {b3['carried_by_mask_reason_x2'].get('not_suspended', 0)} carried non-suspended name-days — report to Arch")
++        U = pb["U"]; Mp, wv = pb["Mp"], pb["wv"]; r0 = rr.reindex(columns=U).fillna(0.0)
++        ewf = lambda M, W_: (((r0*M).sum(1)/M.sum(1)).loc[s:e], ((r0*W_).sum(1)/W_.sum(1)).loc[s:e])
++        ew, wb = ewf(Mp, wv); ew_o, wb_o = ewf(pb["Mpo"], pb["wvo"]); ew_2, wb_2 = ewf(pb["Mp2"], pb["wv2"])
++        b3.update(carried_member_days_x2=int((Mp & ~pb["Mpo"]).loc[s:e].to_numpy().sum()),
++                  poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o), poolEW_cagr244_r2_2_norowcarry=ann(ew_2), wb_cagr244_r2_2_norowcarry=ann(wb_2),
++                  poolEW_cagr244_diff_vs_old=ann(ew) - ann(ew_o), wb_cagr244_diff_vs_old=ann(wb) - ann(wb_o),
++                  poolEW_cagr244_diff_vs_r2_2=ann(ew) - ann(ew_2), wb_cagr244_diff_vs_r2_2=ann(wb) - ann(wb_2), note="old / r2.2 constructions: disclosure only")
+         # N4 (prereg P2-4): factor-applicability exclusions (financials + 600519/002371) — daily count in pool and their share of pool wb weight
+-        IX = PX.pivot_table(index="date", columns="instrument", values="ind").reindex(index=rr.index, columns=rr.columns).ffill()
+-        X = IX.isin(list(FIN)) | pd.DataFrame(np.broadcast_to(rr.columns.isin(list(FE.EXCL)), IX.shape), index=IX.index, columns=IX.columns)
++        IX = PX.pivot_table(index="date", columns="instrument", values="ind").reindex(index=rr.index, columns=U)
++        IX.iloc[0] = IX.iloc[0].fillna(pb["seed_ind"]); IX = IX.ffill()
++        X = IX.isin(list(FIN)) | pd.DataFrame(np.broadcast_to(U.isin(list(FE.EXCL)), IX.shape), index=IX.index, columns=U)
+         n_ex = (Mp & X).sum(1).loc[s:e]; sh_ex = ((wv*X).sum(1)/wv.sum(1)).loc[s:e]
+-        b3.update(carried_member_days_x2=int((Mp & ~Mpo).loc[s:e].to_numpy().sum()), poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o),
+-                  poolEW_cagr244_diff_carry_minus_old=ann(ew) - ann(ew_o), wb_cagr244_diff_carry_minus_old=ann(wb) - ann(wb_o))
+         excl = dict(excluded_names_daily_median=float(n_ex.median()), excluded_wb_weight_share_median=float(sh_ex.median()),
+-                    excluded_wb_weight_share_mean=float(sh_ex.mean()), definition="SW L1 银行/非银金融 + 600519.SH/002371.SZ, pool members at T−1 (carried), weight = T−1 float mcap")
++                    excluded_wb_weight_share_mean=float(sh_ex.mean()), definition="SW L1 银行/非银金融 + 600519.SH/002371.SZ, pool members at T−1 (B3 state), weight = T−1 float mcap")
+         repin(auth, "data_etf_daily_adj_sha256"); bal = FE.rets(range(2024, 2027))[0][FE.BAL].loc[s:e].astype(float)
+-        del rr, Mp, wv, Mpo, wvo, r0, IX, X; gc.collect()
++        del rr, Mp, wv, r0, pb, IX, X; gc.collect()
+ 
+         def vs(r, b):
+             b = b.reindex(r.index).fillna(0); x = r - b; be = float(np.cov(r, b)[0, 1]/b.var()); res = r - be*b
+@@ -533,14 +687,14 @@
+                  "top6_60w_cap20_disclosure": (6, TIER_W, CORE_IND_CAP), "top10_100w_cap20_disclosure": (10, TIER_W, CORE_IND_CAP)}
+         for nm, (N, w, icap) in specs.items():
+             W = pick_book(A, G, rd, days, N, w, icap, blocked)
+-            W.to_parquet(out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet", index=False)
++            xparquet(W, out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet")
+             r, to = FE.book_ret(W, s, e); _c = FE.COST; FE.COST = 0.003; r30, _ = FE.book_ret(W, s, e); FE.COST = _c
+-            nav = (1+r).cumprod(); H = W[W.instrument != FE.BAL].merge(PX[["date", "instrument", "is_resume_day", "hiliq_carry", "close"]], on=["date", "instrument"], how="left")
++            nav = (1+r).cumprod(); H = W[W.instrument != FE.BAL].merge(PX[["date", "instrument", "is_resume_day", carry_col, "close"]], on=["date", "instrument"], how="left")
+             H = H.merge(A[["date", "instrument", "src", "blk"]], on=["date", "instrument"], how="left")
+             b = dict(cagr244=ann(r), cagr252=float(nav.iloc[-1]**(252/len(r))-1), mdd=float((nav/nav.cummax()-1).min()), turnover_1s=to,
+                      cagr244_30bp=ann(r30), vs_wb=vs(r, wb), vs_poolEW=vs(r, ew), vs_510300=vs(r, bal),
+                      held_name_days=int(len(H)), held_resume_rows=int(H.is_resume_day.fillna(False).astype(bool).sum()),
+-                     held_resume_rows_hiliq_carry=int(H.hiliq_carry.fillna(False).astype(bool).sum()),
++                     held_resume_rows_carry=int(H[carry_col].fillna(False).astype(bool).sum()),
+                      held_in_fc_blackout=int((H.blk == 1).sum()), held_in_fc_blackout_ratio=float((H.blk == 1).mean()) if len(H) else None,
+                      blocked_skips=int(W.attrs.get("blocked_skips", 0)))
+             if N < 20:  # P2-6 lot rounding disclosure at the tier's capital (rebalance days, raw close)
+@@ -550,8 +704,8 @@
+             books[nm] = b; FE._RET.clear()
+             if uni == "HILIQ" and nm in ("top6_60w", "top10_100w"):
+                 tag = f"sue_desens_cs_{nm}" + ("" if is_primary(a) else f"_{variant_tag(a)}")
+-                W.to_parquet(R/f"output/ai_factory/g1g5_{tag}_daily_weights_{stamp}.parquet", index=False)
+-                (R/f"output/ai_factory/g1g5_{tag}_run_meta_{stamp}.json").write_text(json.dumps(dict(mechanism_tag="g1g5_ashare_sue_desens_cs_v1", universe=uni,
++                xparquet(W, R/f"output/ai_factory/g1g5_{tag}_daily_weights_{stamp}.parquet")
++                xtext(R/f"output/ai_factory/g1g5_{tag}_run_meta_{stamp}.json", json.dumps(dict(mechanism_tag="g1g5_ashare_sue_desens_cs_v1", universe=uni,
+                     tier=nm, variant=variant_tag(a), live=False, promotion_approved=False, stamp=stamp, window="x2",
+                     script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"]), ensure_ascii=False))
+                 for f_ in (f"g1g5_{tag}_daily_weights_{stamp}.parquet", f"g1g5_{tag}_run_meta_{stamp}.json"): ext_out[f_] = sha(R/"output/ai_factory"/f_)
+@@ -621,7 +775,7 @@
+                                    note="非判定规格一律「未做多重检验校正，仅披露」" if not is_primary(a) else "判定规格；Gate B/GATE_V3/衰减另由钉 sha 工具出")
+         summ["res"][uni] = res
+         del A, G, PX; FE._RET.clear(); gc.collect(); print(uni, "eval done", f"rss={rss():.0f}", flush=True)
+-    summ["peak_rss_mb_eval"] = rss(); (out/f"summary_{stamp}.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1, default=float))
++    summ["peak_rss_mb_eval"] = rss(); xtext(out/f"summary_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
+     write_meta(out, "eval", auth, [f"summary_{stamp}.json"] + sorted(p.name for p in out.glob(f"eval_weights_*_{stamp}.parquet")), up,
+                stamp=stamp, external_outputs=ext_out); print("STAMP", stamp)
+ 
+@@ -645,7 +799,8 @@
+     # N6: serial order fund > build HILIQ > build FULLA > eval; first stage needs an empty out_dir; later stages chain-verify upstream metas
+     if a.stage == "fund":
+         if out.exists() and any(out.iterdir()): raise SystemExit(f"refused: out_dir {out} is not empty (N6: no silent overwrite; Arch decides on cleanup)")
+-        out.mkdir(parents=True, exist_ok=True); up = {}
++        up = {} if is_primary(a) else verify_primary_eval(auth)   # P2-2: sensitivities only after the primary eval chain
++        out.mkdir(parents=True, exist_ok=True)
+     else:
+         if not out.is_dir(): raise SystemExit(f"refused: out_dir {out} missing (run fund first)")
+         need = {"build": ["fund"] + (["build_HILIQ"] if a.uni == "FULLA" else []), "eval": ["fund", "build_HILIQ", "build_FULLA"]}[a.stage]
+--- a/research/g1g5_imax_intraday_alpha.py
++++ b/research/g1g5_imax_intraday_alpha.py
+@@ -8,7 +8,7 @@
+ PRIMARY (prereg §3): r_id = (1+ret)/(1+ret_on) − 1 (overnight component removed); e_id = daily pool OLS residual of r_id on
+     SW L1 dummies + logmv_{t−1} (in-mask rows only; resume rows never enter the signal); IMAX_t = mean of the 5 largest e_id over
+     [t−19, t] (≥15 valid); signal = −IMAX, within-SW-L1 rank → normal quantile; financials INCLUDED (no ex-fin in primary).
+-    Residualize: SW L1 + logmv_{t−1} + mom20 + mom60 + vol20 + logADV20 + leaf18 α + leaf18v α (missing 0); size-domain rank →
++    Residualize (主 Agent 02:23): SW L1 + Alpha frozen style set at t−1 (logmv, beta120, mom t−120→t−20, logADV20) + leaf18 α + leaf18v α (missing 0); size-domain rank →
+     resid on ind + logmv_{t−1} → size-domain rank = base-α. Gate: 3-day ind+logmv_{t−1} residual-return left tail 5% (not in α).
+ SENSITIVITIES (disclosure only; .ok allow_sensitivity=true): --src total (overnight kept), --k 1, --win 60 (≥45 valid), --ex-fin.
+ Limit-up: not corrected; the share of limit-up days among each name's IMAX top-k days is stored and MUST be reported (prereg §3.4).
+@@ -26,6 +26,12 @@
+     before use; N3 Jaccard ranks leaf18/18v names by their own α; N5 strict .ok parser + explicit keys; N6 non-empty out_dir refused + stage
+     meta chain; N7 ret_on missing → r_id NaN (no fillna(0)); N8 ind_names.csv only from the panel dir. File name says IMAX_OVERNIGHT but the
+     factor REMOVES the overnight component (intraday IMAX).
++fix-2 (Arch 129d67c5, NOT RUN — py_compile only): P1-1 B3 state recursed from 2018, carry only on mask-suspended no-row days, mask pinned
++    (data_mask_sha256 == D1b receipt pins.mask_sha256), carried name-days by mask reason must all be suspended; P1-2 variant must be one item of
++    sensitivity_specs; P1-3/P2-4 process check (research/ python, scripts/fix_sd1/, scripts_eng/, scripts/nightly_update.py block; scripts/acquire/
++    logged; ancestors excluded; niceness ≥ 10; MemAvailable ≥ 2GB; ps snapshot in meta); P2-1 .ok whitelist + fixed values + tool_cmds file;
++    P2-2 stage chains across variants (and leaf 24 after leaf 23); P2-3 exclusive create; P2-6 all years 2018–2026 verified;
++    P3 asserts → raise, carry_col for FULLA, panel re-hash per stage, limit-up 30*/688/689 (P2-5), rebalance-day limit-up share.
+ """
+ import argparse, hashlib, json, os, re, sys, gc, threading, time, resource
+ import numpy as np, pandas as pd
+@@ -49,7 +55,7 @@
+          "leaf18v": {"HILIQ": R/"output/ai_factory/leaf18v_overnight_idio_ivol_lowto/eval_weights_HILIQ_x2_20261014_212630.parquet",
+                      "FULLA": R/"output/ai_factory/leaf18v_overnight_idio_ivol_lowto/eval_weights_FULLA_x2_20261014_214401.parquet"}}
+ CAPADV = {6: R/"output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK", 10: R/"output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK"}
+-ETF = R/"data/v2/etf/etf_daily_adj.parquet"
++ETF = R/"data/v2/etf/etf_daily_adj.parquet"; MASK = R/"output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
+ L18_A = {"leaf18": L18, "leaf18v": L18V}; L18_KEY = {"leaf18": "l18", "leaf18v": "l18v"}
+ TOOLS = {"dep_fe_sha256": R/"research/g1g5_fund_resid_alpha.py", "dep_selfcheck_sha256": R/"research/leaf_selfcheck_v3.py",
+          "dep_combo_sha256": R/"research/alpha_combo_marginal.py",
+@@ -60,13 +66,20 @@
+          "dep_l18vw_hiliq_sha256": L18_W["leaf18v"]["HILIQ"], "dep_l18vw_fulla_sha256": L18_W["leaf18v"]["FULLA"],
+          "dep_capadv600_tw_sha256": CAPADV[6]/"target_weights.parquet", "dep_capadv600_nav_sha256": CAPADV[6]/"nav.csv",
+          "dep_capadv1000_tw_sha256": CAPADV[10]/"target_weights.parquet", "dep_capadv1000_nav_sha256": CAPADV[10]/"nav.csv",
+-         "data_etf_daily_adj_sha256": ETF}
+-LEAF_NO = "24"; OUT_ROOT = R/"output/ai_factory/leaf24_imax_intraday"; D1B_STEP = "D1b_resume_execute"; PANEL_YEARS = (2023, 2024, 2025, 2026)
++         "data_etf_daily_adj_sha256": ETF, "data_mask_sha256": MASK}
++LEAF_NO = "24"; OUT_ROOT = R/"output/ai_factory/leaf24_imax_intraday"; D1B_STEP = "D1b_resume_execute"; PANEL_YEARS = tuple(range(2018, 2027))   # P2-6: every year the B3 recursion reads
+ OK_LINE = re.compile(r"^([a-z0-9_]+)=(\S+)$")
++AIF = R/"output/ai_factory"; TOOL_CMDS = AIF/"ARCH_TOOL_CMDS_LEAF{LEAF_NO}_X2.cmd"   # Arch 129d67c5 §5-1: tool command lines live in a pinned .cmd file
++TOOL_CLOSURE = {"tool_closure_adj_price_sha256": R/"research/adj_price.py", "tool_closure_panel_stitch_sha256": R/"research/g1g5_x2_panel_stitch.py",
++                "tool_closure_moneyflow_sha256": R/"research/g1g5_moneyflow_resid_weights.py", "tool_closure_nontextbook_sha256": R/"research/g1g5_nontextbook_weights.py"}
+ OK_FIXED = {"format": "quantlab_run_auth_v1", "signed_by": "arch", "scope": "X2", "leaf": LEAF_NO, "live": "false", "promotion": "false",
+-            "allow_full": "true", "allow_smoke": "false", "allow_sealed": "false", "cs_panel_build_version": PANEL_VERSION}   # N5: must be explicit
+-OK_OPTIONAL_FIXED = {"promotion_approved": "false", "research_only": "true"}
+-OK_REQUIRED = ("script_sha256", "prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "out_dir")
++            "promotion_approved": "false", "allow_full": "true", "allow_smoke": "false", "allow_sealed": "false", "cs_panel_build_version": PANEL_VERSION,
++            "mechanism_tag": "g1g5_ashare_imax_intraday_v1", "window_start": X2S, "window_end": X2E, "rss_limit_mb": "1500",
++            "serial_order": "after_leaf23_complete>build_HILIQ>build_FULLA>eval>sensitivities", "sensitivity_specs": "src-total,k1,win60,exfin", "run_niceness": "10",
++            "tool_cmds_path": str(TOOL_CMDS), "research_only": "true"}   # N5 / P2-1: explicit, fixed values
++OK_REQUIRED = ("script_sha256", "prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "out_dir", "allow_sensitivity", "tool_cmds_sha256", "issued_at")
++BLOCK_CMDS = ("scripts/fix_sd1/", "scripts_eng/", "scripts/nightly_update.py"); LOG_ONLY_CMDS = ("scripts/acquire/",)
++MIN_NICE, MIN_MEMAVAIL_KB = 10, 2*1024*1024
+ TIERS = {6: 600_000, 10: 1_000_000}; TIER_W, TIER_IND_CAP, DISC_N, DISC_W, CORE_IND_CAP = 0.06, 0.25, 20, 0.04, 0.20
+ X2S, X2E = "2024-06-03", "2026-10-09"; WARM = "2024-01-01"; YEARS = (2024, 2025, 2026)
+ RSS_LIMIT_KB, T_DECISIVE, HAC_H, LIMIT_EPS = 1536000, 2.50, 20, 0.002
+@@ -87,14 +100,37 @@
+     threading.Thread(target=loop, daemon=True).start()
+ 
+ 
+-def other_research_jobs():
+-    me = os.getpid(); busy = []
++def ancestors():
++    """own pid + full ancestor chain (Arch P2-4: wrappers carry 'research/' in their cmdline too)."""
++    out, p = set(), os.getpid()
++    while p > 1 and p not in out:
++        out.add(p)
++        try: p = int(Path(f"/proc/{p}/stat").read_text().rsplit(")", 1)[1].split()[1])
++        except Exception: break
++    return out
++
++
++def process_check():
++    """Arch P1-3/P2-4 (129d67c5 §5-4). Refuse if another process cmdline has 'research/' (python) or scripts/fix_sd1/, scripts_eng/,
++    scripts/nightly_update.py; scripts/acquire/ resident fetchers are only logged. Own ancestor chain excluded. Refuse if own niceness < 10
++    or MemAvailable < 2GB. Returns the ps snapshot + niceness for the stage meta."""
++    anc = ancestors(); busy, logged, snap = [], [], []
+     for p in Path("/proc").iterdir():
+-        if not p.name.isdigit() or int(p.name) in (me, os.getppid()): continue
+-        try: cmd = (p/"cmdline").read_bytes().replace(b"\0", b" ").decode(errors="ignore")
++        if not p.name.isdigit() or int(p.name) in anc: continue
++        try:
++            cmd = (p/"cmdline").read_bytes().replace(b"\0", b" ").decode(errors="ignore").strip()
++            st = (p/"stat").read_text().rsplit(")", 1)[1].split(); pn = int(st[16]); rkb = int(st[21])*os.sysconf("SC_PAGE_SIZE")//1024
+         except Exception: continue
+-        if "python" in cmd and any(t in cmd for t in ("research/", "scripts/", "scripts_eng/")) and "run_rss_guard" not in cmd: busy.append((p.name, cmd[:160]))
+-    return busy
++        if not cmd: continue
++        hit = ("python" in cmd and "research/" in cmd) or any(t in cmd for t in BLOCK_CMDS); log = any(t in cmd for t in LOG_ONLY_CMDS)
++        if hit or log or "python" in cmd: snap.append(dict(pid=int(p.name), nice=pn, rss_mb=round(rkb/1024, 1), cmd=cmd[:200]))
++        if hit: busy.append((p.name, cmd[:160]))
++        elif log: logged.append((p.name, cmd[:160]))
++    mem_kb = int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1]); nice = os.nice(0)
++    if busy: raise SystemExit(f"refused: blocking job running {busy[:3]} (one full-window job at a time; nightly/fix_sd1/eng/research)")
++    if nice < MIN_NICE: raise SystemExit(f"refused: niceness {nice} < {MIN_NICE} (run under nice -n 10)")
++    if mem_kb < MIN_MEMAVAIL_KB: raise SystemExit(f"refused: MemAvailable {mem_kb//1024}MB < 2048MB")
++    return dict(niceness=nice, mem_available_mb=mem_kb//1024, log_only_resident=logged, ps_snapshot=snap)
+ 
+ 
+ def read_ok(path):
+@@ -125,9 +161,9 @@
+ 
+ 
+ def verify_panel(panel, ok):
+-    """P0-1/P0-2 + Arch B2: only <panel>/manifest.json (the name Data's D1b build writes), sha == .ok cs_panel_manifest_sha256,
+-    step == D1b_resume_execute, mode == execute, version/fixes/status; RECEIPT_D1b_resume_execute.json status PASS and its
+-    manifest_sha256 == .ok value; per-year file sha + build_version; N8: ind_names.csv only from this panel dir, sha == manifest."""
++    """P0-1/P0-2 + Arch B2 + P2-6: only <panel>/manifest.json, sha == .ok cs_panel_manifest_sha256, step == D1b_resume_execute, mode == execute,
++    version/fixes/status; RECEIPT_D1b_resume_execute.json status PASS, manifest_sha256 == .ok value, pins.mask_sha256 == .ok data_mask_sha256;
++    every year actually read (2018–2026) sha == manifest + build_version; N8: ind_names.csv only from this panel dir, sha == manifest."""
+     if panel.name in REJECT_PANELS: raise SystemExit(f"refused: panel {panel.name} is not the rebuilt {PANEL_VERSION}")
+     if Path(ok["cs_panel_dir"]).resolve() != panel: raise SystemExit(f"refused: --panel-dir {panel} != .ok cs_panel_dir {ok['cs_panel_dir']}")
+     mf, rf, want = panel/"manifest.json", panel/f"RECEIPT_{D1B_STEP}.json", ok["cs_panel_manifest_sha256"]
+@@ -142,40 +178,65 @@
+     rec = json.loads(rf.read_text(encoding="utf-8"))
+     if rec.get("step") != D1B_STEP or rec.get("status") != "PASS" or rec.get("manifest_sha256") != want:
+         raise SystemExit(f"refused: {rf.name} step/status/manifest_sha256 {rec.get('step')}/{rec.get('status')}/{str(rec.get('manifest_sha256'))[:12]}")
++    if (rec.get("pins") or {}).get("mask_sha256") != ok["data_mask_sha256"]:
++        raise SystemExit("refused: .ok data_mask_sha256 != D1b receipt pins.mask_sha256 (Arch P1-1 §3-6)")
+     ind = panel/"ind_names.csv"
+     if not ind.is_file() or sha(ind) != man.get("ind_names_sha256"): raise SystemExit("refused: <panel>/ind_names.csv missing or sha != manifest ind_names_sha256 (N8: no v1 fallback)")
++    years = {}
+     for y in PANEL_YEARS:
+         f = panel/f"cs_panel_{y}.parquet"; wy = man.get("years", {}).get(str(y), {}).get("sha256")
+         if not f.exists() or wy != sha(f): raise SystemExit(f"refused: {f.name} sha does not match manifest")
+         bv = pd.read_parquet(f, columns=["build_version"]).build_version.unique()
+         if list(bv) != [PANEL_VERSION]: raise SystemExit(f"refused: {f.name} build_version {bv}")
+-    return dict(manifest=str(mf), manifest_sha256=msha, receipt=str(rf), receipt_sha256=sha(rf), version=man["version"], ind_names_sha256=sha(ind))
++        years[str(y)] = wy
++    return dict(manifest=str(mf), manifest_sha256=msha, receipt=str(rf), receipt_sha256=sha(rf), version=man["version"], ind_names_sha256=sha(ind), years=years)
++
++
++def panel_recheck(auth, panel):
++    """Arch P3-5: re-hash every panel year file (and the pinned mask) against the manifest right before a stage reads them."""
++    for y, h in auth["cs_panel"]["years"].items():
++        if sha(panel/f"cs_panel_{y}.parquet") != h: raise SystemExit(f"refused: cs_panel_{y}.parquet changed since authorize")
++    repin(auth, "data_mask_sha256")
+ 
+ 
+ def out_dir(a): return OUT_ROOT if is_primary(a) else OUT_ROOT.with_name(OUT_ROOT.name + "_" + variant_tag(a))
+ 
+ 
++def tz_iso(v):
++    try: d = datetime.fromisoformat(v)
++    except ValueError: return False
++    return d.tzinfo is not None and d.utcoffset() is not None
++
++
+ def authorize(a):
+     panel = Path(a.panel_dir).resolve()
+     if not panel.is_dir(): raise SystemExit(f"--panel-dir {panel} not found (rebuilt cs_panel from Data required)")
+     if not a.arch_ok or not Path(a.arch_ok).is_file(): raise SystemExit("refused: Arch run-auth .ok required (--arch-ok)")
+     ok = read_ok(a.arch_ok); me = sha(__file__); pr = sha(PREREG)
+-    miss = [k for k in tuple(OK_FIXED) + OK_REQUIRED + tuple(TOOLS) if k not in ok]
+-    if miss: raise SystemExit(f"refused: .ok lacks required keys {miss} (N5: must be explicit)")
++    allowed = set(OK_FIXED) | set(OK_REQUIRED) | set(TOOLS) | set(TOOL_CLOSURE)
++    unknown = sorted(set(ok) - allowed)
++    if unknown: raise SystemExit(f"refused: .ok has unknown keys {unknown} (P2-1 whitelist)")
++    miss = [k for k in sorted(allowed) if k not in ok]
++    if miss: raise SystemExit(f"refused: .ok lacks required keys {miss} (N5/P2-1: must be explicit)")
+     checks = {k: ok[k] == v for k, v in OK_FIXED.items()}
+-    checks.update({k: ok.get(k, v) == v for k, v in OK_OPTIONAL_FIXED.items()})
+     checks["script_sha256"] = ok["script_sha256"] == me; checks["prereg_sha256"] = ok["prereg_sha256"] == PREREG_SHA == pr
+     checks["out_dir"] = Path(ok["out_dir"]).resolve() == OUT_ROOT.resolve()   # primary dir; sensitivity variants use <out_dir>_<variant>
+-    for k, f in TOOLS.items(): checks[k] = len(ok[k]) == 64 and ok[k] == sha(f)
+-    if not is_primary(a): checks["allow_sensitivity"] = ok.get("allow_sensitivity") == "true"
++    checks["allow_sensitivity"] = ok["allow_sensitivity"] in ("true", "false")
++    checks["issued_at"] = tz_iso(ok["issued_at"])
++    checks["tool_cmds_sha256"] = len(ok["tool_cmds_sha256"]) == 64 and TOOL_CMDS.is_file() and ok["tool_cmds_sha256"] == sha(TOOL_CMDS)
++    for k, f in {**TOOLS, **TOOL_CLOSURE}.items(): checks[k] = len(ok[k]) == 64 and Path(f).is_file() and ok[k] == sha(f)
++    if not is_primary(a):   # P1-2: single-factor variant, exactly one item of sensitivity_specs
++        checks["allow_sensitivity_true"] = ok["allow_sensitivity"] == "true"
++        checks["variant_in_sensitivity_specs"] = variant_tag(a) in ok["sensitivity_specs"].split(",")
+     bad = [k for k, v in checks.items() if not v]
+-    if bad: raise SystemExit(f"refused: Arch .ok check failed {bad} (script {me[:12]}, prereg {pr[:12]})")
++    if bad: raise SystemExit(f"refused: Arch .ok check failed {bad} (script {me[:12]}, prereg {pr[:12]}, variant {variant_tag(a)})")
+     pm = verify_panel(panel, ok)
+-    busy = other_research_jobs()
+-    if busy: raise SystemExit(f"refused: another research/data/eng job is running {busy[:3]} (one full-window job at a time)")
++    proc = process_check()
+     rss_watchdog()
+     return panel, dict(script_sha256=me, prereg_sha256=pr, arch_ok=str(Path(a.arch_ok).resolve()), arch_ok_sha256=sha(a.arch_ok), cs_panel=pm,
+-                       tools={k: sha(f) for k, f in TOOLS.items()}, variant=variant_tag(a), primary=is_primary(a), out_dir=str(out_dir(a)))
++                       tools={k: sha(f) for k, f in TOOLS.items()}, tool_closure={k: sha(f) for k, f in TOOL_CLOSURE.items()},
++                       tool_cmds=str(TOOL_CMDS), tool_cmds_sha256=sha(TOOL_CMDS), issued_at=ok["issued_at"], process=proc,
++                       variant=variant_tag(a), primary=is_primary(a), out_dir=str(out_dir(a)))
+ 
+ 
+ def repin(auth, *keys):
+@@ -184,32 +245,57 @@
+         if sha(TOOLS[k]) != auth["tools"][k]: raise SystemExit(f"refused: pinned input {k} changed since authorize ({TOOLS[k]})")
+ 
+ 
++def xtext(p, s):
++    """Arch P2-3: exclusive create — never overwrite."""
++    with open(p, "x", encoding="utf-8") as f: f.write(s)
++
++
++def xparquet(df, p):
++    with open(p, "xb") as f: df.to_parquet(f, index=False)
++
++
+ def write_meta(out, stage, auth, files, upstream, **extra):
+-    """Arch N6: stage meta = script sha + .ok sha + prereg sha + panel manifest sha + variant + sha of every output + upstream meta sha."""
++    """Arch N6: stage meta = script/.ok/prereg/manifest sha + variant + sha of every output + upstream meta shas (paths relative to
++    output/ai_factory) + tool_cmds sha + niceness + ps snapshot (P2-4)."""
+     m = dict(stage=stage, script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
+              cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], variant=auth["variant"], outputs={f: sha(out/f) for f in files},
+-             upstream=upstream, peak_rss_mb=rss(), **extra)
+-    (out/f"{stage}_meta.json").write_text(json.dumps(m, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
++             upstream=upstream, tool_cmds_sha256=auth["tool_cmds_sha256"], niceness=auth["process"]["niceness"],
++             mem_available_mb=auth["process"]["mem_available_mb"], ps_snapshot=auth["process"]["ps_snapshot"],
++             log_only_resident=auth["process"]["log_only_resident"], peak_rss_mb=rss(), **extra)
++    xtext(out/f"{stage}_meta.json", json.dumps(m, ensure_ascii=False, indent=1, default=float))
++
++
++def check_meta(mf, want):
++    """verify one stage meta: listed fields, every output (relative to the meta's dir) and every upstream meta (relative to output/ai_factory)."""
++    if not mf.is_file(): raise SystemExit(f"refused: required stage meta {mf} missing (serial order)")
++    m = json.loads(mf.read_text(encoding="utf-8"))
++    bad = [k for k, v in want.items() if m.get(k) != v]
++    if bad: raise SystemExit(f"refused: {mf} mismatch {bad} (produced by another script/.ok/panel/variant)")
++    for f, h in m.get("outputs", {}).items():
++        if not (mf.parent/f).is_file() or sha(mf.parent/f) != h: raise SystemExit(f"refused: output {f} of {mf} changed or missing")
++    for f, h in m.get("upstream", {}).items():
++        if not (AIF/f).is_file() or sha(AIF/f) != h: raise SystemExit(f"refused: upstream {f} of {mf} changed or missing")
++    return m
++
++
++def same_run(auth, **kw):
++    return dict(script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
++                cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], **kw)
+ 
+ 
+ def verify_upstream(out, auth, stages):
+-    """Arch N6: refuse unless every upstream stage meta came from this script sha + this .ok + this prereg/panel/variant and every
+-    output (and the upstream metas it chained) still hashes the same."""
+     up = {}
+     for st in stages:
+-        mf = out/f"{st}_meta.json"
+-        if not mf.is_file(): raise SystemExit(f"refused: upstream stage {st} meta missing (serial order)")
+-        m = json.loads(mf.read_text(encoding="utf-8"))
+-        want = dict(stage=st, script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"], prereg_sha256=auth["prereg_sha256"],
+-                    cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"], variant=auth["variant"])
+-        bad = [k for k, v in want.items() if m.get(k) != v]
+-        if bad: raise SystemExit(f"refused: upstream {st} meta mismatch {bad} (produced by another script/.ok/variant)")
+-        for f, h in {**m.get("outputs", {}), **m.get("upstream", {})}.items():
+-            if not (out/f).is_file() or sha(out/f) != h: raise SystemExit(f"refused: upstream file {f} of stage {st} changed or missing")
+-        up[mf.name] = sha(mf)
++        mf = out/f"{st}_meta.json"; check_meta(mf, same_run(auth, stage=st, variant=auth["variant"])); up[str(mf.relative_to(AIF))] = sha(mf)
+     return up
+ 
+ 
++def verify_primary_eval(auth):
++    """Arch P2-2: a sensitivity variant's first stage requires the primary eval_meta chain (same script/.ok/manifest) and records its sha."""
++    mf = OUT_ROOT/"eval_meta.json"; check_meta(mf, same_run(auth, stage="eval", variant="primary"))
++    return {str(mf.relative_to(AIF)): sha(mf)}
++
++
+ def guard_fresh(out, patterns):
+     hits = sorted({p.name for pat in patterns for p in out.glob(pat)})
+     if hits: raise SystemExit(f"refused: outputs of this stage already exist {hits[:5]} (N6: no silent overwrite; Arch decides on cleanup)")
+@@ -217,7 +303,7 @@
+ 
+ # ---------------------------------------------------------------- helpers
+ def read_panel(panel, y, cols, lo=None):
+-    assert not (set(cols) & FORBIDDEN_SIGNAL_COLS), "signal/selection code must not read is_resume_day/hiliq_carry"
++    if set(cols) & FORBIDDEN_SIGNAL_COLS: raise RuntimeError("signal/selection code must not read is_resume_day/hiliq_carry")
+     flt = [("date", ">=", pd.Timestamp(lo).to_pydatetime())] if lo is not None else None
+     x = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=cols, filters=flt); x["date"] = pd.to_datetime(x.date); return x
+ 
+@@ -249,48 +335,104 @@
+     """B1/N8: SW L1 codes of banks + non-bank financials, from the panel's own ind_names.csv only (sha checked in verify_panel)."""
+     names = pd.read_csv(panel/"ind_names.csv").iloc[:, 0].tolist()
+     fin = {i for i, n in enumerate(names) if n in ("银行", "非银金融")}
+-    assert len(fin) == 2, f"FIN must hold exactly 2 SW L1 codes, got {fin}"
++    if len(fin) != 2: raise SystemExit(f"STOP: FIN must hold exactly 2 SW L1 codes, got {fin}")
+     return fin
+ 
+ 
+-def pool_benchmarks(panel, PX, col, carry_col, idx, cols, lo):
+-    """Arch B3 + clarification C1 (no refreeze): M_{i,T−1} = latest membership state as of T−1. On no-row (suspended) days the last row's
+-    membership and float mcap are carried; after an instrument's last row in the panel (delisted) nothing is carried. Seeded with each
+-    name's last row before `lo` (2023 + early-2024 files) so suspensions starting before the eval window still carry. Asserts Mp == carry
+-    column on restored resume rows (stop on any mismatch). Also returns the old no-carry construction for disclosure."""
+-    PX = PX.assign(_m=PX[col].fillna(False).astype("float32"))
+-    Mraw = PX.pivot_table(index="date", columns="instrument", values="_m", aggfunc="max").reindex(index=idx, columns=cols)   # NaN = no row
+-    LMraw = PX.pivot_table(index="date", columns="instrument", values="logmv").reindex(index=idx, columns=cols)
+-    Mpo = Mraw.fillna(0.0).astype(bool).shift(1, fill_value=False); wvo = (np.exp(LMraw).shift(1)*Mpo).fillna(0.0)   # old (no carry)
+-    sd = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv"], filters=[("date", "<", lo.to_pydatetime())])
+-                    for y in (2023, 2024)])
+-    sd["date"] = pd.to_datetime(sd.date); sd = sd.sort_values("date").groupby("instrument").tail(1).set_index("instrument").reindex(cols)
+-    nr = Mraw.iloc[0].isna()
+-    Mraw.iloc[0] = Mraw.iloc[0].where(~nr, sd[col].astype("float64")); LMraw.iloc[0] = LMraw.iloc[0].where(~nr, sd.logmv.astype("float64"))
+-    del sd
+-    last = PX.groupby("instrument").date.max().reindex(cols)
+-    after = idx.values[:, None] > last.values[None, :]                       # after the name's last panel row (delisted) → no carry
+-    Mc = Mraw.ffill().mask(after).fillna(0.0).astype(bool)
+-    MVc = np.exp(LMraw.ffill().mask(after)).where(Mc)                        # float mcap carried through suspension
+-    Mp = Mc.shift(1, fill_value=False); wv = (MVc.shift(1)*Mp).fillna(0.0)
+-    del Mraw, LMraw, Mc, MVc
++def pool_benchmarks(panel, PX, col, carry_col, idx, s, e):
++    """Arch P1-1 (129d67c5 §3; replaces the r2.2 'no row = carry'). Membership state S(i,d), recursed year by year from 2018
++    (one state vector carried across years, no seed window):
++      panel row                                  → S = that row's col (restored rows are False);
++      no panel row, mask row with suspended=True → S = previous S (carry through the suspension);
++      no panel row, mask row with suspended=False (ST / adv / young) → S = False and the carry chain breaks;
++      no mask row (not yet listed / delisted)    → S = False (delisting = no mask rows afterwards; end-of-window suspensions keep carrying).
++    Float mcap is carried only inside suspension spans (last panel-row logmv before the span), otherwise follows S.
++    Mp = S.shift(1); wv = MV.shift(1)·Mp. Frames on idx × U (U = every name seen). Also returns the old (no carry) and r2.2 (no row = carry)
++    constructions for disclosure, carried name-days by mask reason (must all be suspended) and the restored-resume-row check vs carry_col."""
++    lo = idx[0]; sp, mp_ = pd.Series(dtype="float64"), pd.Series(dtype="float64")
++    lr_v, lr_m, lr_i = pd.Series(dtype="float64"), pd.Series(dtype="float64"), pd.Series(dtype="float64")
++    parts = defaultdict(list); reasons = defaultdict(int)
++    for y in PANEL_YEARS:
++        if pd.Timestamp(f"{y}-01-01") > idx[-1]: break
++        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind"]); pr["date"] = pd.to_datetime(pr.date)
++        mk = pd.read_parquet(MASK, columns=["date", "instrument", "suspended", "st", "young", "adv_fail"],
++                             filters=[("date", ">=", pd.Timestamp(f"{y}-01-01").to_pydatetime()), ("date", "<=", pd.Timestamp(f"{y}-12-31").to_pydatetime())])
++        mk["date"] = pd.to_datetime(mk.date)
++        days = pd.DatetimeIndex(sorted(pr.date.unique())); days = days[days <= idx[-1]]
++        names = pd.Index(sorted(set(pr.instrument) | set(mk.instrument) | set(sp.index)))
++        pv = lambda df, v, agg="max": df.pivot_table(index="date", columns="instrument", values=v, aggfunc=agg).reindex(index=days, columns=names)
++        has = pv(pr.assign(_h=1.0), "_h").notna()
++        val = pv(pr.assign(_v=pr[col].fillna(False).astype("float64")), "_v")
++        lmv = pv(pr, "logmv", "mean")
++        sus = pv(mk.assign(_s=mk.suspended.astype("float64")), "_s")          # NaN = no mask row
++        carry = (~has) & (sus == 1.0)
++        A = val.where(has, 0.0).mask(carry)                                    # anchors: panel col / False (break) / NaN (carry)
++        B = lmv.where(has & lmv.notna(), -np.inf).mask(carry)                  # mcap anchors: -inf = break
++        p0 = pd.Timestamp("1970-01-01")
++        S = pd.concat([pd.DataFrame([sp.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A]).ffill().iloc[1:].fillna(0.0)
++        MV = pd.concat([pd.DataFrame([mp_.reindex(names).fillna(-np.inf).to_numpy()], index=[p0], columns=names), B]).ffill().iloc[1:]
++        sp, mp_ = S.iloc[-1], MV.iloc[-1].fillna(-np.inf)
++        MV = MV.replace(-np.inf, np.nan)
++        pre = pr[pr.date < lo].sort_values("date").groupby("instrument").tail(1).set_index("instrument")   # r2.2 seed / N4 ind seed
++        if len(pre): lr_v = pre[col].fillna(False).astype("float64").combine_first(lr_v); lr_m = pre.logmv.combine_first(lr_m); lr_i = pre.ind.astype("float64").combine_first(lr_i)
++        w = (days >= lo)
++        if w.any():
++            cw = (S.astype(bool) & ~has).loc[w]                                 # carried name-days
++            st_ = cw.loc[(cw.index >= s) & (cw.index <= e)].stack(); st_ = st_[st_].reset_index().iloc[:, :2]; st_.columns = ["date", "instrument"]
++            if len(st_):
++                r = st_.merge(mk, on=["date", "instrument"], how="left")
++                reasons["carried_name_days_x2"] += len(r); reasons["suspended"] += int(r.suspended.fillna(False).astype(bool).sum())
++                reasons["not_suspended"] += int((~r.suspended.fillna(False).astype(bool)).sum())
++                for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
++            for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has))): parts[k_].append(f_.loc[w])
++        del pr, mk, has, val, lmv, sus, carry, A, B, S, MV; gc.collect()
++    cat = lambda k: pd.concat(parts[k]).reindex(index=idx)
++    S, MV, VAL, LMV = cat("S"), cat("MV"), cat("VAL"), cat("LMV"); U = S.columns
++    S = S.fillna(0.0).astype(bool); MV = MV.reindex(columns=U); VAL = VAL.reindex(columns=U); LMV = LMV.reindex(columns=U); del parts
++    Mp = S.shift(1, fill_value=False); wv = (np.exp(MV).where(S).shift(1)*Mp).fillna(0.0)
++    Mpo = VAL.fillna(0.0).astype(bool).shift(1, fill_value=False); wvo = (np.exp(LMV).shift(1)*Mpo).fillna(0.0)          # old: no carry
++    V2, L2 = VAL.copy(), LMV.copy(); nr = V2.iloc[0].isna()                                                                 # r2.2: no row = carry
++    V2.iloc[0] = V2.iloc[0].where(~nr, lr_v.reindex(U)); L2.iloc[0] = L2.iloc[0].where(~nr, lr_m.reindex(U))
++    last = pd.Series({c: VAL[c].last_valid_index() for c in U}).reindex(U).fillna(pd.Timestamp("1970-01-01"))
++    after = idx.values[:, None] > pd.DatetimeIndex(last.values).values[None, :]
++    M2 = V2.ffill().mask(after).fillna(0.0).astype(bool); Mp2 = M2.shift(1, fill_value=False); wv2 = (np.exp(L2.ffill().mask(after)).where(M2).shift(1)*Mp2).fillna(0.0)
++    del V2, L2, M2, MV, VAL, LMV
+     rs = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", carry_col, "row_origin", "restore_reason"],
+-                                    filters=[("row_origin", "==", "restored"), ("restore_reason", "==", "resume")]) for y in (2024, 2025, 2026)])
+-    rs["date"] = pd.to_datetime(rs.date); rs = rs[(rs.date > idx[0]) & (rs.date <= idx[-1])]   # idx[0] has no T−1 inside the window
+-    ri, ci = idx.get_indexer(rs.date), cols.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
+-    mp = np.zeros(len(rs), bool); mp[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
+-    bad = (mp != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
+-    diag = dict(carry_col=carry_col, resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
+-                mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"))
+-    return Mp, wv, Mpo, wvo, diag
++                                    filters=[("row_origin", "==", "restored"), ("restore_reason", "==", "resume")]) for y in PANEL_YEARS])
++    rs["date"] = pd.to_datetime(rs.date); rs = rs[(rs.date > idx[0]) & (rs.date <= idx[-1])]   # idx[0] has no T−1 inside the frame
++    ri, ci = idx.get_indexer(rs.date), U.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
++    mpv = np.zeros(len(rs), bool); mpv[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
++    bad = (mpv != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
++    diag = dict(carry_col=carry_col, rule="Arch 129d67c5 §3 (carry only on mask-suspended no-row days, recursed from 2018)",
++                resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
++                mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"), carried_by_mask_reason_x2=dict(reasons))
++    return dict(Mp=Mp, wv=wv, Mpo=Mpo, wvo=wvo, Mp2=Mp2, wv2=wv2, U=U, seed_ind=lr_i.reindex(U), diag=diag)
+ 
+ 
+ def limit_up(inst, ret):
+-    """approximate limit-up flag from close return: main board 10%, ChiNext 300/301 & STAR 688 20% (ST excluded by the universe)."""
+-    lim = np.where(pd.Series(inst).str[:3].isin(["300", "301", "688"]).to_numpy(), 0.20, 0.10)
++    """approximate limit-up flag from close return (Arch P2-5): SZ codes starting 30 (ChiNext 300/301/302…) and SH 688/689 (STAR) → 20%,
++    else 10% (ST excluded by the universe; no BSE names in the panel)."""
++    c = pd.Series(inst).astype(str)
++    twenty = (c.str[:2].eq("30") & c.str.endswith(".SZ")) | (c.str[:3].isin(["688", "689"]) & c.str.endswith(".SH"))
++    lim = np.where(twenty.to_numpy(), 0.20, 0.10)
+     return ret >= lim - LIMIT_EPS
+ 
+ 
++L23_ROOT = AIF/"leaf23_sue_desens_cs"; L23_SENS = ("sig-sue", "denom-daily", "nofc", "bo40")
++
++
++def verify_leaf23_complete(auth):
++    """Arch P2-2: leaf 24's first stage requires leaf 23 primary + its 4 sensitivities: eval_meta present, chain intact, same panel manifest,
++    all five from one leaf-23 script sha and one leaf-23 .ok sha. Returns their shas for the upstream record."""
++    up, ids = {}, set()
++    for v in ("primary",) + L23_SENS:
++        mf = (L23_ROOT if v == "primary" else L23_ROOT.with_name(L23_ROOT.name + "_" + v))/"eval_meta.json"
++        m = check_meta(mf, dict(stage="eval", variant=v, cs_panel_manifest_sha256=auth["cs_panel"]["manifest_sha256"]))
++        ids.add((m.get("script_sha256"), m.get("arch_ok_sha256"))); up[str(mf.relative_to(AIF))] = sha(mf)
++    if len(ids) != 1: raise SystemExit(f"refused: leaf 23 eval metas come from different script/.ok {sorted(ids)}")
++    return up
++
++
+ def imax_window(E, LU, win, k, min_valid, block=800):
+     """E, LU: (T, N) arrays (NaN = not in mask). Returns IMAX (T, N) and limit-up share among the top-k days; column blocks for RSS."""
+     T, N = E.shape; out = np.full((T, N), np.nan, np.float32); lus = np.full((T, N), np.nan, np.float32)
+@@ -306,9 +448,26 @@
+     return out, lus
+ 
+ 
++def style_feats(RW, LM, AD, bench):
++    """主 Agent 02:23 ruling (via Alpha preread 8586ffd0 §4): Alpha's frozen style set, every exposure as of t−1 —
++    log float mcap (logmv_{t−1}), beta120 vs 510300 (120-session window, ≥60, same construction as research/alpha_hiliq_s8_paradigm.py),
++    momentum t−120→t−20 (cumulative return over sessions t−120..t−21, ≥80 valid), logADV20 (adv20_yuan_{t−1}). SW L1 dummies are added in the
++    regression. Replaces the r2.x mom20/mom60/vol20 + same-day logADV20."""
++    R64 = RW.astype("float64"); b = bench.reindex(RW.index).astype("float64")
++    beta = R64.rolling(120, min_periods=60).cov(b).div(b.rolling(120, min_periods=60).var(), axis=0)
++    mom = np.expm1(np.log1p(R64).shift(21).rolling(100, min_periods=80).sum())
++    return {"lmv1": LM.shift(1), "beta120": beta.shift(1).astype("float32"), "mom_120_20": mom.astype("float32"),
++            "ladv1": np.log(AD.clip(lower=1e4)).shift(1).astype("float32")}
++
++
++def bench_ret():
++    e = pd.read_parquet(ETF, columns=["ts_code", "trade_date", "close_hfq"], filters=[("ts_code", "==", "510300.SH")])
++    return pd.Series(e.close_hfq.to_numpy(float), index=pd.to_datetime(e.trade_date.astype(str), format="%Y%m%d")).sort_index().pct_change()
++
++
+ # ---------------------------------------------------------------- stage build (year chunks)
+ def build(a, panel, out, auth, up):
+-    repin(auth, "dep_fe_sha256", f"dep_l18_{a.uni.lower()}_sha256", f"dep_l18v_{a.uni.lower()}_sha256")
++    panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", f"dep_l18_{a.uni.lower()}_sha256", f"dep_l18v_{a.uni.lower()}_sha256", "data_etf_daily_adj_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+     uni = a.uni; col = FE.UCOL[uni]
+     FIN = load_fin(panel)   # N8: panel dir only (no v1 fallback); asserts len(FIN) == 2
+@@ -317,16 +476,15 @@
+     A18 = pd.read_parquet(L18[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a18"})
+     A18v = pd.read_parquet(L18V[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a18v"})
+     for t in (A18, A18v): t["date"] = pd.to_datetime(t.date)
+-    tail = defaultdict(lambda: deque(maxlen=3)); cov = []; min_valid = 15 if a.win == 20 else 45
++    BR = bench_ret(); tail = defaultdict(lambda: deque(maxlen=3)); cov = []; min_valid = 15 if a.win == 20 else 45
+     for y in YEARS:
+-        lo = pd.Timestamp(WARM) - pd.Timedelta(days=120) if y == 2024 else pd.Timestamp(f"{y-1}-08-01")  # ≥ win sessions of history
++        lo = pd.Timestamp("2023-06-01") if y == 2024 else pd.Timestamp(f"{y-1}-05-01")   # ≥ 121 sessions (mom t−120→t−20, beta120) and ≥ win
+         P = pd.concat([read_panel(panel, yy, ["date", "instrument", "ret", "ret_on", "logmv", "ind", "adv20_yuan", col], lo) for yy in sorted({lo.year, y})])
+         P = P[~P.instrument.isin(FE.EXCL)]
+         RW = P.pivot_table(index="date", columns="instrument", values="ret").sort_index().astype("float32")
+         LM = P.pivot_table(index="date", columns="instrument", values="logmv").reindex_like(RW).astype("float32")
+-        feats = {"mom20": RW.shift(1).rolling(20, min_periods=15).sum(), "mom60": RW.shift(1).rolling(60, min_periods=40).sum(),
+-                 "vol20": RW.shift(1).rolling(20, min_periods=15).std(), "lmv1": LM.shift(1)}
+-        del LM
++        AD = P.pivot_table(index="date", columns="instrument", values="adv20_yuan").reindex_like(RW).astype("float32")
++        feats = style_feats(RW, LM, AD, BR); del LM, AD   # Alpha frozen style set, all t−1
+         # daily idiosyncratic intraday (or total) return, in-mask rows only (resume rows have mask False → never in the signal)
+         Q = P[P[col].fillna(False).astype(bool) & (P.ind >= 0)].join(feats["lmv1"].stack().rename("lmv1"), on=["date", "instrument"]).dropna(subset=["ret", "lmv1"])
+         Q["r"] = (1 + Q.ret)/(1 + Q.ret_on) - 1 if a.src == "intra" else Q.ret   # N7: ret_on missing → r_id NaN (no fillna(0))
+@@ -347,14 +505,13 @@
+         if a.ex_fin: P = P[~P.ind.isin(FIN)]
+         for nm, M in list(feats.items()) + [("imax", IMX), ("lu_share", LSX)]: P = P.join(M.stack().rename(nm).astype("float32"), on=["date", "instrument"])
+         del feats, IMX, LSX; gc.collect()
+-        P["ladv"] = np.log(P.adv20_yuan.clip(lower=1e4))
+-        P = P.dropna(subset=["mom20", "mom60", "vol20", "ret", "lmv1"]).sort_values("date")
++        P = P.dropna(subset=["lmv1", "beta120", "mom_120_20", "ladv1", "ret"]).sort_values("date")
+         P = P.merge(A18, on=["date", "instrument"], how="left").merge(A18v, on=["date", "instrument"], how="left"); P[["a18", "a18v"]] = P[["a18", "a18v"]].fillna(0.0)
+         AL, GL = [], []
+         for d, g in P.groupby("date", sort=True):
+             if len(g) < 100: continue
+             ind = g.ind.to_numpy(); D = (ind[:, None] == np.unique(ind)[None, :]).astype(float)
+-            S = g[["lmv1", "mom20", "mom60", "vol20", "ladv"]].to_numpy(float); S = (S - S.mean(0))/S.std(0)
++            S = g[["lmv1", "beta120", "mom_120_20", "ladv1"]].to_numpy(float); S = (S - S.mean(0))/S.std(0)
+             eps = FE.ols_resid(g.ret.to_numpy(float).clip(-.21, .31), np.column_stack([D, S[:, :1]])); qd = np.quantile(eps, .05)
+             ins = g.instrument.to_numpy()
+             for i_, e_ in zip(ins, eps): tail[i_].append(e_ < qd)
+@@ -369,10 +526,10 @@
+             AL.append(pd.DataFrame({"date": d, "instrument": ins[ok], "alpha": al.astype("float32"), "size_domain": dom.astype("int8"), "ind": ind[ok],
+                                     "raw": raw.astype("float32"), "lu_share": g.lu_share.to_numpy()[ok], "fin": np.isin(ind[ok], list(FIN))}))
+             cov.append((d, int(ok.sum())))
+-        if AL: pd.concat(AL).to_parquet(out/f"alpha_{uni}_{y}.parquet", index=False); written.append(f"alpha_{uni}_{y}.parquet")
+-        if GL: pd.concat(GL).to_parquet(out/f"gate_{uni}_{y}.parquet", index=False); written.append(f"gate_{uni}_{y}.parquet")
++        if AL: xparquet(pd.concat(AL), out/f"alpha_{uni}_{y}.parquet"); written.append(f"alpha_{uni}_{y}.parquet")
++        if GL: xparquet(pd.concat(GL), out/f"gate_{uni}_{y}.parquet"); written.append(f"gate_{uni}_{y}.parquet")
+         print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; gc.collect()
+-    pd.DataFrame(cov, columns=["date", "n"]).to_parquet(out/f"coverage_{uni}.parquet", index=False); written.append(f"coverage_{uni}.parquet")
++    xparquet(pd.DataFrame(cov, columns=["date", "n"]), out/f"coverage_{uni}.parquet"); written.append(f"coverage_{uni}.parquet")
+     write_meta(out, f"build_{uni}", auth, written, up, uni=uni, ret_on_missing_rows_in_mask=on_missing)
+ 
+ 
+@@ -389,17 +546,17 @@
+                 if i in blocked.get(d, ()) and i not in held: skips += 1; continue
+                 if iw.get(ind, 0) + w > ind_cap + 1e-12: continue
+                 pk.append(i); iw[ind] = iw.get(ind, 0) + w
+-            assert max(iw.values(), default=0) <= ind_cap + 1e-12 and len(pk) <= N
++            if max(iw.values(), default=0) > ind_cap + 1e-12 or len(pk) > N: raise RuntimeError(f"pick_book: industry cap / N breached on {d}")
+             cur = [(i, w) for i in pk] + [(BAL, 1 - w*len(pk))]; held = set(pk)
+         if cur is not None: rows += [(d, i, x) for i, x in cur]
+     W = pd.DataFrame(rows, columns=["date", "instrument", "target_weight"])
+-    assert (W[W.instrument != BAL].target_weight <= w + 1e-12).all()
++    if not (W[W.instrument != BAL].target_weight <= w + 1e-12).all(): raise RuntimeError("pick_book: single-name weight above cap")
+     W.attrs["blocked_skips"] = skips
+     return W
+ 
+ 
+ def evaluate(a, panel, out, auth, up):
+-    repin(auth, "dep_fe_sha256", "data_etf_daily_adj_sha256")
++    panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", "data_etf_daily_adj_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+     ext_out = {}
+     FE.PC = panel; FE._RET.clear()
+@@ -409,10 +566,13 @@
+                 note_zh="研究叶，非生产；长仓，无空头腿。X2 只是入场券；唯一晋级测试为 2026-11-02 起 FWD。Gate B/GATE_V3/衰减/ρ/Jaccard(叶15–23) 由钉 sha 的评价工具另算。",
+                 notes_arch_b997cba8_zh=[
+                     "外部工具口径：leaf_selfcheck_v3.py 的 PANEL 仍写死读 v1 panel_cache（池成员与 IC 价格指数）；alpha_combo_marginal / leaf_selfcheck_common 的书收益来自原始复权价，不是 FE.book_ret。Gate B/GATE_V3/衰减/IC 与本脚本判定读数不是同一引擎、同一面板，与叶15–22 相同，可横向比较；以后另提 --panel-dir（新 sha、单独审）。",
+-                    "mom20/mom60/vol20 用面板全部行的 ret（shift(1)，PIT），重建后含复牌补回行收益，与 v1 面板下的叶15–22 不完全可比。",
++                    "beta120 与动量 t−120→t−20 用面板全部行的 ret（t−1，PIT），重建后含复牌补回行收益，与 v1 面板下的叶15–22 不完全可比（规模需授权运行后才能报）。",
+                     "补回行 hiliq=False：复牌日的已持仓股不在 α 名单里会被调出，blocked 入场闸门基本不触发（books.*.blocked_skips 计数）；SD0 下属乐观处理。",
+                     "N7：ret_on 缺失时 r_id 记 NaN、不进 e_id（缺失行数见 build_*_meta.json）。N3：叶18/18v 判重 Jaccard 按其自身 α 排序取前 N。",
+-                    "B3：池 EW/wb 按 Arch 澄清 C1 沿用停牌期成员与流通市值（退市后不沿用）；旧写法（不沿用）的 EW/wb 与年化差见 res.*.b3_pool_carry。",
++                    "B3（Arch 129d67c5 §3 执行口径）：只在面板无行且 mask 当日停牌时沿用上一状态和停牌前流通市值；ST/成交额不足/次新无行日记 False 并中断沿用；mask 无行（未上市/退市）记 False；自 2018 逐年递推。沿用名·日按 mask 原因计数（必须全为停牌）；旧写法与 r2.2 写法的 EW/wb 年化差只作披露，见 res.*.b3_pool_carry。",
++                    "行业帽 25% 的出处是 Arch 审核 0d9bd147 第 96 行（P1-3，叶23 经主 Agent 01:52 认可）；预注册 §0 第 5 行把它归在 01:42 裁定下，但 01:42 原文没有这一项（Arch P3-4，不重新冻结）。",
++                    "残差化（主 Agent 02:23 裁定，经 Alpha 预读 8586ffd0）：风格集改为 Alpha 冻结集，全部取 t−1——SW L1、logmv、beta120（对 510300）、动量 t−120→t−20、logADV20；替代预注册 §4 的 mom20/mom60/vol20/当日 logADV20（预注册未改，按裁定执行并披露）；叶18/18v α 照旧。e_id 仍只对 SW L1 + logmv_{t−1}。",
++                    "涨停识别（Arch P2-5）：深市 30 开头（含 302）与沪市 688/689 用 20%，其余 10%。持仓涨停占比另报再平衡日口径 held_limitup_share_in_imax_sample_rebal（Arch P3-3），原全持有日口径保留。",
+                     "家族计数：p1_factor_lib 也有低波因子，家族实际次数可能 > 3；|t|≥2.50 已等于 n=4 门槛，结论不受影响。叶18/18v 已读密封窗，不是干净样本外；引擎 SD0。",
+                     "文件名 IMAX_OVERNIGHT，但因子是剔除隔夜分量后的日内 IMAX。"])
+     for uni in ("HILIQ", "FULLA"):
+@@ -423,23 +583,25 @@
+         A, G = A[(A.date >= s) & (A.date <= e)], G[(G.date >= s) & (G.date <= e)]
+         days = sorted(A.date.unique()); rd = set(days[::FE.REBAL])
+         lo_px = pd.Timestamp("2024-05-20"); carry_col = "hiliq_carry" if uni == "HILIQ" else "fulla_carry"
+-        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "logmv", "close", col, "is_resume_day", "hiliq_carry"],
++        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "logmv", "close", col, "is_resume_day", carry_col],
+                                         filters=[("date", ">=", lo_px.to_pydatetime())]) for y in YEARS])
+         PX["date"] = pd.to_datetime(PX.date); PX = PX[PX.date <= e]
+         blocked = {d: set(g.instrument) for d, g in PX[PX.is_resume_day.fillna(False).astype(bool)].groupby("date")}
+         rr = PX.pivot_table(index="date", columns="instrument", values="ret").sort_index()
+-        # B3 (Arch clarification C1): members/float mcap carried through suspension, then T−1; ret at T; suspended → 0, kept in denominator
+-        Mp, wv, Mpo, wvo, b3 = pool_benchmarks(panel, PX, col, carry_col, rr.index, rr.columns, lo_px)
+-        if b3["carry_mismatch"]:
+-            (out/f"B3_carry_mismatch_{uni}.json").write_text(json.dumps(b3, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+-            raise SystemExit(f"STOP (B3): Mp != {carry_col} on {b3['carry_mismatch']} restored resume rows — report to Arch; see B3_carry_mismatch_{uni}.json")
+-        r0 = rr.fillna(0.0)
+-        ew = ((r0*Mp).sum(1)/Mp.sum(1)).loc[s:e]; wb = ((r0*wv).sum(1)/wv.sum(1)).loc[s:e]
+-        ew_o = ((r0*Mpo).sum(1)/Mpo.sum(1)).loc[s:e]; wb_o = ((r0*wvo).sum(1)/wvo.sum(1)).loc[s:e]
+-        b3.update(carried_member_days_x2=int((Mp & ~Mpo).loc[s:e].to_numpy().sum()), poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o),
+-                  poolEW_cagr244_diff_carry_minus_old=ann(ew) - ann(ew_o), wb_cagr244_diff_carry_minus_old=ann(wb) - ann(wb_o))
++        # B3 (Arch P1-1, 129d67c5 §3): S carried only on mask-suspended no-row days, recursed from 2018; then T−1; ret at T; suspended → 0, kept
++        repin(auth, "data_mask_sha256"); pb = pool_benchmarks(panel, PX, col, carry_col, rr.index, s, e); b3 = pb["diag"]
++        if b3["carry_mismatch"] or b3["carried_by_mask_reason_x2"].get("not_suspended", 0):
++            xtext(out/f"B3_carry_mismatch_{uni}.json", json.dumps(b3, ensure_ascii=False, indent=1, default=str))
++            raise SystemExit(f"STOP (B3): Mp != {carry_col} on {b3['carry_mismatch']} restored resume rows / {b3['carried_by_mask_reason_x2'].get('not_suspended', 0)} carried non-suspended name-days — report to Arch")
++        U = pb["U"]; Mp, wv = pb["Mp"], pb["wv"]; r0 = rr.reindex(columns=U).fillna(0.0)
++        ewf = lambda M, W_: (((r0*M).sum(1)/M.sum(1)).loc[s:e], ((r0*W_).sum(1)/W_.sum(1)).loc[s:e])
++        ew, wb = ewf(Mp, wv); ew_o, wb_o = ewf(pb["Mpo"], pb["wvo"]); ew_2, wb_2 = ewf(pb["Mp2"], pb["wv2"])
++        b3.update(carried_member_days_x2=int((Mp & ~pb["Mpo"]).loc[s:e].to_numpy().sum()),
++                  poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o), poolEW_cagr244_r2_2_norowcarry=ann(ew_2), wb_cagr244_r2_2_norowcarry=ann(wb_2),
++                  poolEW_cagr244_diff_vs_old=ann(ew) - ann(ew_o), wb_cagr244_diff_vs_old=ann(wb) - ann(wb_o),
++                  poolEW_cagr244_diff_vs_r2_2=ann(ew) - ann(ew_2), wb_cagr244_diff_vs_r2_2=ann(wb) - ann(wb_2), note="old / r2.2 constructions: disclosure only")
+         repin(auth, "data_etf_daily_adj_sha256"); bal = FE.rets(range(2024, 2027))[0][FE.BAL].loc[s:e].astype(float)
+-        del rr, Mp, wv, Mpo, wvo, r0; gc.collect()
++        del rr, Mp, wv, r0, pb; gc.collect()
+ 
+         def vs(r, b):
+             b = b.reindex(r.index).fillna(0); x = r - b; be = float(np.cov(r, b)[0, 1]/b.var()); res = r - be*b
+@@ -451,15 +613,15 @@
+                  "top6_60w_cap20_disclosure": (6, TIER_W, CORE_IND_CAP), "top10_100w_cap20_disclosure": (10, TIER_W, CORE_IND_CAP)}
+         books = {}
+         for nm, (N, w, icap) in specs.items():
+-            W = pick_book(A, G, rd, days, N, w, icap, blocked); W.to_parquet(out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet", index=False)
++            W = pick_book(A, G, rd, days, N, w, icap, blocked); xparquet(W, out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet")
+             r, to = FE.book_ret(W, s, e); _c = FE.COST; FE.COST = 0.003; r30, _ = FE.book_ret(W, s, e); FE.COST = _c
+             nav = (1+r).cumprod()
+-            H = W[W.instrument != FE.BAL].merge(PX[["date", "instrument", "is_resume_day", "hiliq_carry", "close"]], on=["date", "instrument"], how="left") \
++            H = W[W.instrument != FE.BAL].merge(PX[["date", "instrument", "is_resume_day", carry_col, "close"]], on=["date", "instrument"], how="left") \
+                 .merge(A[["date", "instrument", "lu_share", "fin"]], on=["date", "instrument"], how="left")
+             b = dict(cagr244=ann(r), cagr252=float(nav.iloc[-1]**(252/len(r))-1), mdd=float((nav/nav.cummax()-1).min()), turnover_1s=to,
+                      cagr244_30bp=ann(r30), vs_wb=vs(r, wb), vs_poolEW=vs(r, ew), vs_510300=vs(r, bal), held_name_days=int(len(H)),
+-                     held_resume_rows=int(H.is_resume_day.fillna(False).astype(bool).sum()), held_resume_rows_hiliq_carry=int(H.hiliq_carry.fillna(False).astype(bool).sum()),
+-                     held_limitup_share_in_imax_sample=float(H.lu_share.mean()), held_financial_share=float(H.fin.fillna(False).astype(bool).mean()),
++                     held_resume_rows=int(H.is_resume_day.fillna(False).astype(bool).sum()), held_resume_rows_carry=int(H[carry_col].fillna(False).astype(bool).sum()),
++                     held_limitup_share_in_imax_sample=float(H.lu_share.mean()), held_limitup_share_in_imax_sample_rebal=float(H[H.date.isin(rd)].lu_share.mean()), held_financial_share=float(H.fin.fillna(False).astype(bool).mean()),
+                      blocked_skips=int(W.attrs.get("blocked_skips", 0)))
+             if N < 20:
+                 cap = TIERS[N]; Hr = H[H.date.isin(rd)].dropna(subset=["close"])
+@@ -468,8 +630,8 @@
+             books[nm] = b; FE._RET.clear()
+             if uni == "HILIQ" and nm in ("top6_60w", "top10_100w"):
+                 tag = f"imax_intraday_{nm}" + ("" if is_primary(a) else f"_{variant_tag(a)}")
+-                W.to_parquet(R/f"output/ai_factory/g1g5_{tag}_daily_weights_{stamp}.parquet", index=False)
+-                (R/f"output/ai_factory/g1g5_{tag}_run_meta_{stamp}.json").write_text(json.dumps(dict(mechanism_tag="g1g5_ashare_imax_intraday_v1", universe=uni,
++                xparquet(W, R/f"output/ai_factory/g1g5_{tag}_daily_weights_{stamp}.parquet")
++                xtext(R/f"output/ai_factory/g1g5_{tag}_run_meta_{stamp}.json", json.dumps(dict(mechanism_tag="g1g5_ashare_imax_intraday_v1", universe=uni,
+                     tier=nm, variant=variant_tag(a), live=False, promotion_approved=False, research_only=True, stamp=stamp, window="x2",
+                     script_sha256=auth["script_sha256"], arch_ok_sha256=auth["arch_ok_sha256"]), ensure_ascii=False))
+                 for f_ in (f"g1g5_{tag}_daily_weights_{stamp}.parquet", f"g1g5_{tag}_run_meta_{stamp}.json"): ext_out[f_] = sha(R/"output/ai_factory"/f_)
+@@ -540,7 +702,7 @@
+                                    note="非判定规格一律「未做多重检验校正，仅披露」" if not is_primary(a) else "判定规格；Gate B/GATE_V3/衰减另由钉 sha 工具出")
+         summ["res"][uni] = res
+         del A, G, PX; FE._RET.clear(); gc.collect(); print(uni, "eval done", f"rss={rss():.0f}", flush=True)
+-    summ["peak_rss_mb_eval"] = rss(); (out/f"summary_{stamp}.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1, default=float))
++    summ["peak_rss_mb_eval"] = rss(); xtext(out/f"summary_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
+     write_meta(out, "eval", auth, [f"summary_{stamp}.json"] + sorted(p.name for p in out.glob(f"eval_weights_*_{stamp}.parquet")), up,
+                stamp=stamp, external_outputs=ext_out); print("STAMP", stamp)
+ 
+@@ -563,7 +725,9 @@
+     # N6: serial order build HILIQ > build FULLA > eval; first stage needs an empty out_dir; later stages chain-verify upstream metas
+     if a.stage == "build" and a.uni == "HILIQ":
+         if out.exists() and any(out.iterdir()): raise SystemExit(f"refused: out_dir {out} is not empty (N6: no silent overwrite; Arch decides on cleanup)")
+-        out.mkdir(parents=True, exist_ok=True); up = {}
++        up = verify_leaf23_complete(auth)                            # P2-2: leaf 24 only after leaf 23 primary + 4 sensitivities
++        if not is_primary(a): up.update(verify_primary_eval(auth))   # P2-2: sensitivities only after the primary eval chain
++        out.mkdir(parents=True, exist_ok=True)
+     else:
+         if not out.is_dir(): raise SystemExit(f"refused: out_dir {out} missing (run build --uni HILIQ first)")
+         up = verify_upstream(out, auth, ["build_HILIQ"] if a.stage == "build" else ["build_HILIQ", "build_FULLA"])

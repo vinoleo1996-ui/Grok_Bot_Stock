@@ -1,0 +1,11 @@
+# S2-3 冻结记录
+- 冻结人：主 Agent；时间：2026-10-18 00:30 ET
+- 共签：Arch PASS（00:23 ET，C1–C6）；Beta PASS_WITH_AMENDMENTS（00:25/00:26 ET，A1–A3 已写入 §3.F）
+- 终版 sha256：
+  - S2-3 草稿：7ee72195cdc092d69ab40239bef43c057f151d9df1e452a5c990c21ae54e89dc
+  - STAGE2_PREREG：3ab622b3bccf07969a21d1f226f5c210a7d3a6703f30d56af81508f53753c4ce
+  - §3 正文：06f8cdb453407cb907312e4c26d8b4d8515210fa304f9a88d8cd6e9bd1f3c781
+- 范围：仅 Stage2 执行层；Core L1-only、λ_turn=0.6 不变；头条为无缓冲列。
+- 门槛：实际成交换手 0.5·Σ|w_post−w_cur|，0.5% 带，0.30 门；事前登记预计 FAIL（X2 中位约 0.33–0.36），不调参。
+- 生效条件：Arch 与 Beta 核对上述哈希一致后建 release marker；不一致则本记录作废重签。
+- live=false；promotion=false。

@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Core X2 three-column scorecard (research grade; live=false; promotion=false).
+
+A = OPTIMIZER Core (HI_LIQ) book-smoke NAV: output/strategy_optimizer/core_x2/smoke_<sleeve>_<aum>/nav.csv (fallback book_smoke_*)
+B = current capacity_adv mid_large paper-style book-smoke (output/v3/book_smoke_g1g5_capacity_adv_x2, read-only)
+C = capacity_adv Top-25 on HI_LIQ_V1.1 (output/strategy_hiliq/capadv_x2, read-only)
+Sleeves: equity80_etf20_510300 (PRIMARY) and equity_100. Windows: sealed (disclosure) / X2.
+Metrics via quantlab.metrics (244). X2 漂亮数不得晋级.
+"""
+from __future__ import annotations
+import json, math, sys
+from pathlib import Path
+import numpy as np, pandas as pd
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from quantlab import metrics as QM
+
+OUT = ROOT / "output/strategy_optimizer/core_x2"
+WINDOWS = {"sealed": ("2018-01-02", "2024-05-31"), "X2": ("2024-06-03", "2026-10-09")}
+AUMS = (600_000, 1_000_000)
+SLEEVES = ("equity80_etf20_510300", "equity_100")
+SRC = {"B": ROOT / "output/v3/book_smoke_g1g5_capacity_adv_x2", "C": ROOT / "output/strategy_hiliq/capadv_x2"}
+ETF = "sh.510300"
+
+
+def read_nav(p: Path) -> pd.Series | None:
+    if not p.exists():
+        return None
+    df = pd.read_csv(p)
+    s = pd.Series(df["nav"].astype(float).values, index=pd.to_datetime(df.iloc[:, 0].astype(str).str[:10]))
+    return s.sort_index()
+
+
+def etf_share(p: Path) -> pd.Series | None:
+    if not p.exists():
+        return None
+    d = pd.read_parquet(p)
+    d = d[d["instrument_id"] == ETF]
+    return pd.Series(d["weight"].values, index=pd.to_datetime(d["session"])).groupby(level=0).sum()
+
+
+def bench_ret(aum: int, wn: str) -> pd.Series | None:
+    for k in ("C", "B"):
+        n = read_nav(SRC[k] / f"aum_{aum}" / wn / "C0" / "nav.csv")
+        if n is not None:
+            return QM.returns(n)
+    return None
+
+
+WB = None
+def wb_ret():
+    global WB
+    if WB is None:
+        f = OUT / "bench_hiliq_wb_x2.csv"
+        WB = pd.read_csv(f, index_col=0, parse_dates=True)["ret"] if f.exists() else pd.Series(dtype=float)
+    return WB
+
+
+def book_dir(col: str, aum: int, wn: str, sleeve: str) -> Path:
+    if col == "A":
+        return OUT / f"book_smoke_{sleeve}_{aum // 10000}w" / f"aum_{aum}" / wn / "BOOK"
+    if sleeve == "equity_100":
+        return OUT / "t6_native_eq100" / f"{col}_{aum}" / f"aum_{aum}" / wn / "BOOK"
+    return SRC[col] / f"aum_{aum}" / wn / "BOOK"
+
+
+def turn_cost(d: Path) -> dict:
+    o = {}
+    try:
+        aw = pd.read_parquet(d / "actual_weights.parquet", columns=["session", "instrument_id", "weight"])
+        W = aw.pivot_table(index="session", columns="instrument_id", values="weight", aggfunc="sum").fillna(0).sort_index()
+        o["turnover_ann_oneway"] = float(0.5 * W.diff().abs().sum(axis=1).iloc[1:].mean() * QM.PERIODS)
+    except Exception:
+        pass
+    try:
+        js = json.loads((d / "summary.json").read_text())["metrics"]
+        o["cost_pct_initial"] = js.get("cost_pct_initial")
+    except Exception:
+        pass
+    return o
+
+
+def compute(r: pd.Series, b: pd.Series | None) -> dict:
+    nav = QM.nav_from_returns(r)
+    nav = pd.concat([pd.Series([1.0], index=[r.index[0] - pd.Timedelta(days=1)]), nav])
+    out = QM.summary(nav)
+    out.pop("monthly_note", None)
+    if b is not None:
+        bb = b.reindex(r.index).fillna(0.0)
+        a = r - bb
+        sd = a.std(ddof=1)
+        out["ir_vs_510300"] = float(a.mean() / sd * math.sqrt(QM.PERIODS)) if sd > 1e-12 else None
+        out["monthly_beat_510300"] = QM.monthly_win_rate(r, bb, nav_base=nav.index[0]).get("monthly_beat")
+    w = wb_ret()
+    if len(w):
+        a = r - w.reindex(r.index).fillna(0.0); sd = a.std(ddof=1)
+        out["ir_vs_wb"] = float(a.mean() / sd * math.sqrt(QM.PERIODS)) if sd > 1e-12 else None
+    m = out["mdd"]
+    out["mdd_breach_25"] = bool(m is not None and m < -0.25)
+    out["mdd_breach_15"] = bool(m is not None and m < -0.15)
+    return out
+
+
+def sleeve_returns(col: str, aum: int, wn: str, sleeve: str, b: pd.Series | None):
+    """Return (daily returns, provenance label) or (None, reason)."""
+    if col == "A":
+        if not (OUT / "ARCH_RESIGN_A_v1_2.ok").exists():
+            return None, "PENDING_ARCH_RESIGN(v1.2)"
+        # T1: accept Strategy convention smoke_* (preferred) and legacy Eng book_smoke_*
+        tag = f"{sleeve}_{aum // 10000}w"
+        n = None
+        for cand in (OUT / f"smoke_{tag}" / "nav.csv", OUT / f"smoke_{tag}" / f"aum_{aum}" / "X2" / "BOOK" / "nav.csv",
+                     OUT / f"book_smoke_{tag}" / "nav.csv"):
+            n = read_nav(cand)
+            if n is not None:
+                break
+        if n is None:
+            return None, "PENDING"
+        n = n.loc[WINDOWS[wn][0]:WINDOWS[wn][1]]
+        return (QM.returns(n), "native_book_smoke") if len(n) > 5 else (None, "PENDING_no_window_rows")
+    derived = col.endswith("_derived_ref")
+    col = col.replace("_derived_ref", "")
+    if sleeve == "equity_100" and not derived:
+        # T6: native pure-equity book (510300 rows dropped, renormalised to 100%; same engine ExecConfig.strategy_v1, X2 only)
+        n = read_nav(OUT / "t6_native_eq100" / f"{col}_{aum}" / "nav.csv")
+        if n is None:
+            return None, "N/A_no_sealed_run(sealed_refused_by_book_module)" if wn == "sealed" else "MISSING_native"
+        n = n.loc[WINDOWS[wn][0]:WINDOWS[wn][1]]
+        return (QM.returns(n), "native_equity100_book(510300_dropped_renorm;name_cap_scaled_1/0.8)") if len(n) > 5 else (None, "N/A_no_window_rows")
+    base = SRC[col] / f"aum_{aum}" / wn / "BOOK"
+    n = read_nav(base / "nav.csv")
+    if n is None:
+        return None, f"N/A_no_{wn}_run(sealed_refused_by_book_module)" if wn == "sealed" else "MISSING"
+    r = QM.returns(n)
+    sh = etf_share(base / "actual_weights.parquet")
+    sh = (sh.reindex(r.index).ffill().fillna(0.0) if sh is not None else pd.Series(0.0, index=r.index))
+    if b is None:
+        return None, "NO_BENCH"
+    bb = b.reindex(r.index).fillna(0.0)
+    eq = ((r - sh * bb) / (1 - sh).clip(lower=0.05))  # pure book ex-510300 (incl. cash)
+    if sleeve == "equity_100":
+        return eq, f"DERIVED_FROM_80_20_NAV_APPROX(reference_only)_ex510300(mean_etf_share={sh.mean():.3f})"
+    if abs(float(sh.mean()) - 0.20) <= 0.02:
+        return r, f"native_book_nav(mean_510300_share={sh.mean():.3f}≈20%)"
+    # 80/20: rebuild from daily 510300 return on the de-ballasted equity book
+    return 0.8 * eq + 0.2 * bb, f"derived_80eq_20x510300_daily(native_etf_share={sh.mean():.3f})"
+
+
+def feasibility_section() -> list[str]:
+    """可行性披露（v1.2，取自 core_v1_2_disclosure.csv）；仅披露，不调参（Arch 裁定）。"""
+    p = OUT / "core_v1_2_disclosure.csv"
+    if not p.exists():
+        return ["## 可行性披露", "", "core_v1_2_disclosure.csv 缺失。", ""]
+    D = pd.read_csv(p); D["m"] = D.date.str[:7]
+    D["cls"] = np.where(D.status.isin(["OK", "LOT_CASH_GT2"]), "OK",
+                np.where(D.stage.eq("lot"), "LOT_HARD_FAIL", np.where(D.stage.eq("step2"), "step2", "other")))
+    L = ["## 可行性披露（v1.2；λ 冻结 risk=117.213 / turn=0.6；未调参、未改 HARD）", "",
+         "| window | aum | sleeve | 调仓日 | OK | step2 | LOT_HARD_FAIL | other | 可行率 | 单月≥2天 | 连续不可行月 |", "|" + "---|" * 11]
+    for (w, a, sv), g in D.groupby(["window", "aum", "sleeve"]):
+        inf = g[g.cls != "OK"]; mc = inf.m.value_counts(); ms = sorted(set(inf.m)); runs, cur = [], []
+        for m in ms:
+            if cur and (pd.Period(m) - pd.Period(cur[-1])).n == 1: cur.append(m)
+            else:
+                if len(cur) > 1: runs.append(f"{cur[0]}→{cur[-1]}")
+                cur = [m]
+        if len(cur) > 1: runs.append(f"{cur[0]}→{cur[-1]}")
+        c = inf.cls.value_counts()
+        L.append(f"| {w} | {a} | {sv} | {len(g)} | {(g.cls=='OK').sum()} | {c.get('step2',0)} | {c.get('LOT_HARD_FAIL',0)} | {c.get('other',0)} | {(g.cls=='OK').mean():.1%} | {','.join(mc[mc>=2].index) or '无'} | {','.join(runs) or '无'} |")
+    L += ["", "- other = 2018-01-02 首日 NO_DATA_CARRY（空仓起始）。不可行日一律沿用上期持仓（禁止回退 step1）。",
+          "- **60万档结构性限制**：X2 内 2026-04/06/09 三个调仓日口径② 整手后仅 19 只（<20）→ LOT_HARD_FAIL；2026-07 step2 不可行；形成 2026-06→2026-07 连续不可行月。"
+          "原因是小资金 + 6% 单票上限 + 100/200 股整手的结构性约束，**仅披露、不调参**（Arch 裁定）。100万档 X2 全部可行。",
+          "- ① 不可行日（按 AUM 档去重；一口径失败两口径同沿用上期）：60万 SEALED 2019-12-31(step2)；100万 SEALED 2019-10-31(step2)；两档 2018-01-02 首日 NO_DATA；"
+          "60万 X2 2026-04-30/06-30/09-30 LOT_HARD_FAIL（口径②触发，整手后 19 只）+ 2026-07-31 step2。**60万档 2026-04→2026-09 六次调仓中 4 次不可行**，属小资金整手结构性问题，未调参。",
+          "- ② 漂移分布（disclosure，可行日 post-lot）：β drift p5/p50/p95 ≈ −0.10~−0.14 / +0.03~+0.05 / +0.07~+0.10，min −0.34；MidCap drift p5/p50/p95 ≈ −0.49~−0.53 / −0.18~−0.28 / +0.13~+0.27，min −0.93。"
+          "超界>0.05（|β|>0.15 或 |MidCap|>0.35+slack+0.05）共 54 行（档×口径×日），集中在 2025-07 起 X2，尤其 2026-07→10-09（β −0.16~−0.34、MidCap −0.35~−0.93）；明细见 core_v1_2_disclosure.csv（c1_*_breach / LOT_STYLE_DRIFT）。",
+          "- ③ slack 顶格：100万档可行日 52.4%（SEALED 52.6% / X2 48.3%）；60万档 29.7%。已由 disclosure 复核。",
+          "- X2 仅为入场券，不作晋级依据（晋级看 2026-11-02 起 FWD）；密封窗仅披露，book 模块拒跑密封窗，故无密封业绩。",
+          "- A 列：Arch 已复签 v1.2（docs/v2/ARCH_OPTIMIZER_CORE_v1_2_PROCEDURAL_COSIGN_ZH.md），book_smoke X2 已跑。turnover_ann_oneway = 日度实际权重差×244（含价格漂移，偏高，仅横向比）；IR 主基准为 HI_LIQ 自由流通市值加权 wb（bench_hiliq_wb_x2.csv），510300 为次基准。", ""]
+    return L
+
+
+def main():
+    rows = []
+    for wn in WINDOWS:
+        for aum in AUMS:
+            b = bench_ret(aum, wn)
+            for sleeve in SLEEVES:
+                cols = ("A", "B", "C") + (("B_derived_ref", "C_derived_ref") if sleeve == "equity_100" else ())
+                for col in cols:
+                    r, prov = sleeve_returns(col, aum, wn, sleeve, b)
+                    row = dict(window=wn, aum=aum, sleeve=sleeve, primary=(sleeve == SLEEVES[0]), col=col, provenance=prov)
+                    if r is not None and len(r) > 5:
+                        row.update(compute(r, b))
+                        if not col.endswith("_derived_ref"):
+                            row.update(turn_cost(book_dir(col, aum, wn, sleeve)))
+                    rows.append(row)
+    df = pd.DataFrame(rows)
+    OUT.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUT / "scorecard_three_col.csv", index=False)
+    keep = ["window", "aum", "sleeve", "col", "cagr", "mdd", "calmar", "sharpe", "ir_vs_wb", "ir_vs_510300", "turnover_ann_oneway", "cost_pct_initial", "daily_win",
+            "monthly_win", "mdd_breach_25", "mdd_breach_15", "provenance"]
+    fmt = df.reindex(columns=keep).copy()
+    for c in ("cagr", "mdd", "daily_win", "monthly_win", "cost_pct_initial"):
+        fmt[c] = fmt[c].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
+    for c in ("calmar", "sharpe", "ir_vs_wb", "ir_vs_510300", "turnover_ann_oneway"):
+        fmt[c] = fmt[c].map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+    md = ["# Core X2 三列记分卡（研究级；live=false；X2 漂亮数不得晋级）", "",
+          "A=OPTIMIZER Core(HI_LIQ) · B=现行 capacity_adv mid_large · C=capacity_adv Top-25@HI_LIQ_V1.1；主口径=equity80_etf20_510300；年化 244（quantlab.metrics）；MDD 对 25%/15% 双线标记。", "",
+          "**口径注（Arch P2-T6）**：equity_100 行 B/C = 原生纯股票 book（去 510300 行后按日归一至 100%，同引擎 strategy_v1，仅 X2；单票上限随之放大 1/0.8）；`*_derived_ref` 行 = 由 80/20 净值反推 `(r−sh·r510300)/(1−sh)`，**近似值，仅作参考**。", "",
+          *feasibility_section(),
+          "## 三列业绩", "", "| " + " | ".join(keep) + " |", "|" + "---|" * len(keep)]
+    for _, r in fmt.iterrows():
+        md.append("| " + " | ".join("" if pd.isna(v) else str(v) for v in r.values) + " |")
+    (OUT / "scorecard_three_col.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print(fmt.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

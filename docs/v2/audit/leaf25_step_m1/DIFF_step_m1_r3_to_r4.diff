@@ -1,0 +1,72 @@
+--- research/leaf25_ttm_recon_step_m1_r3.py	2026-10-18 10:52:39.683931890 -0400
++++ research/leaf25_ttm_recon_step_m1_r4.py	2026-10-18 10:58:41.375931890 -0400
+@@ -1,8 +1,8 @@
+ #!/usr/bin/env python3
+-"""Leaf 25 step -1 r3: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
++"""Leaf 25 step -1 r4: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
+ 
+-New file per Arch review efb013d8 (S-P2-1, S-P3-1); predecessor research/leaf25_ttm_recon_step_m1_r2.py
+-(f46e0fb5) is kept unchanged and is superseded (r2 itself followed review fc5fa937; 7edf577f also kept unchanged).
++New file per Arch diff review 1b63c05f (R3-P3-1, R3-P3-2); predecessor research/leaf25_ttm_recon_step_m1_r3.py
++(eb979015) is kept unchanged and is superseded (_r2 f46e0fb5 and 7edf577f also kept unchanged).
+ 
+ Reads ONLY data/v2/financials_pit/{financials,cashflow,balancesheet}_pit_tushare.parquet and the SSE calendar
+ (column projection; full-table pass on key columns for the deterministic pick, then ts_code filter to 3 codes;
+@@ -11,7 +11,7 @@
+ latest snapshot per (ts_code, end_date), not PIT) are read. Imports: stdlib, pandas, pyarrow only.
+ Writes only --out/{raw_rows.csv, ttm_script.csv, run_meta.json}.
+ 
+-Rules implemented (leaf 25 prereg r4 s2):
++Rules implemented (leaf 25 prereg r5 s2, 81123646):
+  - versions: per (table, ts_code, end_date), report_type == "1" only; every other value (text labels such as the
+    consolidated period-end label, nulls) is never used, never remapped, and counted per value (all rows and
+    end_date >= 2018). A row is usable on session d iff its own available_at converted to a Shanghai date < d;
+@@ -30,8 +30,10 @@
+       d_before = prev_open(d_after), the availability-only fallback E (same rule as ttm_at: newest E whose components
+       all have a usable row, one-quarter and 15-month caps; values not looked at) must exist on BOTH days and end_date
+       must be one of that day's component periods for the table (income/cashflow: E, A_{y-1}, YTD_{E-1y};
+-      balance: TA_E, TA_{E-1y}) on BOTH days.
+- (ii) (ts_code, y, a_date, q_date): y >= 2019, first Q1(y) income date <= first annual(y-1) income date.
++      balance: TA_E, TA_{E-1y}) on BOTH days. If a third version dd[2] exists with next_open(dd[2]) <= d_after
++      (e.g. dd[1] Friday, dd[2] Saturday), the candidate is skipped, so the version usable on d_after is dd[1].
++ (ii) (ts_code, y, a_date, q_date): y >= 2019, first Q1(y) income date <= first annual(y-1) income date;
++      same_day means same effective session: next_open(q_date) == next_open(a_date) (not the same calendar day).
+  (iii)(ts_code, first_period, first_date): first report_type-1 income period >= 2019-03-31.
+  rule_exercised per case is written into run_meta; any false -> exit code 4 (outputs still written).
+  Case (ii) with Q1 before annual: on the Q1 effective day TTM must be NaN (one-quarter fallback cap), not merely
+@@ -293,6 +295,8 @@
+         corr = pd.Timestamp(dd[1])
+         d_after = next_open(corr)
+         d_before = prev_open(d_after)
++        if len(dd) > 2 and next_open(pd.Timestamp(dd[2])) <= d_after:  # R3-P3-1: dd[2] would be the d_after version
++            continue
+         Eb, Ea = avail_E(code, d_before, G), avail_E(code, d_after, G)
+         if Eb is None or Ea is None:
+             continue
+@@ -315,7 +319,7 @@
+         die("no candidate for rule ii")
+     r2 = jj.iloc[0]
+     trig_ii = {"ts_code": r2["ts_code"], "y": int(r2["y"]), "a_date": r2["avail_sh_date_a"], "q_date": r2["avail_sh_date_q"],
+-               "same_day": bool(r2["avail_sh_date_q"] == r2["avail_sh_date_a"])}
++               "same_day": bool(next_open(r2["avail_sh_date_q"]) == next_open(r2["avail_sh_date_a"]))}  # R3-P3-2
+     # (iii) trigger tuples
+     f3 = first.sort_values(["ts_code", "end_s"]).groupby("ts_code").first()
+     f3 = f3[(f3["end_s"] >= pd.Timestamp("2019-03-31")) & ~f3.index.isin([trig_i["ts_code"], trig_ii["ts_code"]])]
+@@ -381,7 +385,7 @@
+     pd.DataFrame(rows).to_csv(out / "ttm_script.csv", index=False)
+     all_ok = all(exercised.values())
+     meta = {
+-        "script": "research/leaf25_ttm_recon_step_m1_r3.py", "input_sha256": shas, "codes": codes,
++        "script": "research/leaf25_ttm_recon_step_m1_r4.py", "input_sha256": shas, "codes": codes,
+         "triggers": {"i": trig_i, "ii": trig_ii, "iii": trig_iii}, "rule_exercised": exercised, "rule_detail": detail,
+         "asof_dates": dates, "n_tie_groups": len(ties), "ties": ties[:200], "nonquarter_end_rows": nonq,
+         "report_type_update_flag_counts": counts, "arch_ruling_required_report_type_share_gt_0_5pct": arch_ruling,
+@@ -392,7 +396,7 @@
+     }
+     (out / "run_meta.json").write_text(json.dumps(meta, indent=1, default=str), encoding="utf-8")
+     stage("done")
+-    print(f"peak_check step_m1_r3 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
++    print(f"peak_check step_m1_r4 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
+     if not all_ok:
+         print(f"STOP: rule_exercised false: {exercised}", file=sys.stderr, flush=True)
+         return 4

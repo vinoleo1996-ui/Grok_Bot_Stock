@@ -1,0 +1,31 @@
+--- a/research/g1g5_imax_intraday_alpha.py
++++ b/research/g1g5_imax_intraday_alpha.py
+@@ -445,7 +445,7 @@
+                 for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
+             for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has)), ("S_dd", S_dd), ("MV_dd", MV_dd)): parts[k_].append(f_.loc[w])
+         del pr, mk, has, val, lmv, sus, carry, A, B, S, MV, S_dd, MV_dd; gc.collect()
+-    cat = lambda k: pd.concat(parts[k]).reindex(index=idx)
++    cat = lambda k, _p=parts: pd.concat(_p[k]).reindex(index=idx)   # r7 P3-7: bind parts (pyflakes: later del)
+     S, MV, VAL, LMV = cat("S"), cat("MV"), cat("VAL"), cat("LMV"); U = S.columns
+     S = S.fillna(0.0).astype(bool); MV = MV.reindex(columns=U); VAL = VAL.reindex(columns=U); LMV = LMV.reindex(columns=U)
+     S_dd = cat("S_dd").reindex(columns=U).fillna(0.0).astype(bool); MV_dd = cat("MV_dd").reindex(columns=U); del parts
+@@ -706,8 +706,8 @@
+         if b3["carry_mismatch"] or b3["carried_by_mask_reason_x2"].get("not_suspended", 0) or b3["bj_member_rows"]:
+             xtext(out/f"B3_carry_mismatch_{uni}.json", json.dumps(b3, ensure_ascii=False, indent=1, default=str))
+             raise SystemExit(f"STOP (B3): Mp != {carry_col} on {b3['carry_mismatch']} restored resume rows / {b3['carried_by_mask_reason_x2'].get('not_suspended', 0)} carried non-suspended name-days / {b3['bj_member_rows']} .BJ member rows (P3-D) — report to Arch")
+-        U = pb["U"]; Mp, wv = pb["Mp"], pb["wv"]; r0 = pb["r0"]   # Alpha P3-2: reuse the single return frame
+-        ewf = lambda M, W_: (((r0*M).sum(1)/M.sum(1)).loc[s:e], ((r0*W_).sum(1)/W_.sum(1)).loc[s:e])
++        Mp, wv = pb["Mp"], pb["wv"]; r0 = pb["r0"]; del rr   # Alpha P3-2: reuse the single return frame; r7 P3-7 dead U removed; P3-8 drop rr now
++        ewf = lambda M, W_, _r=r0: (((_r*M).sum(1)/M.sum(1)).loc[s:e], ((_r*W_).sum(1)/W_.sum(1)).loc[s:e])   # r7 P3-7
+         ew, wb = ewf(Mp, wv); ew_o, wb_o = ewf(pb["Mpo"], pb["wvo"]); ew_2, wb_2 = ewf(pb["Mp2"], pb["wv2"])
+         b3.update(carried_member_days_x2=int((Mp & ~pb["Mpo"]).loc[s:e].to_numpy().sum()),
+                   poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o), poolEW_cagr244_r2_2_norowcarry=ann(ew_2), wb_cagr244_r2_2_norowcarry=ann(wb_2),
+@@ -715,7 +715,7 @@
+                   poolEW_cagr244_diff_vs_r2_2=ann(ew) - ann(ew_2), wb_cagr244_diff_vs_r2_2=ann(wb) - ann(wb_2),
+                   note="old / r2.2 / shadow constructions: disclosure only (shadow diffs come from pool_benchmarks diag)")
+         repin(auth, "data_etf_daily_adj_sha256"); bal = FE.rets(range(2024, 2027))[0][FE.BAL].loc[s:e].astype(float)
+-        del rr, Mp, wv, r0, pb; gc.collect()
++        del Mp, wv, r0, pb; gc.collect()
+ 
+         def vs(r, b):
+             b = b.reindex(r.index).fillna(0); x = r - b; be = float(np.cov(r, b)[0, 1]/b.var()); res = r - be*b

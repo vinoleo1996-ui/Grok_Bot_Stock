@@ -1,0 +1,419 @@
+--- run_nightly_v1.py@63b5a884
++++ run_nightly_v1.py@v3.1
+@@ -1,6 +1,6 @@
+ #!/usr/bin/python3
+ # -*- coding: utf-8 -*-
+-"""10-19 日更驱动 run_nightly_v1.py（QuantLab Data；新版，待 Arch 行级审查；未对真实数据运行）。只用标准库 + pyarrow（只读 parquet 元数据与少数单列）。
++"""10-19 日更驱动 run_nightly_v1.py（QuantLab Data；v3.1，按 Arch 行级审 ec1ac8e1 修 P1-1..3 / P2-1 / P2-2 / P2-4 / P3-1 / P3-2 / P3-4，并加 .ok 键 allow_relay_partial_<D> / allow_hsgt_source_empty_warn_<D>；未对真实数据运行）。只用标准库 + pyarrow（只读 parquet 元数据与少数单列）。
+ 
+ 文件名固定 run_nightly_v1.py（Eng pgrep 精确匹配 nightly_update\\.py|tier1_pull\\.py|run_nightly_v1\\.py）。
+ 版本史：a7292a61（作废，Arch 2dada5ed 设计审「不可签」）已 cp -p 归档于 _recovery/data/nightly_20261019/predraft2_20261018T114300/。
+@@ -9,16 +9,18 @@
+ 流程（全部串行，一次一个真实数据进程）：
+   P  只读：已有 marker 预检（DONE 在 → 退出 2 不写；FAILED 在 → 仅 .ok supersede_failed_marker_sha256==其全长 sha 才继续）。
+   0  .ok（key=value / ASCII / LF / 无行内注释 / 无重复键 / 无未知键 / 无 DRAFT / 不在 _consumed/）；全部钉 sha（驱动 + 4 个审计工具 + nightly_update + tier1_pull 5b70dfed + tushare_proxy + relay_health + 11 个步骤脚本 + routine_fallback）；
+-     解释器 /usr/bin/python3；ET 日期 == D 且不早于 05:25；不在 16:40–18:40；94322 / 94403 只能是 T 或已退出（驱动绝不对它们发信号）；两条锚定 pgrep 为空；relay_outage_backfill 进程只能是 T。
++     解释器 /usr/bin/python3；ET 日期 == D 且不早于 05:25；不在 16:40–18:40；94322 / 94403 及其整棵进程树每个进程只能是 T / Z / 不存在（驱动绝不对它们发信号）；两条锚定 pgrep 为空；relay_outage_backfill 进程只能是 T。
+   Q  RESEARCH_QUIET.lock：存在则核 purpose / set_at 日期；05:28 后仍不存在且 .ok 允许才按 Arch 模板代设；healthz quiet + 15 秒 + 复核 + pgrep。驱动绝不删除、移动锁。
+   1  备份 tushare_raw/trade_cal.parquet（两份 sha == PIN 141078fa，chmod 444）；PIN 日历必须含 D 且 is_open=1；PIT 日历 fa4260b8 / manifest 7ccc911e / closure 6919e7af 前 sha；快照 v2 BEFORE。
+-  A  daily_pull：nightly_update.py --date D --steps daily_pull，子进程环境固定 TIER1_SKIP_CAL_REFRESH=1、TSPRO_RELAY_TIMEOUT=115、SOURCE=relay；
++  A  daily_pull：nightly_update.py --date D --steps daily_pull，子进程环境固定 TIER1_SKIP_CAL_REFRESH=1、TSPRO_RELAY_TIMEOUT=115；SOURCE 默认不设，只有 .ok source_relay_only=true 才设 SOURCE=relay；
+      两档都是单次 30 分钟硬停（reason_code=MAX_RUN），另有 RSS（树合计 ≥1484800 kB 或单进程 >1536000 kB）、16:40 禁跑（BLACKOUT）；
+      停止顺序：SIGSTOP nightly → 重新枚举 → 冻结全部后代 → 最深先 TERM+CONT → 10 秒 → KILL → SIGKILL nightly → wait(60 秒) → 孤儿扫描；每个信号前核 cmdline + PPID。
+      每次尝试后：确认整棵树已不在 → compare → cal_restore_v2（rc=2 复跑一次；仍失败则驱动自带 os.replace 原子恢复）→ 间隔 30 秒双核 sha == PIN，否则 P0 退出 4。
+      成功 = rc 0 + 本次窗口内 summary daily_pull ok + 四个原始文件存在、行数门槛、trade_date 实测 min=max=D、无 .tmp。
+      只有 relaxed 且 reason_code=MAX_RUN 才可重试（Arch Q-A3 六个条件）；其余一律不重试、不起 call B。
+   B  call B：14 步；闸门 = 实际起跑 + call_b_budget_min（.ok，主 Agent 12:32 定 75）≤ 16:00；在 min(起跑 + 预算, 16:00) 硬停（CALLB_TIMEOUT）→ FAILED；call B 后同样走日历恢复链。
++  W  v3.1：.ok allow_relay_partial_<D>=true 时 cyq / tier3 / hsgt 的 partial 记 WARN；allow_hsgt_source_empty_warn_<D>=true 时 hsgt 源端空日（本次写出的 0 行文件）记 WARN；
++     DONE 仍为 OK 并带 warnings[]，降级日期追加到 GAP_LIST；6 张 REQUIRED 表不全照旧 FAILED。PPID=1 可疑孤儿挡住 DONE（ORPHAN）。
+   C  核查（第 3 节，只认本次写入）：summary 14 步 ok 无 skipped 且 finished/mtime 在 call B 窗口内；hsgt 日志本次 remaining=0（rc=2 算 partial）；
+      daily_update_status finished_at 晚于 call B 起跑、status=ok、target_trade_date==D、REQUIRED_TABLES last_date==D（统一 YYYYMMDD）且 rows ≥ 跑前；
+      freshness generated_at 晚于 call B 起跑、overall=ok；trade_cal == PIN；PIT 日历 / closure 未变；快照 compare 退出 0。
+@@ -38,7 +40,11 @@
+ RAW = ROOT + "/data/v2/tushare_raw"
+ PIT_CAL = {ROOT + "/data/v2/calendar/trade_cal_sse_pit.parquet": "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41",
+            ROOT + "/data/v2/calendar/manifest.json": "7ccc911e8a3ed2e408f30db1f95f12eb71a6fea18003ba88a31246f941cc89a4"}
+-FROZEN = {ROOT + "/docs/v2/eng_sd1/paper_import_closure.json": "6919e7afe605cc4d1af48868a06b6550db66e3fd1923a3e61bdcc16c621bae20"}
++FROZEN = {ROOT + "/docs/v2/eng_sd1/paper_import_closure.json": "6919e7afe605cc4d1af48868a06b6550db66e3fd1923a3e61bdcc16c621bae20",  # 必须第一项（.ok pin_frozen_closure）
++          ROOT + "/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet": "89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c",  # Arch P3-4
++          ROOT + "/data/v2/sw_l1_pit/industry_members_sw_l1.parquet": "87d769aaca06212186986af489f6507b6f0d98c8937f7a4476f97538562733b3",
++          ROOT + "/data/v2/sw_pit/industry_members_sw_l1_pit.parquet": "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"}
++GAP_LIST = ROOT + "/output/data_gap_list/nightly_degraded_gaps.jsonl"  # v3.1：WARN 降级日期只追加（O_APPEND），一行一条
+ SNAP = ROOT + "/docs/v2/audit/nightly_sha_scope_snapshot_v2_20261018.py"
+ SCOPE = HERE + "/nightly_sha_scope_20261019.txt"
+ SCOPE_SHA = "04d716af2a87a8bf365431c97097a5c740353c6c273de82677d826f1c4d98807"
+@@ -67,7 +73,7 @@
+     "sha_cyq_perf_monthly": ("scripts/acquire/cyq_perf_monthly.py", "6aae6c1b8de7b37752fb5032c22ea65b698f252cc57f8e5af94b1e13d6e09c1f"),
+     "sha_tier3_daily_snapshot": ("scripts/acquire/tier3_daily_snapshot.py", "64a71f5607439c5b09ddd92a8dfeffd94e4f5244297f83fbc5c65e3abfcf1067"),
+     "sha_data_freshness_status": ("scripts/acquire/data_freshness_status.py", "a759d29788859b43783bac6360014347b2df0e4dce5949302a0908db511f1d50"),
+-    "sha_routine_fallback": ("docs/v2/audit/nightly_20261019/routine_fallback_v1.py", "f3244472da360b74cc692f90548fab4f8839f13f3938bf65374d592b2d61ac5f"),
++    "sha_routine_fallback": ("docs/v2/audit/nightly_20261019/routine_fallback_v1.py", "559d1e017b1c53b1dd1cdffdc0571fc1d33a6157ea4437735421cc3fab271384"),
+ }
+ CALL_B_STEPS = ["index_pull", "adj_factor", "bars", "daily_basic", "index", "etf_daily_adj", "eng_panels", "mid_large_universe",
+                 "events", "hsgt", "cyq", "tier3", "bundle", "freshness"]  # 不含 daily_pull、trade_cal、sw
+@@ -115,9 +121,10 @@
+                     "allow_delete", "allow_commit"] + list(SHA_KEYS)
+ OK_KEYS_OPTIONAL_FMT = ["signed_et", "supersede_failed_marker_sha256", "allow_profile_relaxed_%s", "allow_daily_pull_retry_%s",
+                         "allow_run_daily_pull_%s", "allow_run_call_b_%s", "allow_restore_trade_cal_%s", "allow_routine_fallback_restore_%s",
+-                        "allow_write_nightly_marker_%s", "allow_quarantine_mv_daily_raw_%s", "allow_create_research_quiet_lock_%s"]
++                        "allow_write_nightly_marker_%s", "allow_quarantine_mv_daily_raw_%s", "allow_create_research_quiet_lock_%s",
++                        "allow_relay_partial_%s", "allow_hsgt_source_empty_warn_%s"]  # v3.1（主 Agent 13:19 / Arch 13:15），默认 false
+ 
+-R = dict(events=[], alerts=[], fail_reasons=[], prior_attempts=[], invocations=[], checks={}, quiet={}, reason_codes=[])
++R = dict(events=[], alerts=[], fail_reasons=[], prior_attempts=[], invocations=[], checks={}, quiet={}, reason_codes=[], reason_code_counts={}, warnings=[])
+ CFG = dict(npid=None, marks=None, expires=None, call_started=False, popen=None)
+ A = None
+ D = None
+@@ -151,6 +158,13 @@
+     ev("FAIL " + msg)
+ 
+ 
++def add_code(code):
++    """reason_codes 去重（保留首次顺序），原始次数记在 reason_code_counts（Arch P3-2）。"""
++    R["reason_code_counts"][code] = R["reason_code_counts"].get(code, 0) + 1
++    if code not in R["reason_codes"]:
++        R["reason_codes"].append(code)
++
++
+ def sha256(p):
+     h = hashlib.sha256()
+     with open(p, "rb") as f:
+@@ -339,7 +353,7 @@
+     rec["steps"].append(("SIGKILL_PARENT", npid, signal_exact(npid, signal.SIGKILL, NIGHTLY_MARK, me)))
+     rec["ps_after"] = [ps_line(x) for x in [npid] + descendants(npid)]
+     R["checks"].setdefault("stop_tree", []).append(rec)
+-    R["reason_codes"].append(reason_code)
++    add_code(reason_code)
+     return rec
+ 
+ 
+@@ -406,16 +420,24 @@
+         elif name not in cl:
+             out[pid] = dict(state=st, cmd=cl[:120], verdict="pid_reused_original_exited")
+         elif st == "T":
+-            out[pid] = dict(state=st, verdict="stopped_ok")
++            tree = [dict(pid=c, state=proc_state(c), cmd=cmdline(c)[:120]) for c in descendants(pid)]  # 进程级 /proc/<pid>/stat
++            bad = [x for x in tree if x["state"] not in (None, "Z", "T")]
++            out[pid] = dict(state=st, verdict="stopped_ok" if not bad else "TREE_RUNNING_FAIL", tree=tree)
++            for x in bad:
++                errs.append("%d（%s）的后代 pid=%d state=%s，整棵树须为 T / Z / 不存在（Arch P1-3）" % (pid, name, x["pid"], x["state"]))
+         else:
+             out[pid] = dict(state=st, verdict="RUNNING_FAIL"); errs.append("%d（%s）state=%s，须为 T 或已退出" % (pid, name, st))
+     rc, lines = pgrep_lines(PGREP_WATCHER)
+     w = []
+     for ln in lines:
+         p_ = int(ln.split()[0]); st = proc_state(p_)
+-        w.append(dict(pid=p_, state=st, cmd=ln[:160]))
++        tree = [dict(pid=c, state=proc_state(c)) for c in descendants(p_)] if st else []
++        w.append(dict(pid=p_, state=st, cmd=ln[:160], tree=tree))
+         if st not in (None, "Z", "T"):
+             errs.append("relay_outage_backfill pid=%d state=%s，须为 T 或已退出" % (p_, st))
++        for x in tree:
++            if x["state"] not in (None, "Z", "T"):
++                errs.append("relay_outage_backfill pid=%d 的后代 pid=%d state=%s" % (p_, x["pid"], x["state"]))
+     out["relay_outage_backfill_all"] = w
+     R["checks"]["guarded"] = out
+     return "；".join(errs) or None
+@@ -503,15 +525,21 @@
+     except subprocess.TimeoutExpired:
+         rc = None; wait_timeout = True
+         alert("P0", "%s wait 超时 %d 秒，nightly pid=%d 状态 %s" % (tag, WAIT_TIMEOUT_S, npid, proc_state(npid)))
+-        R["reason_codes"].append("HANG")
++        add_code("HANG")
+     t1e = time.time(); CFG.update(npid=None, popen=None)
+     fh.close(); rss_log.close()
+     acted, logged = orphan_scan(seen, t0e, tag, marks)
+-    residual = (stopped or {}).get("residual", []) + [a for a in acted if a["action"] not in ("term_ok", "killed", "gone")]
++    res_raw = (stopped or {}).get("residual", []) + [a for a in acted if a["action"] not in ("term_ok", "killed", "gone")]
++    residual, _pids = [], set()
++    for x in res_raw:  # Arch P3-2：同一 PID 只留一条，原始条数另记
++        if x.get("pid") not in _pids:
++            _pids.add(x.get("pid")); residual.append(x)
++    if logged:  # Arch P2-2：PPID=1 可疑孤儿不发信号，但挡住 DONE
++        add_code("ORPHAN"); fail("%s 后有 PPID=1 可疑孤儿 %s（只记录、不发信号；判 FAILED）" % (tag, [x["pid"] for x in logged]))
+     still = [x for x in seen if alive(x)]
+     rec = dict(cmd=" ".join(cmd), argv=argv, env_set=dict(CHILD_ENV, **(extra_env or {}), SOURCE=("relay" if CFG.get("source_relay") else None)),
+                rc=rc, pid=npid, pids_seen=sorted(seen), started_et=t0, finished_et=ts(), start_epoch=t0e, end_epoch=t1e, out=out,
+-               rss_max_sum_kb=max_sum, rss_max_one_kb=max_one, stopped=stopped, reason_code=(stopped or {}).get("reason_code") or ("HANG" if wait_timeout else None),
++               rss_max_sum_kb=max_sum, rss_max_one_kb=max_one, residual_raw_count=len(res_raw), stopped=stopped, reason_code=(stopped or {}).get("reason_code") or ("HANG" if wait_timeout else None),
+                wait_timeout=wait_timeout, orphans_acted=acted, orphans_logged_only=logged, residual=residual, seen_alive_after=still)
+     if residual or still:
+         alert("P0", "%s 停后仍有残留 residual=%s alive=%s" % (tag, [x.get("pid") for x in residual], still))
+@@ -565,11 +593,40 @@
+         v = st.get(k) or {}
+         got[k] = dict(status=v.get("status"), sec=v.get("sec"))
+         if v.get("status") != "ok" or "skipped" in v:
++            if tag == "callB" and k in RELAY_ONLY and CFG.get("relay_partial") and v.get("status") == "partial":
++                warn_relay_partial(k, v); got[k]["warn"] = True; continue
+             f.append("summary steps.%s status=%r（或含中转快速失败）" % (k, v.get("status")))
+     R["checks"]["summary_" + tag] = dict(path=sp, sha256=sha256(sp), finished=sm.get("finished"), mtime=mt, window=[lo, hi], steps=got, fails=f)
+     return f, got
+ 
+ 
++def step_rows(step):
++    """WARN 用的实际行数：cyq 取 tushare_raw/cyq_perf/<D>.parquet；tier3 取 tier3_daily/<kind>/<D>.parquet 合计；hsgt 取 tushare_raw/hsgt_top10/<D>.parquet。缺文件按 0。"""
++    if step == "cyq":
++        ps = [RAW + "/cyq_perf/%s.parquet" % D]
++    elif step == "tier3":
++        base = ROOT + "/data/v2/tier3_daily"
++        ps = [os.path.join(base, k_, "%s.parquet" % D) for k_ in (sorted(os.listdir(base)) if os.path.isdir(base) else []) if k_ != "manifests"]
++    else:
++        ps = [RAW + "/hsgt_top10/%s.parquet" % D]
++    n = 0
++    for p in ps:
++        if os.path.isfile(p):
++            try:
++                n += num_rows(p)
++            except Exception:
++                pass
++    return n
++
++
++def warn_relay_partial(step, v):
++    why = "skipped" if "skipped" in v else "relay_partial"  # Eng 13:24 契约 F1：reason ∈ relay_partial | hsgt_source_empty | skipped
++    R["warnings"].append(dict(step=step, date=D, actual_rows=int(step_rows(step)), reason=why))
++    CFG.setdefault("warned_steps", set()).add(step)
++    CFG.setdefault("warn_detail", {})[step] = dict(reason=why, nightly_status=v.get("status"), skipped=v.get("skipped"))
++    alert("WARN", "call B %s partial 记 WARN（.ok allow_relay_partial_%s=true）" % (step, D))
++
++
+ def step_log_section(step, t0_epoch):
+     """logs/nightly/<D>_<step>.log 中本次调用写的部分（nightly_update.py L114-118 每条命令前写 \\n=== <本地 ISO 时间> <cmd>）。"""
+     lp = ROOT + "/logs/nightly/%s_%s.log" % (D, step)
+@@ -601,15 +658,44 @@
+ def check_hsgt_log(rec):
+     """hsgt 只认 rc=0（Arch D-P1-4(d)）。nightly 把 rc 0/2 都记 ok（nightly_update.py L119-120），rc 不落盘；
+     fill_hsgt_top10_extend.py L225 打印 CHUNK DONE ... remaining=N auth_max=YYYYMMDD，L232-237：rc=0 ⇔ remaining==0 且 auth_max ≥ 20250601。"""
++    if "hsgt" in CFG.get("warned_steps", set()):
++        R["checks"]["hsgt_rc_check"] = dict(skipped_check=False, warned_relay_partial=True)
++        return None
+     sec, lp = step_log_section("hsgt", rec["start_epoch"])
+     ms = re.findall(r"CHUNK DONE done=(\d+) fail=(\d+) remaining=(\d+) auth_max=(\d{8})", sec or "")
+     res = dict(log=lp, chunk_done=ms[-1] if ms else None)
+     ok = bool(ms) and int(ms[-1][2]) == 0 and ms[-1][3] >= "20250601" and "ABORT " not in (sec or "")
+     res["rc0_equivalent"] = ok
+     R["checks"]["hsgt_rc_check"] = res
++    if not ok and CFG.get("hsgt_empty_warn") and ms and int(ms[-1][1]) == 0 and int(ms[-1][2]) > 0 and ms[-1][3] >= "20250601" and "ABORT " not in (sec or ""):
++        empt = hsgt_empty_days(rec["start_epoch"])
++        res["source_empty_days"] = empt
++        res["log_ok0"] = re.findall(r"last=(\d{8}):ok:0\b", sec or "")
++        if len(empt) == int(ms[-1][2]):  # 剩余天数 = 本次写出的 0 行文件数（save_day 只在 pull 成功即 HTTP 200 后写；needs() 700 字节门槛使其仍算 remaining，L46/L217）
++            for d_ in empt:
++                R["warnings"].append(dict(step="hsgt", date=d_, actual_rows=0, reason="hsgt_source_empty"))
++            CFG.setdefault("warned_steps", set()).add("hsgt")
++            CFG.setdefault("warn_detail", {})["hsgt"] = dict(reason="hsgt_source_empty", nightly_status="ok", empty_days=empt)
++            alert("WARN", "hsgt 源端空日 %s 记 WARN（.ok allow_hsgt_source_empty_warn_%s=true）" % (empt, D))
++            res["source_empty_warn"] = True
++            return None
+     return None if ok else "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：%r" % (res["chunk_done"],)
+ 
+ 
++def hsgt_empty_days(t0_epoch):
++    """本次 call B 窗口内写出的 tushare_raw/hsgt_top10/<d>.parquet 且 num_rows == 0（fill_hsgt_top10_extend.py save_day L51-63：只有 pull 成功才写）。"""
++    d0 = RAW + "/hsgt_top10"; out = []
++    for f in (sorted(os.listdir(d0)) if os.path.isdir(d0) else []):
++        p = os.path.join(d0, f)
++        if re.fullmatch(r"[0-9]{8}[.]parquet", f) and os.path.getmtime(p) >= t0_epoch - 1:
++            try:
++                if num_rows(p) == 0:
++                    out.append(f[:8])
++            except Exception:
++                pass
++    return out
++
++
+ # ---------------- .ok / 钉 sha（Arch 清单 C 组 10–12、第 15 项） ----------------
+ def ok_known_keys():
+     return set(OK_KEYS_REQUIRED) | {k % D if "%s" in k else k for k in OK_KEYS_OPTIONAL_FMT} | {"source_relay_only"}
+@@ -704,9 +790,15 @@
+     if "source_relay_only" in kv and kv["source_relay_only"] not in ("true", "false"):
+         return kv, "source_relay_only 只能是 true / false"
+     CFG["source_relay"] = kv.get("source_relay_only") == "true"  # Arch 12:38：默认关，签发时决定
++    for k_ in ("allow_relay_partial_%s" % D, "allow_hsgt_source_empty_warn_%s" % D):
++        if k_ in kv and kv[k_] not in ("true", "false"):
++            return kv, "%s 只能是 true / false" % k_
++    CFG["relay_partial"] = kv.get("allow_relay_partial_%s" % D) == "true"
++    CFG["hsgt_empty_warn"] = kv.get("allow_hsgt_source_empty_warn_%s" % D) == "true"
+     if A.profile == "relaxed" and not truthy(kv.get("allow_profile_relaxed_%s" % D)):
+         return kv, "relaxed 档需要 .ok allow_profile_relaxed_%s=true" % D
+-    R["checks"]["ok"].update(expires_et=kv["expires_et"], issued_at=kv["issued_at"], call_b_budget_min=bud, source_relay_only=CFG["source_relay"])
++    R["checks"]["ok"].update(expires_et=kv["expires_et"], issued_at=kv["issued_at"], call_b_budget_min=bud, source_relay_only=CFG["source_relay"],
++                            allow_relay_partial=CFG["relay_partial"], allow_hsgt_source_empty_warn=CFG["hsgt_empty_warn"])
+     return kv, None
+ 
+ 
+@@ -984,7 +1076,7 @@
+             out.append(dict(path=p, done=False, why="跨盘或目标已存在，未动")); continue
+         s0 = sha256(p); os.rename(p, dst); fsync_dir(os.path.dirname(p)); s1 = sha256(dst)
+         out.append(dict(path=p, to=dst, sha_before=s0, sha_after=s1, done=s0 == s1 and not os.path.exists(p)))
+-        ev("QUARANTINE %s → %s" % (p, dst))
++        ev("QUARANTINE %s → %s" % (p, dst)); alert("P1", "不合格原始文件已隔离 %s → %s" % (p, dst))
+     return out
+ 
+ 
+@@ -1000,23 +1092,34 @@
+ def write_marker(ok):
+     status = "OK" if ok else "FAILED"
+     raw = R["checks"].get("raw_final") or {}
+-    steps = {}
++    steps = []
+     for api in ALL_APIS:
+         r = raw.get(api) or {}
+-        steps[api] = dict(path=r.get("path", os.path.join(RAW, api, "%s.parquet" % D)), exists=r.get("exists"), rows=r.get("rows"),
+-                          sha256=r.get("sha256"), date_range=r.get("date_range"))  # 最终原位文件的实测值；未测则为 null
++        steps.append(dict(step=api, kind="raw_file", path=r.get("path", os.path.join(RAW, api, "%s.parquet" % D)), exists=r.get("exists"), rows=r.get("rows"),
++                          sha256=r.get("sha256"), date_range=r.get("date_range")))  # 最终原位文件的实测值；未测则为 null
+     try:
+-        ci, _ = cal_info(TRADE_CAL); steps["trade_cal"] = ci
++        ci, _ = cal_info(TRADE_CAL); steps.append(dict(ci, step="trade_cal", kind="calendar"))
+     except Exception as e:
+-        steps["trade_cal"] = dict(path=TRADE_CAL, error=repr(e)[:200])
++        steps.append(dict(step="trade_cal", kind="calendar", path=TRADE_CAL, error=repr(e)[:200]))
+     dus = R["checks"].get("daily_update_status") or {}
+     for t in REQUIRED_TABLES:
+         v = (dus.get("tables") or {}).get(t) or {}
+-        steps["status_" + t] = dict(path=v.get("path"), rows=v.get("rows"), last_date=v.get("last_date"), sha256=v.get("sha256"))
++        steps.append(dict(step="status_" + t, kind="required_table", path=v.get("path"), rows=v.get("rows"), last_date=v.get("last_date"), sha256=v.get("sha256")))
++    wd = CFG.get("warn_detail") or {}
+     for k, v in (R["checks"].get("summary_steps") or {}).items():
+-        steps.setdefault("callB_" + k, dict(status=v.get("status"), sec=v.get("sec")))
++        if k in RELAY_ONLY and k in wd:  # 降级步骤：status=WARN；只有这里允许出现 skipped（F4）
++            e_ = dict(step=k, kind="call_b_step", status="WARN", sec=v.get("sec"), warn_reason=wd[k]["reason"], nightly_status=wd[k].get("nightly_status"))
++            if wd[k].get("skipped"):
++                e_["skipped"] = wd[k]["skipped"]
++            if wd[k].get("empty_days"):
++                e_["source_empty_days"] = wd[k]["empty_days"]
++            steps.append(e_)
++        else:
++            steps.append(dict(step=k, kind="call_b_step", status=v.get("status"), sec=v.get("sec")))
+     m = dict(schema="quantlab.v2.nightly_marker.v1", status=status, writer="driver", date=D, profile=A.profile,
+-             reason_codes=R["reason_codes"], invocations=R["invocations"], prior_attempts=R["prior_attempts"], steps=steps,
++             reason_codes=R["reason_codes"], reason_code_counts=R["reason_code_counts"], warnings=[dict(step=w_["step"], date=w_["date"], actual_rows=int(w_["actual_rows"]), reason=w_["reason"]) for w_ in R["warnings"]],
++             ok_flags={"allow_relay_partial_%s" % D: bool(CFG.get("relay_partial")), "allow_hsgt_source_empty_warn_%s" % D: bool(CFG.get("hsgt_empty_warn"))},
++             invocations=R["invocations"], prior_attempts=R["prior_attempts"], steps=steps,
+              trade_cal_sha256=sha256(TRADE_CAL), trade_cal_pin=PIN,
+              daily_update_status=dict(status=dus.get("status"), target_trade_date=dus.get("target_trade_date"),
+                                       finished_at=dus.get("finished_at"), sha256=dus.get("sha256")),
+@@ -1025,13 +1128,13 @@
+              fail_reasons=R["fail_reasons"], alerts=R["alerts"], driver_sha256=R["checks"].get("driver_sha256"),
+              ok_sha256=(R["checks"].get("ok") or {}).get("sha256"), superseded_failed_marker=R.get("supersede"), receipt=R.get("receipt"),
+              live=False, promotion_approved=False, written_at_et=ts())
+-    txt = json.dumps(m, ensure_ascii=False, indent=1)
+-    if "skipped" in txt.lower():  # Eng：marker 全文不得出现 skipped
+-        txt = re.sub("(?i)skipped", "not_run", txt)
++    if skipped_outside_allowed(m):  # Eng 13:24 契约 F4：skipped 只能出现在 cyq/tier3/hsgt 且 status=WARN 的 steps[] 项与 warnings[].reason
+         if ok:
+             m["status"] = "FAILED"; status = "FAILED"
+-            R["fail_reasons"].append("marker 文本出现 skipped，降为 FAILED")
+-            txt = re.sub("(?i)skipped", "not_run", json.dumps(m, ensure_ascii=False, indent=1))
++            R["fail_reasons"].append("marker 白名单之外出现 skipped，降为 FAILED")
++            m["fail_reasons"] = R["fail_reasons"]
++        m = scrub_skipped(m)
++    txt = json.dumps(m, ensure_ascii=False, indent=1)
+     os.makedirs(MARK_DIR, exist_ok=True)
+     path = os.path.join(MARK_DIR, "nightly_%s.%s.json" % (D, "DONE" if status == "OK" else "FAILED"))
+     write_new(path, txt)  # 每次运行只写这一个 marker；已存在即 FileExistsError
+@@ -1040,6 +1143,33 @@
+     return status
+ 
+ 
++def _allowed_step(x):
++    return isinstance(x, dict) and x.get("step") in RELAY_ONLY and x.get("status") == "WARN"
++
++
++def skipped_outside_allowed(m):
++    """F4：去掉白名单 WARN 步骤项与 warnings[].reason 后，全文（键与值，不分大小写）不得再含 skipped。"""
++    t = dict(m)
++    t["steps"] = [x for x in m.get("steps", []) if not _allowed_step(x)]
++    t["warnings"] = [dict(w_, reason=None) for w_ in m.get("warnings", [])]
++    return "skipped" in json.dumps(t, ensure_ascii=False).lower()
++
++
++def scrub_skipped(m):
++    """白名单之外的 skipped 一律改写为 not_run（键与值）；白名单项与 warnings 原样保留。"""
++    def sc(o):
++        if isinstance(o, dict):
++            return dict((re.sub("(?i)skipped", "not_run", k) if isinstance(k, str) else k, sc(v)) for k, v in o.items())
++        if isinstance(o, list):
++            return [sc(v) for v in o]
++        return re.sub("(?i)skipped", "not_run", o) if isinstance(o, str) else o
++    keep_w = m.get("warnings", [])
++    out = sc(dict((k, v) for k, v in m.items() if k not in ("steps", "warnings")))
++    out["steps"] = [x if _allowed_step(x) else sc(x) for x in m.get("steps", [])]
++    out["warnings"] = keep_w
++    return out
++
++
+ def marker_precheck():
+     """只读。DONE 已存在 → 拒绝；FAILED 已存在 → 只有 .ok supersede_failed_marker_sha256 等于其全长 sha 才可继续（稍后移走）。"""
+     done, failed = marker_paths()
+@@ -1103,6 +1233,19 @@
+         except Exception as e:
+             R["checks"]["pgrep_post_error"] = repr(e)[:200]
+     R["exit"] = code if (code != 0 or ok) else 1
++    if R["warnings"]:
++        try:
++            os.makedirs(os.path.dirname(GAP_LIST), exist_ok=True)
++            fd = os.open(GAP_LIST, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
++            try:
++                for w_ in R["warnings"]:
++                    os.write(fd, (json.dumps(dict(w_, run=STAMP, recorded_et=ts(), source="run_nightly_v1"), ensure_ascii=False) + "\n").encode("utf-8"))
++                os.fsync(fd)
++            finally:
++                os.close(fd)
++            R["gap_list"] = dict(path=GAP_LIST, appended=len(R["warnings"]))
++        except Exception as e:
++            R["gap_list"] = dict(path=GAP_LIST, error=repr(e)[:200])
+     R["finished_et"] = ts()
+     rp = os.path.join(HERE, "driver_receipt_%s.json" % STAMP)
+     try:
+@@ -1232,11 +1375,11 @@
+         cal_ok, changed = compare_restore("a%d" % k, rec)
+         rec.update(calendar_restored=cal_ok, calendar_changed_by_call=changed)
+         if not cal_ok:
+-            R["prior_attempts"].append(rec); fail("P0 日历未恢复（a%d）" % k); R["reason_codes"].append("P0"); finish(4, False)
++            R["prior_attempts"].append(rec); fail("P0 日历未恢复（a%d）" % k); add_code("P0"); finish(4, False)
+         bad, tmps, raw = raw_check()
+         sfs, _ = check_summary(["daily_pull"], rec, "callA_a%d" % k)
+         rec.update(raw=raw, bad=bad, tmp_left=tmps, summary_fails=sfs)
+-        dirty = bool(rec["residual"] or rec["seen_alive_after"] or rec["wait_timeout"])
++        dirty = bool(rec["residual"] or rec["seen_alive_after"] or rec["wait_timeout"] or rec["orphans_logged_only"])
+         if rec["rc"] == 0 and not rec["stopped"] and not bad and not tmps and not sfs and not dirty:
+             final = rec; R["checks"]["raw_final"] = raw; break
+         code = rec["reason_code"] or "ATTEMPT_FAILED"
+@@ -1299,11 +1442,11 @@
+             if changed_b:
+                 fail("call B 期间 trade_cal 被改动（恢复前 sha 不是 PIN）")
+             if not ok_b:
+-                fail("P0 call B 后日历未恢复"); R["reason_codes"].append("P0"); finish(4, False)
++                fail("P0 call B 后日历未恢复"); add_code("P0"); finish(4, False)
+         else:
+             why = "time" if not g_time else ("blackout" if not g_black else ("trade_cal sha" if not g_sha else qe))
+             R["invocations"].append(dict(name="call_b", cmd=b_cmd, rc=None, not_run_reason=why))
+-            R["reason_codes"].append("CALLB_GATE"); fail("call B 未起：%s" % why)
++            add_code("CALLB_GATE"); fail("call B 未起：%s" % why)
+     else:
+         R["invocations"].append(dict(name="call_b", cmd=b_cmd, rc=None, not_run_reason="daily_pull 未成功或被停"))
+         fail("call B 未起：daily_pull 未成功或被停")
+@@ -1318,7 +1461,11 @@
+     if crc != 0 or "META_ONLY_FAIL" in cout:
+         fail("快照 compare rc=%s" % crc)
+     if sha256(TRADE_CAL) != PIN:
+-        alert("P0", "收尾时 trade_cal 不是 PIN"); fail("P0 收尾 trade_cal"); R["reason_codes"].append("P0"); finish(4, False)
++        alert("P0", "收尾时 trade_cal 不是 PIN：先走恢复链再判 FAILED（Arch P2-1）"); fail("收尾时 trade_cal 不是 PIN"); add_code("FINAL_CAL_MISMATCH")
++        ok_f, _ = compare_restore("final")
++        if not ok_f:
++            fail("P0 收尾恢复后日历仍不是 PIN"); add_code("P0"); finish(4, False)
++        finish(1, False)
+     ok = (not R["fail_reasons"]) and len(R["invocations"]) == 2 and all(i.get("rc") == 0 for i in R["invocations"]) \
+         and all(("--date %s" % D) in i["cmd"] for i in R["invocations"])
+     finish(0 if ok else 1, ok)
+@@ -1391,7 +1538,7 @@
+     except BaseException as e:  # 统一收尾：停活动进程树 → 已备份则走恢复链并双核 → 回执 → 唯一 FAILED → 退出 11
+         ignore_signals()
+         code_r = "SIGNAL" if isinstance(e, DriverSignal) else ("TOOL_TIMEOUT" if isinstance(e, ToolTimeout) else "EXCEPTION")
+-        R["reason_codes"].append(code_r)
++        add_code(code_r)
+         R["uncaught"] = dict(type=type(e).__name__, reason_code=code_r, msg=str(e)[:400], tb=traceback.format_exc()[-3000:])
+         ev("UNCAUGHT %s: %s" % (type(e).__name__, e))
+         seen = []

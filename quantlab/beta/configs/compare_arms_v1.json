@@ -1,0 +1,114 @@
+{
+  "schema": "beta_compare_arms_v1",
+  "promotion_approved": false,
+  "main_beta": "sh.510300",
+  "max_etf_raised": false,
+  "mandate_beta_changed": false,
+  "smallcap_satellite_default": false,
+  "bond_risk_parity_overlay_default": false,
+  "notes": [
+    "Research menu only — satellite is not mainline",
+    "Do not invent OHLCV or performance claims",
+    "Wide-basket/M2 are raise-CAGR candidates (ESSENCE rank-1); tiny sleeve if MDD≈-30%"
+  ],
+  "arms": [
+    {
+      "id": "core_510300",
+      "kind": "etf_core",
+      "code": "sh.510300",
+      "role": "main_beta_sleeve",
+      "enabled_by_default": true,
+      "loader": "load_etf_510300",
+      "raise_cagr_candidate": false,
+      "suggested_contribution_weight": null,
+      "note": "Always primary; vol/β/DD scaled"
+    },
+    {
+      "id": "etf_proxy_512100",
+      "kind": "etf_satellite",
+      "code": "sh512100",
+      "asset": "csi1000_etf",
+      "role": "smallcap_style_satellite",
+      "enabled_by_default": false,
+      "requires_flag": "smallcap_satellite",
+      "data_path": "data/etf/universe/equity_etf_daily.parquet",
+      "raise_cagr_candidate": true,
+      "suggested_max_frac_of_etf_budget": 0.25,
+      "note": "ETF proxy for smallcap style; side-by-side with 510500"
+    },
+    {
+      "id": "etf_proxy_510500",
+      "kind": "etf_satellite",
+      "code": "sh510500",
+      "asset": "csi500_etf",
+      "role": "smallcap_style_satellite",
+      "enabled_by_default": false,
+      "requires_flag": "smallcap_satellite",
+      "compare_with": "etf_proxy_512100",
+      "data_path": "data/etf/universe/equity_etf_daily.parquet",
+      "raise_cagr_candidate": true,
+      "suggested_max_frac_of_etf_budget": 0.25,
+      "note": "CSI500 ETF proxy — Strategy compare arm vs 512100"
+    },
+    {
+      "id": "wide_basket_50",
+      "kind": "stock_basket",
+      "role": "raise_cagr_satellite",
+      "enabled_by_default": false,
+      "requires_flag": "smallcap_satellite",
+      "raise_cagr_candidate": true,
+      "essence_rank": 1,
+      "holdings": 50,
+      "pool": {
+        "module": "quantlab.smallcap.universe",
+        "pool_on": {"kind": "adv", "band": "absolute", "rank_start": 3001, "rank_end": 5000},
+        "select": {"holdings": 50, "buffer": 100, "industry_slots": 15, "gross": 0.90}
+      },
+      "suggested_max_sleeve_weight": 0.05,
+      "mdd_ledger_note": "continuous wide-basket ledger ~MDD -21% to -22%; tiny sleeve only",
+      "note": "True 50-name ADV-tail basket — wire via pool_on/select; no fabricated returns"
+    },
+    {
+      "id": "m2_smallcap_control",
+      "kind": "stock_basket",
+      "role": "raise_cagr_satellite",
+      "enabled_by_default": false,
+      "requires_flag": "smallcap_satellite",
+      "raise_cagr_candidate": true,
+      "essence_rank": 1,
+      "holdings": 50,
+      "pool": {
+        "module": "quantlab.smallcap.universe",
+        "pool_on": {"kind": "adv", "band": "relative", "exclude_st": true, "min_history": 252},
+        "select": {"holdings": 50, "buffer": 100, "industry_slots": 15, "gross": 0.90},
+        "financial_tier": true,
+        "prereg": "docs/prereg/P1_M2_SMALLCAP_CONTROL.md"
+      },
+      "suggested_max_sleeve_weight": 0.05,
+      "mdd_ledger_note": "M2 ledger MDD≈-29.7% → only tiny satellite weight",
+      "note": "M2 control basket (R-pool bottom 40% ADV + financial tier + 50 EW)"
+    },
+    {
+      "id": "bond_511260_risk_parity",
+      "kind": "risk_overlay",
+      "code": "sh511260",
+      "role": "cut_dd_overlay",
+      "enabled_by_default": false,
+      "requires_flag": "bond_risk_parity_overlay",
+      "requires_satellite_on": true,
+      "raise_cagr_candidate": false,
+      "data_path_candidates": [
+        "data/smallcap_assets/etf_bars.parquet",
+        "data/etf/universe/equity_etf_daily.parquet"
+      ],
+      "suggested_overlay": "risk_parity_vs_satellite_leg",
+      "note": "T3 M2+511260 research overlay — default OFF; cut DD when satellite ON"
+    }
+  ],
+  "b6_strategy_wiring": {
+    "field": "residual_weight_to_hit_target_beta",
+    "status": "beta_delivered",
+    "strategy_consume_after": "P0",
+    "note": "Strategy owns residual sizing after P0 cost path; Beta does not raise max_etf"
+  }
+}

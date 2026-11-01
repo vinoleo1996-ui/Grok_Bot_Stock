@@ -1,0 +1,241 @@
+"""Extend hsgt_top10 only: 20240403 → latest. Top10-only rebuild; never touch hk_hold/margin."""
+from __future__ import annotations
+import json, os, sys, time, pathlib
+ROOT = pathlib.Path("/workspace/QuantLab")
+sys.path.insert(0, str(ROOT))
+import pandas as pd
+from quantlab.data_sources.tushare_proxy import relay as _relay_raw, _to_df
+import concurrent.futures as _cf
+HTTP_TIMEOUT = int(os.environ.get("TOP10_HTTP_TIMEOUT", "60"))
+os.environ.setdefault("TSPRO_RELAY_TIMEOUT", str(HTTP_TIMEOUT))  # per-request connect/read timeout
+_POOL = _cf.ThreadPoolExecutor(max_workers=4)
+def relay(api, **p):
+    """wall-clock guard: _get retries up to 5x, so cap total at HTTP_TIMEOUT*2 per call."""
+    fut = _POOL.submit(_relay_raw, api, **p)
+    try:
+        return fut.result(timeout=HTTP_TIMEOUT * 2)
+    except _cf.TimeoutError:
+        raise RuntimeError(f"wallclock timeout {HTTP_TIMEOUT*2}s {api} {p}")
+
+RAW = ROOT / "data/v2/tushare_raw"
+OUT = ROOT / "data/v2/northbound/hsgt_top10_daily_2018plus.parquet"
+SUMMARY = ROOT / "data/v2/northbound/northbound_summary.json"
+LOG = ROOT / "logs" / "event_hsgt_top10_extend.log"
+PROG = ROOT / "output/d1/hsgt_top10_extend_progress.json"
+SLEEP = float(os.environ.get("TOP10_SLEEP", "0.5"))
+REBUILD_EVERY = int(os.environ.get("REBUILD_EVERY", "15"))
+CHUNK = int(os.environ.get("CHUNK_DAYS", "40"))  # pull at most N missing days per invoke
+START = os.environ.get("TOP10_START", "20240403")
+END = os.environ.get("TOP10_END", "")  # empty → latest open day in cal
+
+
+def trade_days(a, b):
+    c = pd.read_parquet(RAW / "trade_cal.parquet")
+    c = c[c.is_open.astype(int) == 1]
+    return sorted(d for d in c.cal_date.astype(str) if a <= d <= b)
+
+
+def latest_open():
+    c = pd.read_parquet(RAW / "trade_cal.parquet")
+    c = c[c.is_open.astype(int) == 1]
+    today = pd.Timestamp.now(tz="Asia/Shanghai").strftime("%Y%m%d")
+    days = sorted(d for d in c.cal_date.astype(str) if d <= today)
+    return days[-1] if days else today
+
+
+def needs(d, min_ok=700):
+    f = RAW / "hsgt_top10" / f"{d}.parquet"
+    return (not f.exists()) or f.stat().st_size < min_ok
+
+
+def save_day(d, df):
+    f = RAW / "hsgt_top10" / f"{d}.parquet"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    x = df.replace("", None)
+    for c in x.columns:
+        if x[c].dtype == object and c not in ("ts_code", "trade_date", "name", "code", "exchange", "symbol"):
+            n = pd.to_numeric(x[c], errors="coerce")
+            if n.notna().sum() >= max(1, x[c].notna().sum()):
+                x[c] = n
+    tmp = f.with_suffix(".tmp.parquet")
+    x.to_parquet(tmp, index=False)
+    os.replace(tmp, f)
+    return len(x)
+
+
+MAX_ATTEMPTS = int(os.environ.get("TOP10_MAX_ATTEMPTS", "3"))
+MAX_CONSEC_FAIL = int(os.environ.get("TOP10_MAX_CONSEC_FAIL", "3"))
+
+
+def pull(d):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from relay_health import relay_up
+    if not relay_up():
+        raise RuntimeError("RELAY_DOWN fast-fail (pcd.mobcvb.cn TLS)")
+    out, off = [], 0
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            while True:
+                s, raw = relay("hsgt_top10", trade_date=d, limit=5000, offset=off)
+                if s == 429 or (isinstance(raw, dict) and (
+                    "pool" in str(raw.get("error") or "").lower()
+                    or "exhausted" in str(raw.get("error") or "").lower()
+                    or s in (503, 504))):
+                    raise RuntimeError(f"rate/pool {s} {raw}")
+                if s == 403:
+                    raise RuntimeError(f"forbidden {s} {raw}")
+                df = _to_df(raw) if isinstance(raw, dict) else pd.DataFrame()
+                out.append(df)
+                if len(df) < 5000:
+                    break
+                off += 5000
+                time.sleep(0.1)
+            break
+        except Exception as e:
+            wait = min(30, 5 * (2 ** attempt))
+            print(f"  retry {d} attempt={attempt} wait={wait}s err={str(e)[:140]}", flush=True)
+            time.sleep(wait)
+            out, off = [], 0
+    else:
+        raise RuntimeError(f"exhausted retries {d}")
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+
+def save_prog(patch):
+    cur = {}
+    if PROG.exists():
+        try:
+            cur = json.load(open(PROG))
+        except Exception:
+            cur = {}
+    cur.update(patch)
+    cur["updated"] = pd.Timestamp.now().isoformat()
+    tmp = PROG.with_suffix(".tmp")
+    json.dump(cur, open(tmp, "w"), ensure_ascii=False, indent=2, default=str)
+    os.replace(tmp, PROG)
+
+
+def rebuild_top10_only():
+    """Load all raw day files → write auth parquet + patch summary. No hk_hold/moneyflow rewrite."""
+    from scripts.acquire.event_flow_build import load_glob
+    top = load_glob("hsgt_top10")
+    if top is None or len(top) == 0:
+        raise RuntimeError("no raw hsgt_top10 rows")
+    # drop accidental empty-schema remnants
+    top = top.dropna(how="all")
+    top["trade_date"] = top["trade_date"].astype(str).str.replace("-", "").str[:8]
+    top["available_at"] = pd.to_datetime(top["trade_date"], format="%Y%m%d") + pd.Timedelta(hours=18)
+    top["available_at_tz"] = "Asia/Shanghai"
+    top["promotion_approved"] = False
+    top = top.drop_duplicates(["trade_date", "ts_code", "market_type", "rank"], keep="last")
+    top = top.sort_values(["trade_date", "market_type", "rank"]).reset_index(drop=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    tmp = OUT.with_suffix(".tmp.parquet")
+    top.to_parquet(tmp, index=False)
+    os.replace(tmp, OUT)
+    meta = {
+        "rows": int(len(top)),
+        "days": int(top.trade_date.nunique()),
+        "codes": int(top.ts_code.nunique()),
+        "range": [str(top.trade_date.min()), str(top.trade_date.max())],
+        "path": str(OUT),
+        "promotion_approved": False,
+        "max_available_at": str(top.available_at.max()),
+    }
+    # patch summary only for hsgt_top10
+    summary = {}
+    if SUMMARY.exists():
+        try:
+            summary = json.load(open(SUMMARY))
+        except Exception:
+            summary = {}
+    summary["hsgt_top10"] = {k: v for k, v in meta.items() if k != "max_available_at"}
+    tmp_s = SUMMARY.with_suffix(".tmp.json")
+    json.dump(summary, open(tmp_s, "w"), ensure_ascii=False, indent=2, default=str)
+    os.replace(tmp_s, SUMMARY)
+    print(f"REBUILD top10 days={meta['days']} range={meta['range']} rows={meta['rows']} max_avail={meta['max_available_at']}", flush=True)
+    save_prog({"last_rebuild": meta})
+    return meta
+
+
+def main():
+    end = END or latest_open()
+    open(LOG, "a").write(f"\n==== START {pd.Timestamp.now()} {START}→{end} chunk={CHUNK} ====\n")
+    # always rebuild from whatever raw we have first
+    meta = rebuild_top10_only()
+    days = trade_days(START, end)
+    todo = [d for d in days if needs(d)]
+    batch = todo[:CHUNK]
+    print(f"EXTEND {START}→{end} missing={len(todo)}/{len(days)} this_run={len(batch)} sleep={SLEEP}", flush=True)
+    save_prog({
+        "status": "running",
+        "window": [START, end],
+        "missing_total": len(todo),
+        "batch": len(batch),
+        "done": 0,
+        "fail": 0,
+        "auth_before": meta,
+    })
+    done = fail = consec = 0
+    aborted = None
+    for i, d in enumerate(batch, 1):
+        if consec >= MAX_CONSEC_FAIL:
+            aborted = f"{consec} consecutive fails, skip rest ({len(batch)-i+1} days) -> partial"
+            print("ABORT " + aborted, flush=True)
+            break
+        try:
+            f = RAW / "hsgt_top10" / f"{d}.parquet"
+            if f.exists() and f.stat().st_size < 700:
+                f.unlink()
+            df = pull(d)
+            n = save_day(d, df)
+            done += 1
+            consec = 0
+            if i % 5 == 0 or i == len(batch):
+                print(f"{time.strftime('%H:%M:%S')} top10 {i}/{len(batch)} fail={fail} last={d}:ok:{n}", flush=True)
+                save_prog({
+                    "status": "running",
+                    "window": [START, end],
+                    "missing_total": len(todo),
+                    "batch": len(batch),
+                    "done": done,
+                    "fail": fail,
+                    "last": d,
+                    "last_rows": n,
+                })
+            if i % REBUILD_EVERY == 0:
+                rebuild_top10_only()
+        except Exception as e:
+            fail += 1
+            consec += 1
+            print(f"FAIL {d} {str(e)[:180]}", flush=True)
+            save_prog({"status": "running", "done": done, "fail": fail, "last_err": str(e)[:200]})
+            if "RELAY_DOWN" not in str(e):
+                time.sleep(min(30, 10 * consec))
+        time.sleep(SLEEP)
+    meta = rebuild_top10_only()
+    remaining = len([d for d in trade_days(START, end) if needs(d)])
+    save_prog({
+        "status": "chunk_done" if remaining else "complete",
+        "done": done,
+        "fail": fail,
+        "remaining": remaining,
+        "auth": meta,
+    })
+    print(f"CHUNK DONE done={done} fail={fail} remaining={remaining} auth_max={meta['range'][1]}", flush=True)
+    if fail and not done and not aborted:
+        aborted = f"all {fail} days failed (relay down?) -> partial"
+    if aborted:
+        save_prog({"status": "partial_relay_down", "aborted": aborted, "remaining": remaining})
+        return 3  # partial: 中转不可用, 已跳过
+    # exit 0 if target met or no remaining; 2 if more work left
+    target_ok = meta["range"][1] >= "20250601"
+    if remaining == 0 and target_ok:
+        return 0
+    if fail and done == 0:
+        return 1
+    return 0 if target_ok and remaining == 0 else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

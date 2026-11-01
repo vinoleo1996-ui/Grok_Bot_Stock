@@ -1,0 +1,21 @@
+# AI 叶31 Amihud Impact Slow X2 RUNNING_ACK
+
+- ET: 2026-10-27 02:42:32 EDT
+- status: **RUNNING**
+- ET_TS: `20261027_024204`
+- pid: `3772744` alive=True nice=10
+- script: `research/leaf31_amihud_impact_slow_alpha_build.py` sha8 **`08f37fd2`** / 全长 `08f37fd2deb15f6a2a4e6bc7bc16e07d16fc50c70b807e0e1ae617627f98bde0`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF31_AMIHUD_IMPACT_SLOW_X2_HILIQ.ok` sha8 **`fdbaa512`** / 全长 `fdbaa512fa8da9e6b5256c30f397cd5a3d2bd2c1fbd1a5a295af873ea7271d81`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`11cfe000`** holder=`leaf31_AMIHUD_IMPACT_SLOW_X2`（do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF31_AMIHUD_IMPACT_SLOW_X2_OK_SIGNED_20261027_ZH.md` sha8 **`238cc7c2`**
+- 脚本审: `2271cb93` / COVER `e736a033` / CMD `37443b02` / DIFF `6c47e185` / RECEIPT `a3981844` / FROZEN `bcbec955`
+- out: `output/ai_factory/_leaf31_amihud/20261027_024204/`
+- log: `output/ai_factory/_leaf31_amihud/20261027_024204_logs/run_20261027_024204.log`
+- samp: `/tmp/quantlab_leaf31_amihud_20261027_024204`
+- approved_cmd: **exact**（含 `--allow-real-data --arch-ok-path`；**无** `--no-overlap-report`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf31_amihud_impact_slow_alpha_build.py --universe HILIQ --window x2 --x2-end 20261009 --allow-real-data --arch-ok-path output/ai_factory/ARCH_RUN_AUTH_LEAF31_AMIHUD_IMPACT_SLOW_X2_HILIQ.ok --out output/ai_factory/_leaf31_amihud/20261027_024204/`
+- prelaunch: QUIET MATCH；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈12.0Gi≥soft；dry-compile-only PASS（mechanism/W20/−rank/rss=1500/forbid∋aa25e989+7e239487+5af20222+5ae077fa；primary_load=rebal_day_lazy_bars）
+- rss_limit_mb: **1500 禁抬**；硬 Exit 94/95；PRIMARY=HILIQ 按日懒加载；peak_proof REQUIRED
+- VmRSS_kb≈844552 kB VmHWM_kb≈844552 kB
+- ≠X2 ACCEPT / ≠selfcheck / ≠Book-Smoke；live=false；禁触 A18；禁 RESTORED `aa25e989`/`7e239487`/`5af20222`/`5ae077fa`；`0087c928` 另队
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**

@@ -1,0 +1,36 @@
+SELFTEST_B start 2026-10-18T11:49:08-04:00 actual_dir /tmp/qd_v31_selftest_7mev0xy_ out_dir_prefix /tmp/qd_v31_selftest ok_keys ['allow_daily_pull', 'allow_delete', 'allow_force', 'allow_network', 'allow_real_data', 'allow_restore_cyq_202610_from_backup', 'allow_run_nightly_update', 'allow_selftest', 'allow_sw_write', 'allow_trade_cal_write', 'cmd', 'expires_et', 'issued_at', 'live', 'ok_id', 'ok_type', 'out_dir_prefix', 'precondition_no_probe_or_plan_r_run', 'precondition_pgrep', 'promotion', 'require_all_cases_pass', 'require_no_repo_pycache', 'require_orphans_run1_empty', 'scope', 'sha_runner', 'sha_selftest', 'sha_selftest_b', 'signed_by', 'signed_et', 'single_use', 'stop_order_expected']
+2026-10-18T11:49:08-04:00 RUN1 start npid=169532 cmd=/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq
+TREE_CONFIRMED npid=169532 child=169533(stat=S) grandchild=169534(stat=S)
+2026-10-18T11:49:09-04:00 STOP_TREE npid=169532 reason=RSS 采样和 30976 kB > 1
+2026-10-18T11:49:09-04:00 SIGNAL SIGSTOP pid=169532 ppid=169531 cmd='/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+2026-10-18T11:49:09-04:00 SIGNAL SIGTERM pid=169534 ppid=169533 cmd='/usr/bin/python3 /tmp/qd_v31_selftest_7mev0xy_/scripts/acquire/fake_grandchild.py'
+2026-10-18T11:49:09-04:00 SIGNAL skip pid=169533 已退出或 Z
+2026-10-18T11:49:09-04:00 SIGNAL SIGKILL pid=169532 ppid=169531 cmd='/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+2026-10-18T11:49:09-04:00 ORPHAN_SCAN run1 found=0
+2026-10-18T11:49:09-04:00 RUN1 end rc=-9 stopped=RSS 采样和 30976 kB > 1 orphans=0 rss_max_sum=30976
+PASS B1 子与孙在停树前已确认存活 {"t0": 1792338548.795488, "confirmed_at": 1792338549.2963235, "child": 169533, "grandchild": 169534, "timeout": false}
+PASS B2 stop_tree 记录顺序 SIGSTOP nightly → 孙 → 子 → SIGKILL nightly [('SIGSTOP', 169532, 'sent'), ('TERM_KILL', 169534, 'term_ok'), ('TERM_KILL', 169533, 'gone'), ('SIGKILL', 169532, 'sent')]
+FAIL B2 每步结果为 sent/term_ok/killed [('SIGSTOP', 169532, 'sent'), ('TERM_KILL', 169534, 'term_ok'), ('TERM_KILL', 169533, 'gone'), ('SIGKILL', 169532, 'sent')]
+FAIL B3 os.kill 实际顺序 STOP nightly → TERM 孙 → TERM 子 → KILL nightly [(169532, 19), (169534, 15), (169532, 9)]
+PASS B4 每个信号前都核了 cmdline 与 ppid [(169532, 19, True, True), (169534, 15, True, True), (169532, 9, True, True)]
+PASS B4 事件日志带 ppid 与 cmd 2026-10-18T11:49:09-04:00 SIGNAL SIGSTOP pid=169532 ppid=169531 cmd='/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+2026-10-18T11:49:09-04:00 SIGNAL SIGTERM pid=169534 ppid=169533 cmd='/usr/bin/python3 /tmp/qd_v31_selftest_7mev0xy_/scripts/acquire/fake_grandchild.py'
+2026-10-18T11:49:09-04:00 SIGNAL skip pid=169533 已退出或 Z
+2026-10-18T11:49:09-04:00 SIGNAL SIGKILL pid=169532 ppid=169531 cmd='/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+PASS B5 停树后未起下一步 
+PASS B6 替身进程全部消失（Z 视为退出） [(169532, None), (169533, None), (169534, None)]
+PASS B7 orphans_run1 为空 []
+PASS B8 rc 为 -9 且 wait 未超时 rc=-9 wait_timeout=False
+PASS P3-2 二次 open(x) 抛 FileExistsError /tmp/qd_v31_selftest_7mev0xy_/logs/nightly/backfill_20261018_run1.out
+2026-10-18T11:49:10-04:00 SIGNAL refuse pid=169547 cmdline/ppid 不符（'/usr/bin/python3 /tmp/qd_v31_selftest_7mev0xy_/other/fake_not_acquire.py' ppid=169531 期望 169531），不发信号
+PASS P3-B cmdline 不含 scripts/acquire/ → refused res='refused'
+PASS P3-B 未发任何信号 kills 3→3
+PASS P3-B 拒绝已写日志 
+PASS P3-B 进程仍存活 stat=R
+PASS P3-B 自测清理后已退出 rc=-15
+PASS G1 所有被发信号的 PID 都在 SPAWNED 中 [169532, 169533, 169534, 169547]
+PASS G2 守卫拒绝非本自测 PID pid=1 未发信号
+STOP_TREE_RECORDS [{"reason": "RSS 采样和 30976 kB > 1", "at": "2026-10-18T11:49:09-04:00", "npid": 169532, "steps": [["SIGSTOP", 169532, "sent"], ["TERM_KILL", 169534, "term_ok"], ["TERM_KILL", 169533, "gone"], ["SIGKILL", 169532, "sent"]]}]
+ORPHANS_RUN1 []
+KILL_CALLS [[169532, 19], [169534, 15], [169532, 9]]
+SELFTEST_B end pass=16 fail=2 actual_dir=/tmp/qd_v31_selftest_7mev0xy_

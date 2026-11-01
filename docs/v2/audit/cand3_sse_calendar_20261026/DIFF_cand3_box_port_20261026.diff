@@ -1,0 +1,141 @@
+# Cand3 box port DIFF — side draft only; DO NOT apply to prod without Arch re-review
+# Generated against box HEAD da9fde6 pins; live=false; no enable
+#
+--- a/quantlab/portfolio/trade_calendar.py	2026-10-25 01:16:09.748061278 -0400
++++ b/quantlab/portfolio/trade_calendar.py
+@@ -16,13 +16,28 @@
+ CUTOFF_ET = (6, 30)
+ CUTOFF_HOUR_ET = CUTOFF_ET[0]   # legacy alias
+ 
++# Test-only override (None = read SRC parquet). Never used by paper path in production.
++_OPEN_DAYS_OVERRIDE = None
++
+ 
+ @lru_cache(1)
+ def open_days():
++    if _OPEN_DAYS_OVERRIDE is not None:
++        return _OPEN_DAYS_OVERRIDE
+     t = pd.read_parquet(SRC); t = t[(t.exchange == "SSE") & (t.is_open.astype(int) == 1)]
+     return pd.DatetimeIndex(sorted(pd.to_datetime(t.cal_date.astype(str)).unique()))
+ 
+ 
++def _set_open_days_for_test(idx):
++    """Test hook: inject a DatetimeIndex of open days; pass None to clear. Not for production."""
++    global _OPEN_DAYS_OVERRIDE
++    open_days.cache_clear()
++    if idx is None:
++        _OPEN_DAYS_OVERRIDE = None
++    else:
++        _OPEN_DAYS_OVERRIDE = pd.DatetimeIndex(pd.to_datetime(idx)).normalize().unique().sort_values()
++
++
+ def cross_check():
+     d = pd.DatetimeIndex(pd.to_datetime(pd.read_parquet(DATA_CAL).session)).normalize()
+     o = open_days(); o = o[(o >= d.min()) & (o <= d.max())]
+@@ -74,3 +89,25 @@
+ 
+ def first_trading_day_on_or_after(d):
+     o = open_days(); return o[o >= pd.Timestamp(d)][0]
++
++
++def advance_open_days(d, n: int = 0):
++    """Return the trading day that is n open days after first_trading_day_on_or_after(d).
++
++    n=0 → first open day on or after d; n=1 → next open day after that, etc.
++    Uses SSE open_days (trade_cal.parquet); never weekday/BDay.
++    """
++    o = open_days()
++    o = o[o >= pd.Timestamp(d).normalize()]
++    if len(o) <= n:
++        raise IndexError(f"not enough open days on/after {d} for n={n} (have {len(o)})")
++    return o[n]
++
++
++def open_day_range(start, periods: int) -> pd.DatetimeIndex:
++    """First `periods` SSE open days on or after start. Never pd.bdate_range."""
++    o = open_days()
++    o = o[o >= pd.Timestamp(start).normalize()]
++    if len(o) < periods:
++        raise ValueError(f"not enough open days on/after {start} (need {periods}, have {len(o)})")
++    return o[:periods]
+
+--- a/quantlab/agents/trading_loop/settle.py	2026-10-25 01:14:49.952070912 -0400
++++ b/quantlab/agents/trading_loop/settle.py
+@@ -17,7 +17,7 @@
+ 
+ import pandas as pd
+ 
+-from .schemas import force_research_flags
++from quantlab.agents.trading_loop.schemas import force_research_flags
+ 
+ PROMOTION_APPROVED = False
+ 
+@@ -76,7 +76,9 @@
+             }
+         # Deterministic mock path — labeled clearly for research demos.
+         source = "mock"
+-        dates = pd.bdate_range(session_ts, periods=horizon_trading_days + 2)
++        # Cand3 port: SSE open days only (never pd.bdate_range; CN holidays matter).
++        from quantlab.portfolio.trade_calendar import open_day_range
++        dates = open_day_range(session_ts, horizon_trading_days + 2)
+         # instrument drifts +0.2%/day, bench +0.1%/day
+         inst = pd.Series(
+             [100 * (1.002**i) for i in range(len(dates))], index=dates, dtype=float
+
+--- a/quantlab/portfolio/research_loop.py	2026-10-25 01:16:02.080072530 -0400
++++ b/quantlab/portfolio/research_loop.py
+@@ -6,6 +6,7 @@
+ """
+ from __future__ import annotations
+ import glob, json, os, re, subprocess, sys
++import warnings
+ from datetime import datetime
+ from pathlib import Path
+ from zoneinfo import ZoneInfo
+@@ -702,7 +703,17 @@
+ 
+ 
+ def _legacy_freshness():
+-    """Latest session in the inputs the paper tracks need vs the expected latest weekday session (ET; holidays not modeled)."""
++    """DEPRECATED — weekday-only freshness; CN holidays not modeled.
++
++    Do NOT use as the default freshness gate. Paper path uses data_freshness()
++    (SSE trade_cal + CUTOFF_ET). Kept only for archival/compare; emits DeprecationWarning.
++    """
++    warnings.warn(
++        "_legacy_freshness is deprecated: weekday calendar; CN holidays not modeled. "
++        "Use data_freshness() (SSE trade_cal) instead.",
++        DeprecationWarning,
++        stacklevel=2,
++    )
+     def mx(p, col):
+         try: return pd.to_datetime(pd.read_parquet(ROOT / p, columns=[col])[col].astype(str).str[:10]).max()
+         except Exception as e: return None
+
+--- a/quantlab/data/sources.py	2026-10-25 01:10:09.568095565 -0400
++++ b/quantlab/data/sources.py
+@@ -175,9 +175,21 @@
+         cached = self.store.load("a", key)
+         expected = getattr(self, "_expected_session", None)
+         if expected is None:
+-            now = pd.Timestamp.now(tz="Asia/Shanghai").tz_localize(None)
+-            expected = now.normalize() if now.hour >= 18 else now.normalize() - pd.offsets.BDay()
+-            if expected.weekday() >= 5: expected = expected - pd.offsets.BDay()
++            # Cand3 port: prefer SSE expected_session; no silent BDay/weekday fallback.
++            try:
++                from quantlab.portfolio.trade_calendar import expected_session as _es
++                expected = _es()
++            except Exception:
++                if cached is not None and len(cached) and not self.cfg.reset_cache and not getattr(self, "_refresh", False):
++                    out = cached.copy()
++                    out.attrs["freshness"] = "calendar_required"
++                    self._used_source[symbol] = out.attrs.get("source", "cache")
++                    return out
++                empty = pd.DataFrame()
++                empty.attrs["freshness"] = "calendar_required"
++                empty.attrs["source"] = "calendar_required"
++                self._used_source[symbol] = "calendar_required"
++                return empty
+         expected = pd.Timestamp(expected)
+         if cached is not None and len(cached) and cached.index[-1] >= expected and not self.cfg.reset_cache and not getattr(self, "_refresh", False):
+             self._used_source[symbol] = cached.attrs.get("source", "cache")

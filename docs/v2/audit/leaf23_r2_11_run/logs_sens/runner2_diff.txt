@@ -1,0 +1,20 @@
+4c4
+< LOG=R+"/docs/v2/audit/leaf23_r2_11_run/logs_rerun2"; AIF=R+"/output/ai_factory"
+---
+> LOG=R+"/docs/v2/audit/leaf23_r2_11_run/logs_sens"; AIF=R+"/output/ai_factory"
+115a116
+>     LIM=1484800 if sid in ("A06","A12","A18","A24") else 1331200
+122c123
+<         p=subprocess.Popen(cmd,shell=True,stdout=f,stderr=subprocess.STDOUT)
+---
+>         p=subprocess.Popen(cmd,shell=True,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
+130,131c131,132
+<             if VIOL:
+<                 extra+=[str(VIOL)]; p.terminate(); p.wait(); break
+---
+>             if VIOL or hwm>LIM:
+>                 extra+=[str(VIOL)] if VIOL else ["hwm>%d" % LIM]; subprocess.run(["kill","-TERM","--","-%d" % p.pid],capture_output=True); time.sleep(5); subprocess.run(["kill","-KILL","--","-%d" % p.pid],capture_output=True); p.wait(); break
+145c146
+<     if hwm>1536000: fail.append("hwm")
+---
+>     if hwm>LIM: fail.append("hwm>%d" % LIM)

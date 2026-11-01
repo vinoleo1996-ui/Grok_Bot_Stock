@@ -1,0 +1,215 @@
+"""AI 情报师公共模块：数据源、规则表、个股映射。研究级，promotion_approved=false，live=false。
+不下单、不改权重、禁 GP。只读盘上 sw_pit / mid_large；不读封存窗口（2018→2024-05）数据。"""
+from __future__ import annotations
+import json, re, urllib.request, urllib.parse
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+import xml.etree.ElementTree as ET
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[2]
+ET_TZ = ZoneInfo("America/New_York")
+UA = {"User-Agent": "Mozilla/5.0 (QuantLab intel research)"}
+
+# 行情：Yahoo chart v8（本机验证可用）。stooq 需 JS 校验、FRED CSV 超时 → 不可用（见回执）。
+MARKETS = {
+    "nasdaq": {"sym": "^IXIC", "name": "纳斯达克综指", "kind": "pct"},
+    "sox":    {"sym": "^SOX", "name": "费城半导体", "kind": "pct"},
+    "hxc":    {"sym": "^HXC", "name": "纳斯达克中国金龙", "kind": "pct"},
+    "kweb":   {"sym": "KWEB", "name": "中概互联ETF(KWEB)", "kind": "pct"},
+    "us10y":  {"sym": "^TNX", "name": "美债10年收益率", "kind": "bp"},   # ^TNX = 收益率(%)
+    "dxy":    {"sym": "DX-Y.NYB", "name": "美元指数", "kind": "pct"},
+    "n225":   {"sym": "^N225", "name": "日经225", "kind": "pct"},
+    "kospi":  {"sym": "^KS11", "name": "韩国KOSPI", "kind": "pct"},
+}
+
+
+def yahoo_daily(sym: str, rng: str = "1mo") -> pd.Series:
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval=1d"
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=20) as r:
+        j = json.load(r)
+    res = j["chart"]["result"][0]
+    tz = ZoneInfo(res["meta"].get("exchangeTimezoneName", "America/New_York"))
+    ts = res.get("timestamp") or []
+    cl = res["indicators"]["quote"][0].get("close") or []
+    idx = [datetime.fromtimestamp(t, tz).date() for t in ts]
+    s = pd.Series(cl, index=pd.to_datetime(idx), dtype=float).dropna()
+    s = s[~s.index.duplicated(keep="last")]
+    meta = res["meta"]
+    s.attrs["live_price"] = meta.get("regularMarketPrice")
+    s.attrs["market_time"] = meta.get("regularMarketTime")
+    return s
+
+
+# 冲击→申万一级 规则表。sign: 因子"坏消息"(指数跌/收益率升/美元升)时对该行业的预期方向（-1 偏空, +1 偏多）。
+SHOCK_RULES = {
+    "nasdaq": {"电子": -1, "计算机": -1, "通信": -1, "传媒": -1},
+    "sox":    {"电子": -1, "计算机": -1, "通信": -1},
+    "hxc":    {"传媒": -1, "商贸零售": -1, "社会服务": -1, "计算机": -1},
+    "kweb":   {"传媒": -1, "商贸零售": -1, "社会服务": -1, "计算机": -1},
+    "us10y":  {"房地产": -1, "电子": -1, "计算机": -1, "医药生物": -1, "银行": +1},
+    "dxy":    {"有色金属": -1, "石油石化": -1, "煤炭": -1},
+    "n225":   {"电子": -1, "汽车": -1, "机械设备": -1},
+    "kospi":  {"电子": -1, "汽车": -1, "电力设备": -1},
+}
+# 强度阈值：pct 为单日涨跌%，bp 为单日变动 bp。|x|≥strong→强，≥mid→中，否则弱（弱不出行业冲击）。
+THRESH = {"pct": {"mid": 1.0, "strong": 2.0}, "bp": {"mid": 5.0, "strong": 10.0}}
+THRESH_OVERRIDE = {"dxy": {"mid": 0.5, "strong": 0.8}}
+
+# 新闻：公开 RSS（Google News 搜索 RSS、CNBC、USTR）
+NEWS_FEEDS = [
+    ("GoogleNews", "https://news.google.com/rss/search?q=%22Section+337%22+ITC&hl=en-US&gl=US&ceid=US:en"),
+    ("GoogleNews", "https://news.google.com/rss/search?q=export+controls+China+chips&hl=en-US&gl=US&ceid=US:en"),
+    ("GoogleNews", "https://news.google.com/rss/search?q=tariff+China&hl=en-US&gl=US&ceid=US:en"),
+    ("GoogleNews", "https://news.google.com/rss/search?q=%22Entity+List%22+Commerce&hl=en-US&gl=US&ceid=US:en"),
+    ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ("USTR", "https://ustr.gov/rss.xml"),
+]
+# 关键词→(主题, 行业→方向, 严重度 1-3)
+# 2026-10-18 修订：区分施动方向（谁管制谁）与否定/缓和词（暂停、豁免、撤回、延期…）。
+#   - 关税：命中缓和词 → 「中美谈判缓和」(偏多)，否则 →「关税」(偏空)。
+#   - 出口管制：中国作施动方（China/Beijing/MOFCOM 管制自身技术或商品出口）→「中国自身出口管制」(仅记录、不计分；
+#     稀土等关键矿产仍由「稀土/关键矿产」规则单独计分)；美方管制且含缓和词 →「中美谈判缓和」；其余 →「出口管制/实体清单」(偏空)。
+RELIEF_RE = (r"\b(pause[sd]?|pausing|suspend(s|ed|ing)?|suspension|waive[sd]?|waiving|waiver|exempt(s|ed|ion|ions)?|relief|relax(es|ed|ing)?|"
+             r"withdraw(s|n|ing)?|withdrew|revoke[sd]?|rescind(s|ed)?|roll(s|ed)? back|rollback|scrap(s|ped)?|lift(s|ed|ing)?|"
+             r"delay(s|ed)?|postpone[sd]?|extend(s|ed)? (the )?(truce|deadline|pause)|truce|deal|cut(s|ting)?|reduc(e|es|ed|tion)|lower(s|ed)?|ease[sd]?|easing|drop(s|ped)?)\b"
+             r"|暂停|豁免|撤回|撤销|延期|推迟|取消|下调|降低|放宽")
+CN_ACTOR_RE = (r"^(china|beijing|chinese (government|commerce ministry)|mofcom|china's (commerce|technology) ministr(y|ies))\b[^.]{0,60}?\b(propos|impos|announc|plan|unveil|tighten|"
+               r"restrict|curb|ban|add|expand|issu|introduc|draft|mov|weigh|consider|to )"
+               r"|^china's (new |proposed |draft |planned )?(tech(nology)? )?export (control|curb|restriction|ban)"
+               r"|\b(china|beijing) (proposes|imposes|announces|plans|unveils|tightens|expands|moves to curb)\b.*\bexport"
+               r"|(商务部|中方|中国).{0,12}(出口管制|禁止出口|限制出口)")
+EXPORT_RE = r"export control|entity list|chip (ban|curb|restriction)|semiconductor (curb|restriction)|bis rule|affiliates rule|出口管制|实体清单"
+TARIFF_CN_RE = r"(tariff.*(china|chinese))|((china|chinese).*tariff)|(关税.*(中国|对华))|((中国|对华).*关税)"
+NEWS_RULES = [
+    ("337调查", r"section 337|\b337\b.*(itc|investigation)|itc .*investigation", {"电子": -1, "家用电器": -1, "机械设备": -1, "医药生物": -1}, 2),
+    ("稀土/关键矿产", r"rare earth|critical mineral|gallium|germanium|antimony", {"有色金属": +1}, 2),
+]
+EXPORT_US = ("出口管制/实体清单", {"电子": -1, "计算机": -1, "通信": -1}, 3)
+EXPORT_CN_SELF = ("中国自身出口管制", {}, 1)
+TARIFF_UP = ("关税", {"家用电器": -1, "纺织服饰": -1, "轻工制造": -1, "机械设备": -1, "汽车": -1, "电力设备": -1}, 2)
+EASING = ("中美谈判缓和", {"家用电器": +1, "纺织服饰": +1, "电子": +1}, 2)
+
+
+def fetch_news(max_age_h: float = 36.0) -> tuple[list[dict], dict]:
+    now = datetime.now(timezone.utc)
+    items, status = [], {}
+    for src, url in NEWS_FEEDS:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=20) as r:
+                root = ET.fromstring(r.read())
+            n = 0
+            for it in root.iter("item"):
+                title = (it.findtext("title") or "").strip()
+                link = (it.findtext("link") or "").strip()
+                pd_ = it.findtext("pubDate")
+                try:
+                    t = parsedate_to_datetime(pd_) if pd_ else None
+                except Exception:
+                    t = None
+                if t is None or (now - t).total_seconds() / 3600 > max_age_h:
+                    continue
+                items.append({"source": src, "title": title, "link": link, "published_et": t.astimezone(ET_TZ).strftime("%Y-%m-%d %H:%M")})
+                n += 1
+            status[url] = f"ok({n})"
+        except Exception as e:
+            status[url] = f"fail:{type(e).__name__}"
+    seen, out = set(), []
+    for x in items:
+        k = x["title"].lower()[:90]
+        if k not in seen:
+            seen.add(k); out.append(x)
+    return out, status
+
+
+def classify_title(title: str) -> list[tuple[str, dict, int]]:
+    """单条标题 → [(主题, 行业→方向, 严重度)]。同一主题只出一次。"""
+    t = title.lower().strip()
+    out = []
+    relief = re.search(RELIEF_RE, t) is not None
+    if re.search(EXPORT_RE, t):
+        if re.search(CN_ACTOR_RE, t):
+            out.append(EXPORT_CN_SELF)
+        elif relief:
+            out.append(EASING)
+        else:
+            out.append(EXPORT_US)
+    if re.search(TARIFF_CN_RE, re.sub(r"non-tariff|非关税", " ", t)):
+        out.append(EASING if relief else TARIFF_UP)
+    elif re.search(r"trade (deal|truce|talks)", t):
+        out.append(EASING)
+    for theme, pat, inds, sev in NEWS_RULES:
+        if re.search(pat, t):
+            out.append((theme, inds, sev))
+    seen, res = set(), []
+    for th in out:
+        if th[0] not in seen:
+            seen.add(th[0]); res.append(th)
+    return res
+
+
+def classify_news(items: list[dict]) -> list[dict]:
+    hits = []
+    for x in items:
+        for theme, inds, sev in classify_title(x["title"]):
+            hits.append({**x, "theme": theme, "industries": inds, "severity": sev})
+    return hits
+
+
+_POOL = None
+
+
+def industry_stocks(top_n: int = 5) -> dict[str, list[dict]]:
+    """每个申万一级：mid_large 最新 session 中流通市值前 top_n（非小盘）；另附该行业流通市值最大的非池股票 1 只并标注小盘。"""
+    global _POOL
+    if _POOL is not None:
+        return _POOL
+    sw = pd.read_parquet(ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+                         columns=["instrument_id", "name", "l1_name", "in_date", "out_date"])
+    sw = sw[sw.out_date.isna()].drop_duplicates("instrument_id", keep="last")
+    import pyarrow.dataset as ds
+    mds = ds.dataset(ROOT / "data/v2/universe/mid_large_members_pit.parquet")
+    last = max(pd.read_parquet(ROOT / "data/v2/universe/mid_large_members_pit.parquet", columns=["session"],
+                               filters=[("session", ">=", "2026-09-01")]).session)
+    ml = mds.to_table(columns=["instrument_id", "float_mktcap_basis"], filter=ds.field("session") == last).to_pandas()
+    m = sw.merge(ml, on="instrument_id", how="left")
+    # 非池股票（小盘）流通市值：用最新 daily_basic
+    db_dir = ROOT / "data/v2/tushare_raw/daily_basic"
+    small_mc = {}
+    try:
+        f = sorted(db_dir.glob("*.parquet"))[-1]
+        db = pd.read_parquet(f, columns=["ts_code", "circ_mv"])
+        for code, mv in zip(db.ts_code, db.circ_mv):
+            a, ex = code.split(".")
+            small_mc[f"{ex.lower()}.{a}"] = mv * 1e4
+    except Exception:
+        pass
+    out = {}
+    for ind, g in m.groupby("l1_name"):
+        pool = g.dropna(subset=["float_mktcap_basis"]).sort_values("float_mktcap_basis", ascending=False).head(top_n)
+        lst = [{"code": r.instrument_id, "name": r.name, "small_cap": False} for r in pool.itertuples()]
+        rest = g[g.float_mktcap_basis.isna() & ~g.name.str.contains("退|ST")].copy()
+        rest["mc"] = rest.instrument_id.map(small_mc)
+        rest = rest.dropna(subset=["mc"]).sort_values("mc", ascending=False).head(1)
+        lst += [{"code": r.instrument_id, "name": r.name, "small_cap": True} for r in rest.itertuples()]
+        out[ind] = lst
+    out["_pool_session"] = str(pd.Timestamp(last).date())
+    _POOL = out
+    return out
+
+
+def alert_severity(call: str, strength: str) -> str:
+    """Contract v1.1 explicit severity: 偏空+强 -> high; 观察/偏空(非强) -> watch; else info. Never invents a stance."""
+    if call == "偏空" and strength == "强":
+        return "high"
+    if call in ("观察", "偏空"):
+        return "watch"
+    return "info"
+
+
+def apply_alert_severity(alerts: list[dict]) -> list[dict]:
+    for a in alerts:
+        a["severity"] = alert_severity(a.get("call", ""), a.get("strength", ""))
+    return alerts

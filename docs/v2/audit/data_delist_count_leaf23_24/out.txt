@@ -1,0 +1,33 @@
+start_et 2026-10-18T03:50:43-04:00
+input master: data/v2/delisted/delisted_master_tushare.parquet sha256=63590f23171dbaaaf29ff51edce564130d2e8296630e1f448396fe9b8191d6fd mtime_et=2026-10-18T01:10:42 size=80427
+input sb: data/v2/meta/stock_basic_incl_delisted.parquet sha256=2ef2d71d28957b0d8d7b8a599d4fcafbecc969f121e5ee072719ad202508eca8 mtime_et=2026-10-18T01:12:34 size=491323
+input ref: data/v2/ref/stock_delisted.parquet sha256=90c8934dddc698f46075a20fe3d60309094919868c5e3a4bacc4d12c765f0603 mtime_et=2026-10-18T01:13:37 size=43544
+
+== master rows 339 unique ts_code 339 list_status counts {'D': 339}
+(b) master: duplicated ts_code count=0 rows=0 codes=[]
+(b) stock_basic: duplicated ts_code count=0 rows=0 codes=[]
+(b) ref_stock_delisted: duplicated ts_code count=0 rows=0 codes=[]
+(b') master duplicated symbol: []  duplicated instrument_id: []
+
+(a) master null delist_date: 0 []
+(a) master null last_trade_date: 1 [{'ts_code': 'T600018.SH', 'delist_date': Timestamp('2006-10-20 00:00:00'), 'list_status': 'D'}]
+(a) stock_basic list_status=D rows 339 null delist_date: 0 []
+(a) stock_basic non-D with delist_date set: 0 []
+(a) ref stock_delisted null/unparseable delist_date: 0 []
+(a) master last_trade_date in X2 & delist_date null: []
+(a) master last_trade_date in X2 & delist_date after X2E: []
+(a) master last_trade_date before X2S & delist_date in X2: [{'ts_code': '000416.SZ', 'last_trade_date': '2024-04-24', 'delist_date': '2024-06-05'}, {'ts_code': '000961.SZ', 'last_trade_date': '2024-05-08', 'delist_date': '2024-07-11'}, {'ts_code': '002699.SZ', 'last_trade_date': '2024-04-25', 'delist_date': '2024-06-05'}, {'ts_code': '300116.SZ', 'last_trade_date': '2024-05-16', 'delist_date': '2024-07-25'}, {'ts_code': '300495.SZ', 'last_trade_date': '2024-05-08', 'delist_date': '2024-09-20'}, {'ts_code': '600321.SH', 'last_trade_date': '2024-05-30', 'delist_date': '2024-06-27'}, {'ts_code': '600823.SH', 'last_trade_date': '2024-05-15', 'delist_date': '2024-06-14'}]
+(a) codes in stock_basic D not in master: []  in master not in stock_basic D: []  master^ref: []
+
+(3) master delist_date in X2 [2024-06-03, 2026-10-09]: names 93 rows 93
+(3) of which (delist_date - last_trade_date) > 1 calendar day: 76  >=1: 93  null gap: 0  median gap days 30.5  max 135.0
+(3) of which gap_days_last_trade_to_delist column > 1: 76
+(3) by delist_date year: {2024: 43, 2025: 29, 2026: 21}
+(3) by exchange: {'SZSE': 51, 'SSE': 40, 'BSE': 2}  by reason: {'强制退市(退市前1年内ST/*ST)': 44, '强制退市(进入退市整理期)': 41, '疑似主动/吸收合并/私有化退市(退市前非ST)': 8}
+(3) last_trade_date in X2 names: 86 ; union(dd or lt in X2): 93
+(3) stock_basic D delist_date in X2: 93 ; ref delist_date in X2: 93
+(3) master max delist_date 2026-07-30 max last_trade_date 2026-07-29 ; names delisted after X2E: []
+(3) X2 list: 002699.SZ|ltd=2024-04-25|dd=2024-06-05;000416.SZ|ltd=2024-04-24|dd=2024-06-05;600823.SH|ltd=2024-05-15|dd=2024-06-14;600306.SH|ltd=2024-06-19|dd=2024-06-26;600321.SH|ltd=2024-05-30|dd=2024-06-27;002087.SZ|ltd=2024-06-27|dd=2024-06-28;000996.SZ|ltd=2024-06-27|dd=2024-06-28;603133.SH|ltd=2024-06-26|dd=2024-07-03;600766.SH|ltd=2024-06-26|dd=2024-07-03;600647.SH|ltd=2024-06-26|dd=2024-07-03;002433.SZ|ltd=2024-07-04|dd=2024-07-05;600220.SH|ltd=2024-06-13|dd=2024-07-10;600836.SH|ltd=2024-06-17|dd=2024-07-11;000961.SZ|ltd=2024-05-08|dd=2024-07-11;600277.SH|ltd=2024-06-21|dd=2024-07-18;300282.SZ|ltd=2024-07-17|dd=2024-07-18;300742.SZ|ltd=2024-07-19|dd=2024-07-22;000971.SZ|ltd=2024-06-04|dd=2024-07-24;300116.SZ|ltd=2024-05-16|dd=2024-07-25;300799.SZ|ltd=2024-07-26|dd=2024-07-29;002621.SZ|ltd=2024-06-13|dd=2024-08-05;600565.SH|ltd=2024-06-21|dd=2024-08-07;002610.SZ|ltd=2024-06-18|dd=2024-08-12;000836.SZ|ltd=2024-06-17|dd=2024-08-12;000982.SZ|ltd=2024-06-21|dd=2024-08-12;002435.SZ|ltd=2024-07-01|dd=2024-08-15;600112.SH|ltd=2024-07-19|dd=2024-08-15;002325.SZ|ltd=2024-06-28|dd=2024-08-15;002280.SZ|ltd=2024-06-26|dd=2024-08-16;300262.SZ|ltd=2024-06-18|dd=2024-08-19;002288.SZ|ltd=2024-06-26|dd=2024-08-19;002341.SZ|ltd=2024-07-02|dd=2024-08-23;002665.SZ|ltd=2024-06-27|dd=2024-08-26;000976.SZ|ltd=2024-07-25|dd=2024-08-27;600297.SH|ltd=2024-07-17|dd=2024-08-28;002505.SZ|ltd=2024-07-02|dd=2024-08-30;000023.SZ|ltd=2024-07-24|dd=2024-09-02;002502.SZ|ltd=2024-07-16|dd=2024-09-05;000861.SZ|ltd=2024-08-05|dd=2024-09-18;300495.SZ|ltd=2024-05-08|dd=2024-09-20;002308.SZ|ltd=2024-08-22|dd=2024-09-27;000413.SZ|ltd=2024-08-14|dd=2024-10-11;600213.SH|ltd=2024-08-15|dd=2024-10-17;600898.SH|ltd=2025-01-10|dd=2025-02-10;600837.SH|ltd=2025-02-05|dd=2025-03-04;600083.SH|ltd=2025-01-16|dd=2025-03-05;600225.SH|ltd=2025-02-27|dd=2025-03-06;603963.SH|ltd=2025-02-07|dd=2025-03-21;600811.SH|ltd=2025-04-14|dd=2025-04-30;300117.SZ|ltd=2025-03-31|dd=2025-04-30;000040.SZ|ltd=2025-03-31|dd=2025-04-30;600070.SH|ltd=2025-04-10|dd=2025-04-30;300630.SZ|ltd=2025-05-21|dd=2025-05-22;600705.SH|ltd=2025-04-02|dd=2025-05-27;601028.SH|ltd=2025-03-26|dd=2025-05-27;300108.SZ|ltd=2025-04-23|dd=2025-05-29;002750.SZ|ltd=2025-06-26|dd=2025-06-27;600804.SH|ltd=2025-06-30|dd=2025-07-03;603003.SH|ltd=2025-06-30|dd=2025-07-03;002336.SZ|ltd=2025-07-03|dd=2025-07-04;600387.SH|ltd=2025-07-04|dd=2025-07-11;000584.SZ|ltd=2025-07-10|dd=2025-07-11;000622.SZ|ltd=2025-07-15|dd=2025-07-16;300208.SZ|ltd=2025-07-18|dd=2025-07-21;600462.SH|ltd=2025-07-14|dd=2025-07-21;600190.SH|ltd=2025-07-18|dd=2025-07-25;601989.SH|ltd=2025-08-12|dd=2025-09-05;000627.SZ|ltd=2025-08-13|dd=2025-09-30;300280.SZ|ltd=2025-10-13|dd=2025-10-14;000851.SZ|ltd=2025-09-26|dd=2025-11-11;603388.SH|ltd=2025-11-10|dd=2025-12-05;600200.SH|ltd=2025-12-29|dd=2025-12-31;920680.BJ|ltd=2025-12-31|dd=2026-01-05;300379.SZ|ltd=2026-01-21|dd=2026-01-22;002231.SZ|ltd=2026-01-29|dd=2026-03-27;603056.SH|ltd=2026-01-20|dd=2026-03-31;300391.SZ|ltd=2026-04-10|dd=2026-04-13;300344.SZ|ltd=2026-04-21|dd=2026-04-22;600355.SH|ltd=2026-04-03|dd=2026-04-27;000638.SZ|ltd=2026-04-13|dd=2026-06-03;688287.SH|ltd=2026-06-08|dd=2026-06-10;600599.SH|ltd=2026-06-22|dd=2026-06-26;600421.SH|ltd=2026-06-22|dd=2026-06-26;600636.SH|ltd=2026-06-22|dd=2026-06-29;600696.SH|ltd=2026-06-22|dd=2026-06-29;600608.SH|ltd=2026-06-29|dd=2026-07-03;605081.SH|ltd=2026-06-29|dd=2026-07-03;600193.SH|ltd=2026-06-29|dd=2026-07-06;300029.SZ|ltd=2026-07-09|dd=2026-07-10;002808.SZ|ltd=2026-07-13|dd=2026-07-14;000004.SZ|ltd=2026-07-13|dd=2026-07-14;002898.SZ|ltd=2026-07-16|dd=2026-07-17;920305.BJ|ltd=2026-07-29|dd=2026-07-30
+
+maxrss_mb 199.671875 end_et 2026-10-18T03:50:43-04:00
+median_all93 25.0 median_gt1 30.5 col_median_all 25.0 col_median_gt1 30.5 col==calc True

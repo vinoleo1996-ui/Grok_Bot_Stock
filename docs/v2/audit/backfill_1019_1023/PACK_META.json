@@ -1,0 +1,37 @@
+{
+  "pack": "backfill_1019_1023_dbincr_v3_1",
+  "scheme": "A",
+  "live": false,
+  "promotion": false,
+  "created_et": "2026-10-25T04:58:08-04:00",
+  "author": "QuantLab Eng",
+  "date_list": [
+    "20261019",
+    "20261020",
+    "20261021",
+    "20261022",
+    "20261023"
+  ],
+  "auth_ok_sha256": "9e4359f9b6521e9d8d2b9578c7031ac6e79d42bd7dc4e3003e34a7c0c3e32714",
+  "enable_ok_sha256": "4377eb592c18c3bed067c9a7dc775330a3d78f811adb6f51f550b0fa54ccbd73",
+  "sha_driver_ref": "f1910e8ab054c30628184f6e451a77db9c7e3487c31023f0761e50e510e87f05",
+  "requires_dedicated_backfill_runner": true,
+  "forbid_nightly_driver_historical": true,
+  "selftest_pass": 25,
+  "selftest_fail": 0,
+  "files": {
+    "run_backfill_1019_1023_dbincr_v3_1.py": "fe2deceef2cbce291e23ea96de5b9b8096d64f60791e1002b647912ff561d814",
+    "selftest_run_backfill_1019_1023_dbincr_v3_1.py": "7f4fb2a6021b2f2d76f28a09713be319f6898c0aa838fc02d4eda601d059376e",
+    "SELFTEST_RECEIPT_20261025.txt": "2d37f00cc542642a1566bc3642b6e7bd586725362410cd9c98600211110e5a53",
+    "nightly_sha_scope_backfill_1019_1023.txt": "c204fd5f8274ae58cf99d936c39409cb4fb5ca6e9f94a6a86bb55e4f7b0e48e8",
+    "BACKFILL_1019_1023_OK_REQUEST_ZH.md": "ecc204238e2a157b25b9b175ef45b990f49fc1d1faa7a1d14139778c701f5b23",
+    "DIFF_vs_planR_and_nightly_driver_ZH.md": "1d78ff989e326b5eb3bd2da530e0a2435d64096f2473fef1dfb0f8acf4cad0f4"
+  },
+  "not_done": [
+    "no production run",
+    "no runner .ok forged",
+    "no nightly driver edit",
+    "no routine switch",
+    "no fundport/stream/paper"
+  ]
+}

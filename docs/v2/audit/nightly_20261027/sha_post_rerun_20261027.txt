@@ -1,0 +1,338 @@
+# sha baseline, scope=docs/v2/audit/nightly_sha_scope_20261018.txt scope_sha256=b24a4a88b23efd8d1663238e6e590984afa08c719b5d397f589a87d9fc6319be
+# started_et=2026-10-27T06:55:25-04:00 finished_et=2026-10-27T06:55:25-04:00 host_tool=sha256sum (coreutils) via stdlib wrapper
+# format: sha256sum lines, then one "# meta" line per file: class<TAB>size<TAB>mtime_ns<TAB>ctime_ns<TAB>inode<TAB>path
+5578cc9dd5d9a3ff6d0364eabfdd3a4c056f81acba0ba6d4ea1442152d7636ba  /workspace/QuantLab/output/data_freshness_status.json
+6fb4075ed020a6b57c3ac713ad54a3e04df5c4245cc494c0781461ea86689d88  /workspace/QuantLab/output/daily_update_status.json
+fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41  /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+7ccc911e8a3ed2e408f30db1f95f12eb71a6fea18003ba88a31246f941cc89a4  /workspace/QuantLab/data/v2/calendar/manifest.json
+141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086  /workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet
+aab46c56c72d01ee774e845be195c1728c66585befc92bf9a74e61ce851eed69  /workspace/QuantLab/data/v2/events/announcements_classified_pit.parquet
+549a28c3c07d61b0eb8b872b278e584959a99fd426b43e395c568247a643c2c4  /workspace/QuantLab/data/v2/events/announcements_classified_pit_post202406.parquet
+89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c  /workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet
+0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6  /workspace/QuantLab/data/v2/sw_pit/industry_members_sw_l1_pit.parquet
+87d769aaca06212186986af489f6507b6f0d98c8937f7a4476f97538562733b3  /workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1.parquet
+6919e7afe605cc4d1af48868a06b6550db66e3fd1923a3e61bdcc16c621bae20  /workspace/QuantLab/docs/v2/eng_sd1/paper_import_closure.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /workspace/QuantLab/quantlab/__init__.py
+f5052be026768db896d9645fdc5fee6697a29fbfc5d39d02bab21ffbbae352bd  /workspace/QuantLab/quantlab/agents/__init__.py
+f9bf01f76af29ab2bd37329c47bc090ee53e9bc309ba07ef9f9dd5f9bdeca581  /workspace/QuantLab/quantlab/agents/factor_evolve/__init__.py
+2aab7a1d7d66e29fb336de9962534448c0c485818170b452292c72ef2c77e79f  /workspace/QuantLab/quantlab/agents/factor_evolve/hard_gates.py
+52af3be2625c9086374ccf896cbd0fa3aee9f4ea40afdd1205182bfc93bf75b2  /workspace/QuantLab/quantlab/agents/factor_evolve/run_stub.py
+84842d729f5cfb24d695957600d00cc0f842742aef8cc6a928445ca75839df49  /workspace/QuantLab/quantlab/agents/factor_evolve/schemas.py
+4364dff8a310f4172fceea3095d56b3343dfc4c9bbebc74367bfb38487b174e4  /workspace/QuantLab/quantlab/agents/factor_evolve/weights_from_scores.py
+104da78359e4a9655f9fa86a5753a51368e9f5260e79b684a2cfa2f35df62847  /workspace/QuantLab/quantlab/agents/trading_loop/__init__.py
+253c1d553390e89a2bcfebecf5e77c9531a42e69e66277dd551d9f9c6b85f9e7  /workspace/QuantLab/quantlab/agents/trading_loop/run_stub.py
+a92b7ccf12962820a114781b7b52dea7195d401d48aaea11cfec4fdaf305547b  /workspace/QuantLab/quantlab/agents/trading_loop/settle.py
+b8021fac40c42ee73518a8de7f198997d1d6845702ff89af979041795b0fea25  /workspace/QuantLab/quantlab/agents/trading_loop/state_machine.py
+f3df72337d675ec155d04b3f98c1e10388ea2adf7eb6fd4ef48ce7e208c4e70f  /workspace/QuantLab/quantlab/backtest/__init__.py
+2036665520baa7817477a9efec50aa7890e7252ab991d98ba7f4cf2c78c80a4f  /workspace/QuantLab/quantlab/backtest/engine.py
+53651d7dd37371e25f8471e7ecae5dcfd4e1868b8080cb08ebd8e40aa9ea1dae  /workspace/QuantLab/quantlab/backtest/ledger.py
+94cfddccd2c7b3bb41c914a6ce2977a57fc6542de7e9d18dd08e21dca20d20e1  /workspace/QuantLab/quantlab/backtest/tax.py
+635e0a626a06ca08d6e79b1e9575c204705e63acd732b390fd3f20900dd9fa2d  /workspace/QuantLab/quantlab/beta/__init__.py
+1aa443c710ed3afebc345443a9ecbc8d19369209218b7da2f0fbc09a63cefa9c  /workspace/QuantLab/quantlab/beta/satellite.py
+0eca62dde1833c0b408a10b67c8e2d889a93b6d5b1030d51bf5c6f6adcb952c2  /workspace/QuantLab/quantlab/beta/sleeve.py
+55075a9e577679c369823e2ca7536110e51afbcd6e724f070ed89ab77af76f3b  /workspace/QuantLab/quantlab/beta/smallcap_history_panels.py
+9bacc557c5e6137cef64a4f5ab4d5f698041199005f86a6ba256e65587c66471  /workspace/QuantLab/quantlab/beta/smallcap_history_selector.py
+395dfbb7dbb9ca72b75cdce8809ea1f5481d5ce9f226e8f799eb58f6b43564bd  /workspace/QuantLab/quantlab/beta/smallcap_sleeve.py
+cbd59cf66a3a7386cdafde24e22d7d00959253b3095fc283fe03115078bf50d9  /workspace/QuantLab/quantlab/beta/survivorship.py
+9e3ee7d1d76f90c187ab6878addf3fac3182473cdfc3c31746ab4cdbdcbd8b3e  /workspace/QuantLab/quantlab/cli.py
+63b794660daabb576740a2796abfd7fb70cd500cf070b85a1ddaf10a18042ec4  /workspace/QuantLab/quantlab/comparison.py
+88098c33ab6659f3a167c6c1fcbee4e7d14c0f473e6406299828291c9ee7b651  /workspace/QuantLab/quantlab/config.py
+1f7f426968671f17109db8c9879f5e0ca68265dccc276ac3dbc90bdc68efa717  /workspace/QuantLab/quantlab/config_validation.py
+05825acf7a92f60783ad6f35ffdbc0ce3abc0b4d97e4b18e167d739d04f52b11  /workspace/QuantLab/quantlab/data/__init__.py
+74fa0798388f05f0a6d43fc1e1817cf2e438c31c00da2288d2d7773c11a4470f  /workspace/QuantLab/quantlab/data/contracts.py
+668349dd8f93b5e476216db2f79a1f136ece53a7973164a842584a3cc34d8039  /workspace/QuantLab/quantlab/data/eastmoney.py
+4b9eadd7ce9d4d8d883421b1edb3b48766c6a86e7cbcc853f3b8cf34d9178334  /workspace/QuantLab/quantlab/data/exchange_rules.py
+55a1fb2786078465691a6deaa6cf66e550c8c693f7b28e4ac05ae6f1038d366e  /workspace/QuantLab/quantlab/data/industry.py
+a1f95fadc9eacb830a2b9bd0fdace8bc89d7a97c418089a1b20079acb6639732  /workspace/QuantLab/quantlab/data/local_adapter.py
+368de7a5d9d0b66b526403f1fd7ba4a313f17c621226203ea6647132232f30ff  /workspace/QuantLab/quantlab/data/market.py
+377e7bdd75f0f3d1c1e573a50c43104280de6f424177aec30a82fe697b03444b  /workspace/QuantLab/quantlab/data/public_desk.py
+aad7e1278c6c889aa1901abda13fd92dbf9de3942c170952e766fcb8185ba59a  /workspace/QuantLab/quantlab/data/qualification.py
+b2ab46155fc419455353084c3255c84b67b22d808c1fc9bf9a6646848a9ead89  /workspace/QuantLab/quantlab/data/realtime.py
+5830d40d74f7038227e5a235e6f6b30644a3291d224a80fb9ef81622654c1a28  /workspace/QuantLab/quantlab/data/sina.py
+c8102489d662c63dcb67ef39c8ad7eba1ad661f34df6d2c8832624764bd0760c  /workspace/QuantLab/quantlab/data/sources.py
+c4c92f1211f7853e7993c2a5dd2eedd994df0e810d9a9b59d72eef27520c363e  /workspace/QuantLab/quantlab/data/store.py
+88a00f28f53df2cec2baf2112bac21f636904aec0e1f5f838bfc297dccef3ff1  /workspace/QuantLab/quantlab/data/v2_d0_meta.py
+84f07b1f94e2edf0c8bbff7cfcec63d75936908b01dc562d4403a879357e1f54  /workspace/QuantLab/quantlab/data/v2_readers.py
+62f7730981562923ece142eae354eee8f3147659d01a55bdc7fba7e9a207fa58  /workspace/QuantLab/quantlab/evidence.py
+ee08c56007423cda629b8ebb305dc451ab75d16fdbd98b76006220e5ffbfe0b1  /workspace/QuantLab/quantlab/factors/__init__.py
+2baebce079b7d66b754acc2725b3593156bbe04e0a808d8d246126a0e2ae0246  /workspace/QuantLab/quantlab/factors/ai_factory/__init__.py
+769f0712cb53a4773b45aa40fb04ac1557d31f50ec0cf72f7ad45e9b1050185c  /workspace/QuantLab/quantlab/factors/ai_factory/asof_text_guard.py
+7dc4fdba65d4c2928416b0f38959e47bf16285400939bfd9a814899f23a93adf  /workspace/QuantLab/quantlab/factors/ai_factory/evaluate.py
+487440127835ae25351109dae3f3532b0eb0280bf1460f00eb4913e060e669cb  /workspace/QuantLab/quantlab/factors/ai_factory/fitness.py
+efdbdf56a590e780a6aeb2f2106f9145ed20260da0ae20775fa95d2084e70911  /workspace/QuantLab/quantlab/factors/ai_factory/handoff.py
+041b37087e5ad68880f81ae2c6fc20cc35c8a06022abc32e91f9b64f96993d37  /workspace/QuantLab/quantlab/factors/ai_factory/ledger.py
+e33d2d65268976094b2a1d2550bc6d4a606757215c1afb709f2ffe9259e1e4b1  /workspace/QuantLab/quantlab/factors/ai_factory/novelty.py
+da26d3db4b2a1896d1860dc9b913129ec450d04aebbc001ea44f7ee9d2f86b65  /workspace/QuantLab/quantlab/factors/ai_factory/pipeline_export.py
+e525d0ed8732403ca206e1b3c834352b619888e72abc13fad3493b35874fdd00  /workspace/QuantLab/quantlab/factors/ai_factory/quantmind_loop.py
+8966a569e8177e28273000f06996e97bbaf9e1ff8d80db90b307d5d54f77e938  /workspace/QuantLab/quantlab/factors/ai_factory/rdagent_min_loop.py
+cf6db562499714b95c173a565b8b74e7c3ab0c6817dce4b34ecad6f80d1cfe33  /workspace/QuantLab/quantlab/factors/ai_factory/repr_bridge.py
+4573526cae1e8fcd5cae32b96285850bdef07d5b365ec699f0ac93e2c5a0121e  /workspace/QuantLab/quantlab/factors/ai_factory/search.py
+dd04dec3bd6a1915a5c6faa32ba0edf02ec1240ae8cdb512162686e3848486a5  /workspace/QuantLab/quantlab/factors/ai_factory/structural_leaves.py
+6ad8dce96a4fb643676ae5780f2c85f49947575465775a3640a862b49f64c478  /workspace/QuantLab/quantlab/factors/ai_factory/validate_gate.py
+c9e1a79a06d50331f1dd2b541efaffae2ad7f09bb3d523a6b7954953cb1e9980  /workspace/QuantLab/quantlab/factors/engine.py
+b50092e515ad7351b56b24805777dee8583cabaec724c82d8ceea13d386f46e8  /workspace/QuantLab/quantlab/factors/neutralize.py
+95bd0a6cd93235c3d7868560a8e18fa2e8164ecabc1e912d5c36b77d84793bde  /workspace/QuantLab/quantlab/factors/ops.py
+031fba09cf09882a133c954e70d3bebf1384d9e88bdb6b8c02bfe084d5b08145  /workspace/QuantLab/quantlab/factors/orthogonalize.py
+19b2bc863718372fc1bdcdb852cc4e0994c4fef2ce975b025461120cccb65225  /workspace/QuantLab/quantlab/factors/p1_factor_lib.py
+bef5aeed89e0b41f75fd8a073954a882d88159759f152d82f46bc5e76a9583ef  /workspace/QuantLab/quantlab/factors/p1_pipeline.py
+4988057f3062da69062fef4aa504f43e77538932dce9cd0d5dff3e0da0f142b7  /workspace/QuantLab/quantlab/factors/residual_factory.py
+458995de4cb50c6447aed2f765cab3f6e95a6d836cbf33e0a39f35d3d50357cb  /workspace/QuantLab/quantlab/factors/v2_min_pipeline.py
+d6d5464d535c5529b4e35af9a2e7b2cfbe278f3a6794f9dafa84e82d886d51e7  /workspace/QuantLab/quantlab/factors/walk_forward.py
+14720ca40ede010e9aa6ba202c92043e1ec6ebcb364e65f46d6a597042bb544f  /workspace/QuantLab/quantlab/forward.py
+71a65f62dda2fc7f4b4d1044fc1af1ee4c3cc41f6d9ff7a29d2e06bf0cd4170e  /workspace/QuantLab/quantlab/free_research.py
+750fa5854299df15b04ad0b4ade7cb888d93039f07f744adb84855b6bdd0bee0  /workspace/QuantLab/quantlab/intel/__init__.py
+593e35882155c2acf143d7c741fef33023345dd41a73a9fc9218ca7c0be400b1  /workspace/QuantLab/quantlab/intel/asof_window.py
+8e388df93f1fa63b9a01ec9b2adafaa4e316800aa351804b75ab1edb0615fdcd  /workspace/QuantLab/quantlab/intel/debate_ledger.py
+d5c52c0e3af901ce2924d59733286ae6697878b64211f2f032b21945b08b9d46  /workspace/QuantLab/quantlab/intel/embeddings.py
+9354a34c893aa9dccab72215e367235d7f4ea336905016414e71408ad7bdca35  /workspace/QuantLab/quantlab/intel/messages.py
+82290cea1aef3232efe52a494b0ac998a0535aad53e8cd05aa01fe2901c51bf2  /workspace/QuantLab/quantlab/legacy_comparison.py
+e472d6348d4df0cd0aa276e8d1febfa38c746416fa1c0074a8af3eb7d77f1fec  /workspace/QuantLab/quantlab/mandate.py
+46d509b3c6d56779574c943f20b3e1fa151b9bac9c12134edfc9a56a1e389515  /workspace/QuantLab/quantlab/mandate_v2.py
+a822dfee88b2f524af61ac1de9fae149885f46c4363e93414897c1c77b4bfb62  /workspace/QuantLab/quantlab/metrics.py
+42c6ac0e846590365621246ca4ccd769ee41be9b70dc9f9f8520fb185a1d6e4f  /workspace/QuantLab/quantlab/pipeline.py
+bfdfa63cbd7f39d7f0b1eb5a9b91ca00a30bdbd21e31ef3b90d89ac6080e99fc  /workspace/QuantLab/quantlab/platform/__init__.py
+373fed309f055888e83572d3fbef8f5b5052ebfcb208307962a272bca6fc486c  /workspace/QuantLab/quantlab/platform/execution.py
+c08625f50a90dd23616c2125ed4209758c9f4c0b19d20ff55835c622937d0259  /workspace/QuantLab/quantlab/platform/futures.py
+ecf4499ddad806d7c3f7e842c1affe1626bf05255119b70224a0a37d89206c71  /workspace/QuantLab/quantlab/platform/margin.py
+bf37b40173402754160bdd5291408b356c8857c075528c6ae55a702a6bc428b8  /workspace/QuantLab/quantlab/platform/strategy_feed.py
+6f2ca20e9ebc472b22152690a60e728a24a74bee186ecf03cf0ee5115e3b464f  /workspace/QuantLab/quantlab/platform/weight_long_table.py
+7325d8e410c175c2d5bfb863f551b2be83ad5c81580c2b795a4ed44733a9dc1f  /workspace/QuantLab/quantlab/policy_comparison.py
+dc6c39f523634d9e65528f227c45e7eea284696e2ee940b9ee7c40e276bab3c0  /workspace/QuantLab/quantlab/portfolio/__init__.py
+ffe195e68db279ca3fe41b7aa521e0fdd282b685c02243e21696571db08b03a3  /workspace/QuantLab/quantlab/portfolio/b4_paper.py
+1a5fa1aa6ab847bd1ecda4d01bd4bda88b23535edceb91021520261be3e8251b  /workspace/QuantLab/quantlab/portfolio/book_smoke.py
+675a1a9a2778c1382e2ac4fa777f33ad1fd5af8c81d821f94bc46969d7022485  /workspace/QuantLab/quantlab/portfolio/current.py
+5dacea0ab0536c1a7b80ebe8c2117537eb37cb433130abde2f3b0e08cfeb325b  /workspace/QuantLab/quantlab/portfolio/grok_paper.py
+d5a75973c0c2c1bd5ca7f3126f2daa67e9ba88f96da8c733105514a81f59770b  /workspace/QuantLab/quantlab/portfolio/market_observatory.py
+4b4b63da440d26a0e7d706a0a0ffa086fe1042a4f4deae3cc22641718f26aee7  /workspace/QuantLab/quantlab/portfolio/paper_track.py
+5fe238f2372b95e809ef58382746d5984169315672edc67edc163654d2c7d4fd  /workspace/QuantLab/quantlab/portfolio/research_loop.py
+01ce8c3e4a7be3442d86889fb9b6bafbfb10e08662f6aa978b2d1c46e202cfa5  /workspace/QuantLab/quantlab/portfolio/scorecard.py
+d2b6046cf27c27d81ca33d4c6a9d212efada5f08ec3803ad41c589d20f981e65  /workspace/QuantLab/quantlab/portfolio/trade_calendar.py
+a67e420d6eca26a362d429b79c0085b10857022b68b004d2de11778e9db14110  /workspace/QuantLab/quantlab/portfolio/v2_constructor.py
+6adefbeb4e66bdd8856c748180b09fa0fbf071d8fe20f6ccdd70ff37a4a603b4  /workspace/QuantLab/quantlab/portfolio/v2_multisleeve_book.py
+9732fb4f3b393e6d393b0bdb1b82f464c6ea5a93a93d0ae569e58057317d4aa3  /workspace/QuantLab/quantlab/portfolio/v2_rebalance.py
+514564fd0cbea65a7b148de5c179ddabadc9866fdf89b88b42883f62322d55ac  /workspace/QuantLab/quantlab/promotion_gate.py
+6a80113c5eed20b3b2dee9e59b87a386a74a9f34dd5ed41443e53e77885d5bb7  /workspace/QuantLab/quantlab/reference_cash_replay.py
+7ff42444efff505475abdb7cbb7f3589c511b3d427863671478205ec0b0b955b  /workspace/QuantLab/quantlab/report/__init__.py
+8a6c2c4e3e4f3d858171df1c9f257b59c5076020221f6f08ac47ee8bad64ea22  /workspace/QuantLab/quantlab/report/advice.py
+955210532cff3680f688b0335841ef327b971bd5013109c0693ffe43c5c66136  /workspace/QuantLab/quantlab/report/attribution.py
+2059a735c43be11d9ebf9c8b34a595a654f42cacaba342440c24e50f4524c91a  /workspace/QuantLab/quantlab/report/capital.py
+7e6a3cbe2d16bdbf2ed66cd5812617ea5593838c4ed98563de5d5d558a2c7aec  /workspace/QuantLab/quantlab/report/html.py
+65abd7a079323c30de90b58b01e193b908b425e1db32bc7861858f5c624330fc  /workspace/QuantLab/quantlab/report/metrics.py
+cc5d7728c3fc6519c18e2fe029f2ce1005e22335ddb1e709ea87c37027a9b9ba  /workspace/QuantLab/quantlab/report/research_diagnostics.py
+ec2d5796b648623b1cfbd973863173a8311042fa99ff4fbc29121370edf702a8  /workspace/QuantLab/quantlab/report/research_state.py
+bf079e67e915eac58442f73a958c24a56889dda8b42c688a09d4ceeacf9c6776  /workspace/QuantLab/quantlab/report/runs.py
+21f1993f7c1ae8754a0337fda4c1964ec6d8ca7cb5f37cac5a68bf01f7ccfdb9  /workspace/QuantLab/quantlab/research.py
+264ca5e793cae4aecf423f7b72f4dfbf270bd06d1ddfedf72c800da2ab9c5f5f  /workspace/QuantLab/quantlab/research_statistics.py
+51091b934d49efdd5382d058ecf6dd5c2a26203cff6c2923c71b5f20bca0e082  /workspace/QuantLab/quantlab/smallcap/__init__.py
+a0b15074975e6bdacb5babf80b9d060f1a4d608e5aecf8ee6322758d22764e8a  /workspace/QuantLab/quantlab/smallcap/sim.py
+0a886a84e97f48993334bd86b96239674a5f083c7fd346454707ae223d404655  /workspace/QuantLab/quantlab/smallcap/universe.py
+22f3f073db8f80d8ed351d6c6c8859b1faf9acaa1dab266642b42239adde223e  /workspace/QuantLab/quantlab/strategy/__init__.py
+871a3b42df69c24b94a17210b6be2d852485d107230c4862319fb028a763ec7b  /workspace/QuantLab/quantlab/strategy/allocation.py
+329a32f94c485c4a1197bf9c5c53a36729bccfc730bb4fa1401a2be56d22f916  /workspace/QuantLab/quantlab/strategy/candidates.py
+19dbaff28a8fe28cad4c96222313f43d841725aea3ae05b272729671b3f90401  /workspace/QuantLab/quantlab/strategy/crowding.py
+3f9294aab408f8a16dbc09576cb1cf7a821426387da0be29095e2ab852fd3bc6  /workspace/QuantLab/quantlab/strategy/decision.py
+44f4636e07e1d69318ba3eb163869a5717343879319826a7e6ce7e6e3c002e28  /workspace/QuantLab/quantlab/strategy/experts.py
+7e616809fc07cd3374f5fa060820441e36a0cbad0796f102f61a566dd4533200  /workspace/QuantLab/quantlab/strategy/legacy.py
+ad9a0e623b7daf02ec3556eedd772e475dfdacb62465aa6dfcf3dfe380879119  /workspace/QuantLab/quantlab/strategy/monitor.py
+38c5cce31a1f775edd3e10dbf6df09dce67215866621adc0523176f1085bd02c  /workspace/QuantLab/quantlab/strategy/opportunity.py
+02af0f895a731a6eb17413a1451f2ada32dad8c8db65c3bbd762477a161d7b20  /workspace/QuantLab/quantlab/strategy/portfolio.py
+4dbf03df9f7d4a3d91bd441d63b6188beef397db8f50bdc8fe4c2c2e453c566a  /workspace/QuantLab/quantlab/strategy/risk.py
+58e09e6d942a481d28c9b8f05f6a31021f20f34b1fba372bcba70f613af310eb  /workspace/QuantLab/quantlab/strategy/risk_policy.py
+c372dc3b9310b030b29671ae25280efbf2fce74c4035c679b48207b26c43380d  /workspace/QuantLab/quantlab/strategy/risk_trades.py
+41281d8ba4a1a796d89e267a486423bce23487f1c63bb624be0a79c0d559e701  /workspace/QuantLab/quantlab/strategy/scoring.py
+ab9c14c30886e49f5a80c8476fcb83d65afaf1f0cc779c2f7e42f76b9ddf9e5b  /workspace/QuantLab/quantlab/universe/__init__.py
+027eccf2a3284192aece264f38f071b5c498f53e278f7fe3bbf8f6631bee06ec  /workspace/QuantLab/quantlab/universe/d1_masks.py
+4eeaff850c353cbb204cc495c377f9bdbdcea73126c720f58ed4cc5c8ec4861f  /workspace/QuantLab/quantlab/universe/mask.py
+61e38d2e5682199066e8aa8196b508a78fe1a8dc3cd5ba4951cdc9c6ccb6820a  /workspace/QuantLab/quantlab/v2_eng_smoke.py
+36ca3de651c4ec1515bd0849fb269084d353a319994fc136891084857ca33517  /workspace/QuantLab/quantlab/v2_live_dryrun.py
+e668dcf009a819f51f15059f96b2c2d4f4673c035cb3b324513a4f8da27a2327  /workspace/QuantLab/quantlab/v2_proto_smoke.py
+c6f7eb2e4846c7d0f989b8189be562dbcccd963a848dfd981871d50ae4a10af2  /workspace/QuantLab/quantlab/v2_schemas.py
+c7e69c176787baa724c1b6f59bfca9ef68322fa455f8c08247cdc9b07267086e  /workspace/QuantLab/quantlab/v2_skeleton_smoke.py
+d5b0f7556fc5643fa412f16a100f4a16d13d674bb20f11123d70745bd641b2c3  /workspace/QuantLab/quantlab/v2_smoke.py
+f2453659f1ce2aff44f75460f336ee0c1a83b1e9acc7a3d8d86934b7644496bb  /workspace/QuantLab/quantlab/v2_strategy_smoke.py
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /workspace/QuantLab/quantlab/webapp/__init__.py
+e60d7805b63a86f9eca18ac553aa36ee8533d0b6d4702e1f78288fd8073df0db  /workspace/QuantLab/quantlab/webapp/app.py
+93b54ae774651b3bf9c832f8c23d973893e446270eba92423767306c57d37849  /workspace/QuantLab/research/adj_price.py
+e1736d80c589ecd717731dc38ae99a52f3d448da9841b2c3794ee008f59613ea  /workspace/QuantLab/research/ai_debate_memory_runner.py
+da62b28a43a88bb9e28d725eba84040be7c99ae5b08e93e9960e4a0057aad1c6  /workspace/QuantLab/research/b4_paper_extend.py
+bfb056305ea624c96ca6d6f7e9f5d39ecf932d2881c5b0c4b41bb6a292958a18  /workspace/QuantLab/research/capacity_adv_paper_extend.py
+c7a0548698f9b5d7f9b95d9dfc9767369311eb68366936e5e12936a1d048fe05  /workspace/QuantLab/research/g1g5_capacity_adv_weights.py
+4f8e37e4dffc5ec049da6d8efd89ecb0145280ac6db1e43764fc6712d77b0bf3  /workspace/QuantLab/research/g1g5_d1_val_resid_weights.py
+059ab23a87a839d211b31e88cf2367618959d28aab0bf460bb4998d54fb10ba3  /workspace/QuantLab/research/g1g5_earnings_event_weights.py
+2a3962396b9d2b20c2ba42d85074f2a8aa268d6b4ed742c3d549b718d4e6a5d3  /workspace/QuantLab/research/g1g5_equity_incentive_weights.py
+b2d26c0d26933778df62af99828dc58e17d37f94432004ca2d2de94ed2ba1a16  /workspace/QuantLab/research/g1g5_expand_g6.py
+16d93948e79a7d767a1a1e8ae1cae071cb5030c34f3c4953bbd30ad6c7be7aee  /workspace/QuantLab/research/g1g5_insider_increase_weights.py
+1a5392b8d5920c600ba3ec79f0fe18ff57dda3953c03e6c2021b164d345c3922  /workspace/QuantLab/research/g1g5_low_turnover_weights.py
+ca04507616030ccc789128bd1650b573ea934014ae6ed5e69dd90088386e943c  /workspace/QuantLab/research/g1g5_moneyflow_resid_weights.py
+8a56d13669b2820abc6b8757340a5774155581cdea854594ddffe058ed13c789  /workspace/QuantLab/research/g1g5_nontextbook_weights.py
+ff510148a8d0c571680986c8345b5d83e70fd572eca80206b1383f3c35da8c54  /workspace/QuantLab/research/g1g5_wiring.py
+043fa68d4e6dd40f003db04fddfd79fb431c4a00f280a0a5db35cbe733d90620  /workspace/QuantLab/research/g1g5_x2_panel_stitch.py
+93b0035431929ea6fddd955a30673e588606ab8aa97c94c0637dbc0d5a05bd45  /workspace/QuantLab/research/s6_paper_extend.py
+# meta	EXPECTED_CHANGE	4832	1793098516268789169	1793098516268789169	123296	/workspace/QuantLab/output/data_freshness_status.json
+# meta	EXPECTED_CHANGE	3775	1793097465391430422	1793097465391430422	123294	/workspace/QuantLab/output/daily_update_status.json
+# meta	MUST_NOT_CHANGE	77822	1792905369760061206	1792905369768061158	707967	/workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+# meta	MUST_NOT_CHANGE	453	1792905369704061540	1792905369716061469	707903	/workspace/QuantLab/data/v2/calendar/manifest.json
+# meta	MUST_NOT_CHANGE	95261	1793011202315344595	1793096923296666042	455258	/workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet
+# meta	MUST_NOT_CHANGE	96599805	1792904935920546404	1792904936244542793	137769	/workspace/QuantLab/data/v2/events/announcements_classified_pit.parquet
+# meta	MUST_NOT_CHANGE	45488770	1792905264660065399	1792905264716065416	140214	/workspace/QuantLab/data/v2/events/announcements_classified_pit_post202406.parquet
+# meta	MUST_NOT_CHANGE	107038	1792905052643890921	1792905052655890889	416684	/workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet
+# meta	MUST_NOT_CHANGE	219050	1792905344312073378	1792905344316073378	699085	/workspace/QuantLab/data/v2/sw_pit/industry_members_sw_l1_pit.parquet
+# meta	MUST_NOT_CHANGE	86654	1792905026111989009	1792905026111989009	416498	/workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1.parquet
+# meta	MUST_NOT_CHANGE	16640	1792905434679746648	1792905434683746632	774219	/workspace/QuantLab/docs/v2/eng_sd1/paper_import_closure.json
+# meta	MUST_NOT_CHANGE	0	1792904900700752808	1792904900700752808	100110	/workspace/QuantLab/quantlab/__init__.py
+# meta	MUST_NOT_CHANGE	108	1792905289512070846	1792905289544070851	615842	/workspace/QuantLab/quantlab/agents/__init__.py
+# meta	MUST_NOT_CHANGE	361	1792905289676070871	1792905289692070873	615894	/workspace/QuantLab/quantlab/agents/factor_evolve/__init__.py
+# meta	MUST_NOT_CHANGE	5403	1792905289648070866	1792905289668070869	615886	/workspace/QuantLab/quantlab/agents/factor_evolve/hard_gates.py
+# meta	MUST_NOT_CHANGE	10054	1792905289660070868	1792905289676070871	615890	/workspace/QuantLab/quantlab/agents/factor_evolve/run_stub.py
+# meta	MUST_NOT_CHANGE	1975	1792905289648070866	1792905289668070869	615887	/workspace/QuantLab/quantlab/agents/factor_evolve/schemas.py
+# meta	MUST_NOT_CHANGE	8466	1792905289668070869	1792905289684070872	615892	/workspace/QuantLab/quantlab/agents/factor_evolve/weights_from_scores.py
+# meta	MUST_NOT_CHANGE	525	1792905289640070865	1792905289664070869	615884	/workspace/QuantLab/quantlab/agents/trading_loop/__init__.py
+# meta	MUST_NOT_CHANGE	1409	1792905289512070846	1792905289540070850	615841	/workspace/QuantLab/quantlab/agents/trading_loop/run_stub.py
+# meta	MUST_NOT_CHANGE	8047	1793038356109838798	1793038356109838798	615922	/workspace/QuantLab/quantlab/agents/trading_loop/settle.py
+# meta	MUST_NOT_CHANGE	5416	1792905289632070864	1792905289656070868	615881	/workspace/QuantLab/quantlab/agents/trading_loop/state_machine.py
+# meta	MUST_NOT_CHANGE	93	1792904965772416639	1792904965788416629	199792	/workspace/QuantLab/quantlab/backtest/__init__.py
+# meta	MUST_NOT_CHANGE	52123	1792904965784416631	1792904965796416624	199803	/workspace/QuantLab/quantlab/backtest/engine.py
+# meta	MUST_NOT_CHANGE	25486	1792905009552095695	1792905009564095598	206004	/workspace/QuantLab/quantlab/backtest/ledger.py
+# meta	MUST_NOT_CHANGE	522	1792904965812416615	1792904965820416610	199827	/workspace/QuantLab/quantlab/backtest/tax.py
+# meta	MUST_NOT_CHANGE	2067	1792905025807990567	1792905025827990463	416132	/workspace/QuantLab/quantlab/beta/__init__.py
+# meta	MUST_NOT_CHANGE	22357	1792905054727885532	1792905054731885522	416686	/workspace/QuantLab/quantlab/beta/satellite.py
+# meta	MUST_NOT_CHANGE	53359	1792905025799990608	1792905025819990505	416128	/workspace/QuantLab/quantlab/beta/sleeve.py
+# meta	MUST_NOT_CHANGE	2756	1792905187032007738	1792905187164007922	416698	/workspace/QuantLab/quantlab/beta/smallcap_history_panels.py
+# meta	MUST_NOT_CHANGE	8486	1792905186948007619	1792905186956007630	416696	/workspace/QuantLab/quantlab/beta/smallcap_history_selector.py
+# meta	MUST_NOT_CHANGE	53443	1792905118707826178	1792905118711826196	416693	/workspace/QuantLab/quantlab/beta/smallcap_sleeve.py
+# meta	MUST_NOT_CHANGE	9440	1792905180663998257	1792905180667998263	416695	/workspace/QuantLab/quantlab/beta/survivorship.py
+# meta	MUST_NOT_CHANGE	32286	1792905009276097920	1792905009372097147	113918	/workspace/QuantLab/quantlab/cli.py
+# meta	MUST_NOT_CHANGE	16206	1792905009276097920	1792905009372097147	113919	/workspace/QuantLab/quantlab/comparison.py
+# meta	MUST_NOT_CHANGE	9845	1792904965800416622	1792904965812416615	95415	/workspace/QuantLab/quantlab/config.py
+# meta	MUST_NOT_CHANGE	4359	1792904965792416627	1792904965800416622	95411	/workspace/QuantLab/quantlab/config_validation.py
+# meta	MUST_NOT_CHANGE	121	1792904965812416615	1792904965820416610	285879	/workspace/QuantLab/quantlab/data/__init__.py
+# meta	MUST_NOT_CHANGE	17047	1792904965812416615	1792904965820416610	285881	/workspace/QuantLab/quantlab/data/contracts.py
+# meta	MUST_NOT_CHANGE	4549	1792904965812416615	1792904965820416610	285878	/workspace/QuantLab/quantlab/data/eastmoney.py
+# meta	MUST_NOT_CHANGE	1220	1792905009560095630	1792905009564095598	286436	/workspace/QuantLab/quantlab/data/exchange_rules.py
+# meta	MUST_NOT_CHANGE	3842	1792904965812416615	1792904965820416610	285877	/workspace/QuantLab/quantlab/data/industry.py
+# meta	MUST_NOT_CHANGE	31858	1792905009564095598	1792905009568095565	286437	/workspace/QuantLab/quantlab/data/local_adapter.py
+# meta	MUST_NOT_CHANGE	8939	1792904965820416610	1792904965824416608	285886	/workspace/QuantLab/quantlab/data/market.py
+# meta	MUST_NOT_CHANGE	19164	1792905001532168377	1792905001544168256	286429	/workspace/QuantLab/quantlab/data/public_desk.py
+# meta	MUST_NOT_CHANGE	9065	1792904965808416617	1792904965820416610	285875	/workspace/QuantLab/quantlab/data/qualification.py
+# meta	MUST_NOT_CHANGE	10895	1792905001576167930	1792905001588167808	286434	/workspace/QuantLab/quantlab/data/realtime.py
+# meta	MUST_NOT_CHANGE	5240	1792905009564095598	1792905009568095565	286438	/workspace/QuantLab/quantlab/data/sina.py
+# meta	MUST_NOT_CHANGE	23593	1793038356117838840	1793038356117838840	286439	/workspace/QuantLab/quantlab/data/sources.py
+# meta	MUST_NOT_CHANGE	4741	1792904965816416612	1792904965824416608	285884	/workspace/QuantLab/quantlab/data/store.py
+# meta	MUST_NOT_CHANGE	12572	1792905025855990318	1792905025855990318	286442	/workspace/QuantLab/quantlab/data/v2_d0_meta.py
+# meta	MUST_NOT_CHANGE	100609	1792905038735934324	1792905038739934309	286447	/workspace/QuantLab/quantlab/data/v2_readers.py
+# meta	MUST_NOT_CHANGE	6463	1792904965800416622	1792904965812416615	95416	/workspace/QuantLab/quantlab/evidence.py
+# meta	MUST_NOT_CHANGE	2498	1792905009576095501	1792905009580095469	206010	/workspace/QuantLab/quantlab/factors/__init__.py
+# meta	MUST_NOT_CHANGE	2150	1792905252340061125	1792905252344061126	583864	/workspace/QuantLab/quantlab/factors/ai_factory/__init__.py
+# meta	MUST_NOT_CHANGE	8611	1792905263064064913	1792905263064064913	584464	/workspace/QuantLab/quantlab/factors/ai_factory/asof_text_guard.py
+# meta	MUST_NOT_CHANGE	2267	1792905252348061128	1792905252348061128	583869	/workspace/QuantLab/quantlab/factors/ai_factory/evaluate.py
+# meta	MUST_NOT_CHANGE	7741	1792905252364061134	1792905252364061134	583890	/workspace/QuantLab/quantlab/factors/ai_factory/fitness.py
+# meta	MUST_NOT_CHANGE	4717	1792905253220061471	1792905253236061477	584174	/workspace/QuantLab/quantlab/factors/ai_factory/handoff.py
+# meta	MUST_NOT_CHANGE	1873	1792905252336061123	1792905252340061125	583856	/workspace/QuantLab/quantlab/factors/ai_factory/ledger.py
+# meta	MUST_NOT_CHANGE	3859	1792905253108061427	1792905253128061435	584084	/workspace/QuantLab/quantlab/factors/ai_factory/novelty.py
+# meta	MUST_NOT_CHANGE	4970	1792905263052064909	1792905263052064909	584454	/workspace/QuantLab/quantlab/factors/ai_factory/pipeline_export.py
+# meta	MUST_NOT_CHANGE	18693	1792905263088064920	1792905263104064925	584478	/workspace/QuantLab/quantlab/factors/ai_factory/quantmind_loop.py
+# meta	MUST_NOT_CHANGE	2965	1792905253248061481	1792905253264061488	584231	/workspace/QuantLab/quantlab/factors/ai_factory/rdagent_min_loop.py
+# meta	MUST_NOT_CHANGE	2230	1792905253268061489	1792905253272061491	584262	/workspace/QuantLab/quantlab/factors/ai_factory/repr_bridge.py
+# meta	MUST_NOT_CHANGE	9117	1792905252340061125	1792905252344061126	583860	/workspace/QuantLab/quantlab/factors/ai_factory/search.py
+# meta	MUST_NOT_CHANGE	7170	1792905263068064914	1792905263068064914	584467	/workspace/QuantLab/quantlab/factors/ai_factory/structural_leaves.py
+# meta	MUST_NOT_CHANGE	3294	1792905253204061464	1792905253220061471	584167	/workspace/QuantLab/quantlab/factors/ai_factory/validate_gate.py
+# meta	MUST_NOT_CHANGE	15813	1792905009620095146	1792905009624095113	206014	/workspace/QuantLab/quantlab/factors/engine.py
+# meta	MUST_NOT_CHANGE	2683	1792904965820416610	1792904965824416608	199833	/workspace/QuantLab/quantlab/factors/neutralize.py
+# meta	MUST_NOT_CHANGE	6235	1792905252332061121	1792905252336061123	206141	/workspace/QuantLab/quantlab/factors/ops.py
+# meta	MUST_NOT_CHANGE	5337	1792905050875895688	1792905050883895666	206072	/workspace/QuantLab/quantlab/factors/orthogonalize.py
+# meta	MUST_NOT_CHANGE	23733	1792905052467891388	1792905052487891335	206077	/workspace/QuantLab/quantlab/factors/p1_factor_lib.py
+# meta	MUST_NOT_CHANGE	34494	1792905052499891303	1792905052523891240	206078	/workspace/QuantLab/quantlab/factors/p1_pipeline.py
+# meta	MUST_NOT_CHANGE	21940	1792905025867990256	1792905025867990256	206059	/workspace/QuantLab/quantlab/factors/residual_factory.py
+# meta	MUST_NOT_CHANGE	20462	1792905038639934679	1792905038647934649	206065	/workspace/QuantLab/quantlab/factors/v2_min_pipeline.py
+# meta	MUST_NOT_CHANGE	7490	1792905050831895810	1792905050835895799	206071	/workspace/QuantLab/quantlab/factors/walk_forward.py
+# meta	MUST_NOT_CHANGE	12159	1792904965796416624	1792904965808416617	95414	/workspace/QuantLab/quantlab/forward.py
+# meta	MUST_NOT_CHANGE	5362	1792904965780416634	1792904965788416629	95409	/workspace/QuantLab/quantlab/free_research.py
+# meta	MUST_NOT_CHANGE	1657	1792905253204061464	1792905253220061471	584169	/workspace/QuantLab/quantlab/intel/__init__.py
+# meta	MUST_NOT_CHANGE	10821	1792905263044064907	1792905263044064907	584449	/workspace/QuantLab/quantlab/intel/asof_window.py
+# meta	MUST_NOT_CHANGE	5737	1792905263176064947	1792905263200064955	584513	/workspace/QuantLab/quantlab/intel/debate_ledger.py
+# meta	MUST_NOT_CHANGE	5766	1792905253216061469	1792905253236061477	584170	/workspace/QuantLab/quantlab/intel/embeddings.py
+# meta	MUST_NOT_CHANGE	7676	1792905253220061471	1792905253240061478	584175	/workspace/QuantLab/quantlab/intel/messages.py
+# meta	MUST_NOT_CHANGE	10985	1792904965772416639	1792904965788416629	95407	/workspace/QuantLab/quantlab/legacy_comparison.py
+# meta	MUST_NOT_CHANGE	2861	1792904965792416627	1792904965804416619	95412	/workspace/QuantLab/quantlab/mandate.py
+# meta	MUST_NOT_CHANGE	14895	1792905025727990980	1792905025767990774	113933	/workspace/QuantLab/quantlab/mandate_v2.py
+# meta	MUST_NOT_CHANGE	4954	1792905371752049416	1792905371764049346	122441	/workspace/QuantLab/quantlab/metrics.py
+# meta	MUST_NOT_CHANGE	15564	1792905009560095630	1792905009564095598	113923	/workspace/QuantLab/quantlab/pipeline.py
+# meta	MUST_NOT_CHANGE	1402	1792905051971892707	1792905051971892707	477011	/workspace/QuantLab/quantlab/platform/__init__.py
+# meta	MUST_NOT_CHANGE	90033	1792905157879954403	1792905158079954867	505686	/workspace/QuantLab/quantlab/platform/execution.py
+# meta	MUST_NOT_CHANGE	45072	1792905209220033513	1792905209244033536	557630	/workspace/QuantLab/quantlab/platform/futures.py
+# meta	MUST_NOT_CHANGE	6048	1792905225868047008	1792905225876047014	560290	/workspace/QuantLab/quantlab/platform/margin.py
+# meta	MUST_NOT_CHANGE	25762	1792905051947892772	1792905051951892761	477001	/workspace/QuantLab/quantlab/platform/strategy_feed.py
+# meta	MUST_NOT_CHANGE	12339	1792905291636071152	1792905291700071161	562120	/workspace/QuantLab/quantlab/platform/weight_long_table.py
+# meta	MUST_NOT_CHANGE	48668	1792904965768416642	1792904965784416631	95406	/workspace/QuantLab/quantlab/policy_comparison.py
+# meta	MUST_NOT_CHANGE	688	1792905048743901704	1792905048763901646	260858	/workspace/QuantLab/quantlab/portfolio/__init__.py
+# meta	MUST_NOT_CHANGE	28505	1792905361380072575	1792905361384072575	266404	/workspace/QuantLab/quantlab/portfolio/b4_paper.py
+# meta	MUST_NOT_CHANGE	9691	1792905289548070852	1792905289572070855	266403	/workspace/QuantLab/quantlab/portfolio/book_smoke.py
+# meta	MUST_NOT_CHANGE	7047	1792905001516168541	1792905001516168541	254580	/workspace/QuantLab/quantlab/portfolio/current.py
+# meta	MUST_NOT_CHANGE	22199	1792905001516168541	1792905001516168541	254579	/workspace/QuantLab/quantlab/portfolio/grok_paper.py
+# meta	MUST_NOT_CHANGE	22316	1792905001588167808	1792905001596167727	254582	/workspace/QuantLab/quantlab/portfolio/market_observatory.py
+# meta	MUST_NOT_CHANGE	3150	1792905367180072185	1792905367200072184	266407	/workspace/QuantLab/quantlab/portfolio/paper_track.py
+# meta	MUST_NOT_CHANGE	60008	1793038356117838840	1793038356117838840	266405	/workspace/QuantLab/quantlab/portfolio/research_loop.py
+# meta	MUST_NOT_CHANGE	9443	1792905365724072288	1792905365744072287	266406	/workspace/QuantLab/quantlab/portfolio/scorecard.py
+# meta	MUST_NOT_CHANGE	4426	1793038356089838696	1793038356089838696	266408	/workspace/QuantLab/quantlab/portfolio/trade_calendar.py
+# meta	MUST_NOT_CHANGE	25127	1792905048755901669	1792905048771901622	260859	/workspace/QuantLab/quantlab/portfolio/v2_constructor.py
+# meta	MUST_NOT_CHANGE	43200	1792905222276044447	1792905222304044468	260869	/workspace/QuantLab/quantlab/portfolio/v2_multisleeve_book.py
+# meta	MUST_NOT_CHANGE	8271	1792905048739901715	1792905048759901657	260857	/workspace/QuantLab/quantlab/portfolio/v2_rebalance.py
+# meta	MUST_NOT_CHANGE	2771	1792905101551806014	1792905101575805986	114535	/workspace/QuantLab/quantlab/promotion_gate.py
+# meta	MUST_NOT_CHANGE	17121	1792904965796416624	1792904965808416617	95413	/workspace/QuantLab/quantlab/reference_cash_replay.py
+# meta	MUST_NOT_CHANGE	334	1792904965820416610	1792904965828416605	199838	/workspace/QuantLab/quantlab/report/__init__.py
+# meta	MUST_NOT_CHANGE	2456	1792904965820416610	1792904965824416608	199834	/workspace/QuantLab/quantlab/report/advice.py
+# meta	MUST_NOT_CHANGE	5995	1792905009612095210	1792905009624095113	206013	/workspace/QuantLab/quantlab/report/attribution.py
+# meta	MUST_NOT_CHANGE	2695	1792904965820416610	1792904965828416605	199837	/workspace/QuantLab/quantlab/report/capital.py
+# meta	MUST_NOT_CHANGE	20349	1792905001576167930	1792905001588167808	205846	/workspace/QuantLab/quantlab/report/html.py
+# meta	MUST_NOT_CHANGE	5942	1792905009624095113	1792905009628095081	206019	/workspace/QuantLab/quantlab/report/metrics.py
+# meta	MUST_NOT_CHANGE	12702	1792905009624095113	1792905009624095113	206015	/workspace/QuantLab/quantlab/report/research_diagnostics.py
+# meta	MUST_NOT_CHANGE	27189	1792905001556168134	1792905001564168052	205768	/workspace/QuantLab/quantlab/report/research_state.py
+# meta	MUST_NOT_CHANGE	5255	1792904965824416608	1792904965832416603	199840	/workspace/QuantLab/quantlab/report/runs.py
+# meta	MUST_NOT_CHANGE	7146	1792904965776416636	1792904965788416629	95408	/workspace/QuantLab/quantlab/research.py
+# meta	MUST_NOT_CHANGE	10272	1792905009564095598	1792905009576095501	113926	/workspace/QuantLab/quantlab/research_statistics.py
+# meta	MUST_NOT_CHANGE	91	1792905001500168702	1792905001504168662	205676	/workspace/QuantLab/quantlab/smallcap/__init__.py
+# meta	MUST_NOT_CHANGE	16237	1792905009628095081	1792905009648094919	206024	/workspace/QuantLab/quantlab/smallcap/sim.py
+# meta	MUST_NOT_CHANGE	7106	1792905009628095081	1792905009648094919	206023	/workspace/QuantLab/quantlab/smallcap/universe.py
+# meta	MUST_NOT_CHANGE	489	1792904965824416608	1792904965948416533	199844	/workspace/QuantLab/quantlab/strategy/__init__.py
+# meta	MUST_NOT_CHANGE	5184	1792904965824416608	1792904965832416603	199839	/workspace/QuantLab/quantlab/strategy/allocation.py
+# meta	MUST_NOT_CHANGE	4990	1792904965968416521	1792904965972416519	199858	/workspace/QuantLab/quantlab/strategy/candidates.py
+# meta	MUST_NOT_CHANGE	4506	1792904965824416608	1792904965948416533	199845	/workspace/QuantLab/quantlab/strategy/crowding.py
+# meta	MUST_NOT_CHANGE	7777	1792904965960416526	1792904965964416523	199850	/workspace/QuantLab/quantlab/strategy/decision.py
+# meta	MUST_NOT_CHANGE	8799	1792904965832416603	1792904965960416526	199848	/workspace/QuantLab/quantlab/strategy/experts.py
+# meta	MUST_NOT_CHANGE	8255	1792904965960416526	1792904965968416521	199853	/workspace/QuantLab/quantlab/strategy/legacy.py
+# meta	MUST_NOT_CHANGE	1583	1792904965964416523	1792904965968416521	199854	/workspace/QuantLab/quantlab/strategy/monitor.py
+# meta	MUST_NOT_CHANGE	13366	1792904965964416523	1792904965968416521	199855	/workspace/QuantLab/quantlab/strategy/opportunity.py
+# meta	MUST_NOT_CHANGE	4125	1792904965972416519	1792904965976416515	199861	/workspace/QuantLab/quantlab/strategy/portfolio.py
+# meta	MUST_NOT_CHANGE	5341	1792904965968416521	1792904965972416519	199859	/workspace/QuantLab/quantlab/strategy/risk.py
+# meta	MUST_NOT_CHANGE	10562	1792904965968416521	1792904965972416519	199857	/workspace/QuantLab/quantlab/strategy/risk_policy.py
+# meta	MUST_NOT_CHANGE	5336	1792904965964416523	1792904965968416521	199856	/workspace/QuantLab/quantlab/strategy/risk_trades.py
+# meta	MUST_NOT_CHANGE	6401	1792904965972416519	1792904965976416515	199862	/workspace/QuantLab/quantlab/strategy/scoring.py
+# meta	MUST_NOT_CHANGE	813	1792905025795990629	1792905025815990525	416126	/workspace/QuantLab/quantlab/universe/__init__.py
+# meta	MUST_NOT_CHANGE	24028	1792905025983989656	1792905025987989636	416295	/workspace/QuantLab/quantlab/universe/d1_masks.py
+# meta	MUST_NOT_CHANGE	18728	1792905025767990774	1792905025803990587	416120	/workspace/QuantLab/quantlab/universe/mask.py
+# meta	MUST_NOT_CHANGE	25000	1792905038635934694	1792905038639934679	113965	/workspace/QuantLab/quantlab/v2_eng_smoke.py
+# meta	MUST_NOT_CHANGE	11563	1792905339164073510	1792905339164073510	122172	/workspace/QuantLab/quantlab/v2_live_dryrun.py
+# meta	MUST_NOT_CHANGE	11488	1792905038663934590	1792905038663934590	113972	/workspace/QuantLab/quantlab/v2_proto_smoke.py
+# meta	MUST_NOT_CHANGE	11048	1792905025727990980	1792905025767990774	113934	/workspace/QuantLab/quantlab/v2_schemas.py
+# meta	MUST_NOT_CHANGE	7292	1792905291708071162	1792905291732071165	121947	/workspace/QuantLab/quantlab/v2_skeleton_smoke.py
+# meta	MUST_NOT_CHANGE	6448	1792905025807990567	1792905025827990463	113935	/workspace/QuantLab/quantlab/v2_smoke.py
+# meta	MUST_NOT_CHANGE	18200	1792905050803895888	1792905050803895888	114153	/workspace/QuantLab/quantlab/v2_strategy_smoke.py
+# meta	MUST_NOT_CHANGE	0	1792904900704752865	1792904900704752865	100112	/workspace/QuantLab/quantlab/webapp/__init__.py
+# meta	MUST_NOT_CHANGE	90995	1792905009688094597	1792905009696094532	113928	/workspace/QuantLab/quantlab/webapp/app.py
+# meta	MUST_NOT_CHANGE	1957	1792905359420072693	1792905359428072692	459296	/workspace/QuantLab/research/adj_price.py
+# meta	MUST_NOT_CHANGE	56314	1792905289516070847	1792905289548070852	458310	/workspace/QuantLab/research/ai_debate_memory_runner.py
+# meta	MUST_NOT_CHANGE	19715	1793057332622119520	1793057332622119520	459297	/workspace/QuantLab/research/b4_paper_extend.py
+# meta	MUST_NOT_CHANGE	16922	1792905362440072507	1792905362452072507	459299	/workspace/QuantLab/research/capacity_adv_paper_extend.py
+# meta	MUST_NOT_CHANGE	39531	1792905340780073475	1792905340884073473	458414	/workspace/QuantLab/research/g1g5_capacity_adv_weights.py
+# meta	MUST_NOT_CHANGE	41831	1792905339156073510	1792905339160073510	458412	/workspace/QuantLab/research/g1g5_d1_val_resid_weights.py
+# meta	MUST_NOT_CHANGE	15778	1792905343272073410	1792905343288073409	458419	/workspace/QuantLab/research/g1g5_earnings_event_weights.py
+# meta	MUST_NOT_CHANGE	17836	1792905345852073328	1792905345880073327	458917	/workspace/QuantLab/research/g1g5_equity_incentive_weights.py
+# meta	MUST_NOT_CHANGE	26987	1792905291708071162	1792905291732071165	458398	/workspace/QuantLab/research/g1g5_expand_g6.py
+# meta	MUST_NOT_CHANGE	17779	1792905344168073383	1792905344172073383	458675	/workspace/QuantLab/research/g1g5_insider_increase_weights.py
+# meta	MUST_NOT_CHANGE	19136	1792905303036072447	1792905303052072448	458407	/workspace/QuantLab/research/g1g5_low_turnover_weights.py
+# meta	MUST_NOT_CHANGE	50055	1792905343148073414	1792905343156073414	458418	/workspace/QuantLab/research/g1g5_moneyflow_resid_weights.py
+# meta	MUST_NOT_CHANGE	32065	1792905302680072414	1792905302860072431	458404	/workspace/QuantLab/research/g1g5_nontextbook_weights.py
+# meta	MUST_NOT_CHANGE	41202	1792905291708071162	1792905291732071165	458399	/workspace/QuantLab/research/g1g5_wiring.py
+# meta	MUST_NOT_CHANGE	7823	1792905302880072433	1792905302900072435	458405	/workspace/QuantLab/research/g1g5_x2_panel_stitch.py
+# meta	MUST_NOT_CHANGE	10229	1793056942292129207	1793056942292129207	460666	/workspace/QuantLab/research/s6_paper_extend.py
+# files=167 total_bytes=144957922

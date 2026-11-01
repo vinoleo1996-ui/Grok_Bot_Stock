@@ -1,0 +1,700 @@
+# DIFF C r3b — INCREMENTAL review aid (NOT for landing). Base = C r3 applied on r2 (/tmp/swr5/c3):
+#   sw_members_asof fdd6958a, test 935f76a8, hx2 2caa75d9, fulla cba6a74b (prereg unchanged 9db7cd14).
+# Result = C r3b state (e1adef52 / 9943b412 / b867ee15 / 3ed5a8dd), byte-identical to
+#   docs/v2/audit/STRATEGY_SW_PIT_ASOF_TRADEDAY_PROPOSAL_20261018_r3b.diff applied on r2. Section notes: see the r3b header.
+# Written as text only in the silent window: no python process, no py_compile / pyflakes / tests. Land with the full diff.
+diff --git a/research/sw_members_asof.py b/research/sw_members_asof.py
+index 9cc98a4..a812e25 100644
+--- a/research/sw_members_asof.py
++++ b/research/sw_members_asof.py
+@@ -36,19 +36,34 @@ sw_l1_asof_with_gap_carry, IndustryAsOf (by_session / reclass_share) — takes k
+   candidate l1_names, chosen l1_names, conflict) + stats["overlap_tiebreak"]. Any other value -> ValueError.
+ Session parsing (Arch 28eabd35 P3-r2-1): null / NaT / unparseable session -> SwPitIntegrityError on BOTH the pure
+ rule and the gap-carry path (never silently "unknown industry").
++Default table (C r3b, Arch 2026-10-18 ~07:00 ET): SW_L1_REL = CLEAN
++data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet (sha 89d4afa3, the table leaf 23/24 pin); the old sw_pit
++table stays reachable as SW_L1_LEGACY_REL (pitfix before arm).
++CLEAN layout (instrument_id "sz.000001" / sw_name) is adapted to ts_code "000001.SZ" / l1_name in load_sw_l1 after a
++column/dtype check (SW_L1_CLEAN_COLUMNS, pending Data §14②) and the Data r2 norm_code whitelist (known non-A ids
++excluded + disclosed, any other id raises; attrs["layout"]). Freshness:
++sw_l1_table_check() runs research.sw_pit_freshness for the legacy sw_pit layout and a CLEAN manifest check
++(data/v2/sw_l1_pit/manifest.json "tushare_candidate") for CLEAN; any other table -> disclosed as unchecked.
+ """
+ from __future__ import annotations
+ 
++import datetime as _dt
+ import hashlib
+ import io
++import json
++import re
+ from pathlib import Path
++from zoneinfo import ZoneInfo
+ 
+ import numpy as np
+ import pandas as pd
+ 
+-from research.sw_pit_freshness import SwPitIntegrityError
++from research.sw_pit_freshness import STALE_LAG_TDAYS, SwPitIntegrityError
++from research.sw_pit_freshness import ensure_checked as _sw_pit_ensure_checked
+ 
+-SW_L1_REL = "data/v2/sw_pit/industry_members_sw_l1_pit.parquet"
++SW_L1_REL = "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"  # C r3b: default = CLEAN (sha 89d4afa3)
++SW_L1_LEGACY_REL = "data/v2/sw_pit/industry_members_sw_l1_pit.parquet"  # old sw_pit table (0b1d3432); pitfix only
++SW_L1_CLEAN_MANIFEST_REL = "data/v2/sw_l1_pit/manifest.json"
+ TRADE_CAL_REL = "data/v2/calendar/trade_cal_sse_pit.parquet"
+ TRADE_CAL_SHA_PIN = "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41"
+ ON_OVERLAP_CHOICES = ("raise", "count")
+@@ -148,22 +163,205 @@ def prep_sw(sw: pd.DataFrame) -> pd.DataFrame:
+     return sw
+ 
+ 
++# C r3b (Arch 07:16 ET item 1): expected CLEAN columns / dtypes (pandas 3 dtype names). PENDING Data §14② read-only
++# column check (docs/v2/plans/DATA_SW_L1_PIT_V2_FIX_PLAN_ZH_r2.md §14-2); any difference -> SwPitIntegrityError.
++SW_L1_CLEAN_COLUMNS = (("instrument_id", "str"), ("sw_code", "str"), ("sw_name", "str"),
++                       ("in_date", "datetime64[us]"), ("out_date", "datetime64[us]"),
++                       ("available_at", "datetime64[us]"),
++                       ("source", "str"), ("revision", "int64"), ("quality_status", "str"), ("schema", "str"),
++                       ("is_new", "str"))
++# C r3b (Arch 07:16 ET item 2): code whitelist copied from Data r2 norm_code
++# (docs/v2/plans/DATA_SW_L1_PIT_V2_FIX_PLAN_ZH_r2.md sha256 482d8a2b..., lines 329-330 A_DOT / A_PFX, re.I, after
++# strip; lines 362-375 norm_code). Known non-A-share ids: Data r2 lines 62 / 1016 / 1022 ("T00018"). Known ids are
++# excluded and disclosed as non_a_share_excluded; any other id outside the whitelist (incl. null) -> raise.
++A_DOT = r"(\d{6})\.(SH|SZ|BJ)"
++A_PFX = r"(SH|SZ|BJ)\.(\d{6})"
++NON_A_SHARE_KNOWN = ("T00018",)
++# PLACEHOLDER (open question): Data r2 line 68 says CLEAN writes T00018 differently from raw ("唯一差异是非 A 股代码
++# T00018 的写法") without giving the CLEAN spelling. Until Data §14② confirms it and it is added to NON_A_SHARE_KNOWN,
++# that row is an unknown format and load_sw_l1(CLEAN) raises (fail-closed).
++
++
++def _norm_a_share(codes: pd.Series) -> pd.Series:
++    """Vectorized Data r2 norm_code -> ts_code "600000.SH"; None where the id is outside the whitelist."""
++    s = codes.astype("string").str.strip()
++    dot = s.str.extract(A_DOT, flags=re.I)
++    pfx = s.str.extract(A_PFX, flags=re.I)
++    dot_ok = s.str.fullmatch(A_DOT, flags=re.I).fillna(False).astype(bool)
++    pfx_ok = s.str.fullmatch(A_PFX, flags=re.I).fillna(False).astype(bool)
++    out = pd.Series(None, index=codes.index, dtype=object)
++    out[dot_ok] = (dot[0] + "." + dot[1].str.upper())[dot_ok].astype(object)
++    out[pfx_ok] = (pfx[1] + "." + pfx[0].str.upper())[pfx_ok].astype(object)
++    return out
++
++
++def normalize_sw_l1_layout(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
++    """C r3b: accept both SW L1 layouts. sw_pit (ts_code / l1_name) is used as-is (preferred when both exist; no
++    schema assertion — legacy table). CLEAN sw_l1_pit tushare (instrument_id / sw_name, no ts_code): columns and dtypes
++    must equal SW_L1_CLEAN_COLUMNS, else SwPitIntegrityError; instrument_id -> ts_code via the Data r2 norm_code
++    whitelist; ids in NON_A_SHARE_KNOWN are dropped and disclosed (non_a_share_excluded); any other non-whitelisted
++    id -> SwPitIntegrityError. Raw row / code counts and in_date range (before exclusion) are kept for the manifest
++    check. Anything else -> SwPitIntegrityError. in_date / out_date are required in both layouts."""
++    cols = set(df.columns)
++    if not {"in_date", "out_date"} <= cols:
++        raise SwPitIntegrityError(f"SW L1 table has no in_date/out_date: columns {sorted(cols)}")
++    if {"ts_code", "l1_name"} <= cols:
++        return df, {"layout": "sw_pit (ts_code/l1_name)", "non_a_share_excluded": [], "n_rows_non_a_share_excluded": 0}
++    if {"instrument_id", "sw_name"} <= cols:
++        got = tuple((c, str(df[c].dtype)) for c in df.columns)
++        if sorted(got) != sorted(SW_L1_CLEAN_COLUMNS):
++            raise SwPitIntegrityError(f"CLEAN SW L1 schema != expected (pending Data §14②): got {list(got)}, "
++                                      f"expected {list(SW_L1_CLEAN_COLUMNS)}")
++        iid = df["instrument_id"]
++        ts = _norm_a_share(iid)
++        bad = ts.isna()
++        known = bad & iid.astype("string").str.strip().isin(NON_A_SHARE_KNOWN).fillna(False).astype(bool)
++        unknown = bad & ~known
++        if unknown.any():
++            ex = sorted(str(x) for x in iid[unknown].unique())[:10]
++            raise SwPitIntegrityError(f"CLEAN SW L1: {int(unknown.sum())} rows with instrument_id outside the Data r2 "
++                                      f"norm_code whitelist and not in NON_A_SHARE_KNOWN: {ex}")
++        ind = pd.to_datetime(df["in_date"], errors="coerce")
++        info = {"layout": "sw_l1_pit tushare (instrument_id/sw_name -> ts_code/l1_name)",
++                "non_a_share_excluded": sorted(str(x) for x in iid[known].unique()),
++                "n_rows_non_a_share_excluded": int(known.sum()),
++                "raw": {"rows": int(len(df)), "n_instruments": int(iid.nunique()),
++                        "in_date_min": str(ind.min().date()), "in_date_max": str(ind.max().date())}}
++        keep = ~known
++        return df[keep].assign(ts_code=ts[keep], l1_name=df.loc[keep, "sw_name"]), info
++    raise SwPitIntegrityError(f"SW L1 table layout not recognised (need ts_code/l1_name or instrument_id/sw_name): "
++                              f"columns {sorted(cols)}")
++
++
+ def load_sw_l1(root: Path, path: Path | str | None = None) -> pd.DataFrame:
+     """Single read of the file bytes: sha256 recorded from the same bytes that are parsed (no TOCTOU).
+-    path: explicit table file (absolute, or relative to root); None -> root / SW_L1_REL (default, unchanged).
+-    attrs: sha256 (of the bytes actually read), path (resolved file actually read)."""
++    path: explicit table file (absolute, or relative to root); None -> root / SW_L1_REL (C r3b: CLEAN).
++    attrs: sha256 (of the bytes actually read), path (resolved file actually read), layout (normalize_sw_l1_layout)."""
+     fp = Path(root) / SW_L1_REL if path is None else Path(path)
+     if not fp.is_absolute():
+         fp = Path(root) / fp
+     raw = fp.read_bytes()
+-    df = pd.read_parquet(io.BytesIO(raw))  # import surface: stdlib + numpy + pandas (+ sw_pit_freshness error type)
++    df = pd.read_parquet(io.BytesIO(raw))  # import surface: stdlib + numpy + pandas (+ sw_pit_freshness)
++    df, layout = normalize_sw_l1_layout(df)
+     cols = ["ts_code", "l1_name", "in_date", "out_date"] + (["is_new"] if "is_new" in df.columns else [])
+     sw = prep_sw(df[cols])
+     sw.attrs["sha256"] = hashlib.sha256(raw).hexdigest()
+     sw.attrs["path"] = str(fp.resolve())
++    sw.attrs["layout"] = layout
+     return sw
+ 
+ 
++_ET = ZoneInfo("America/New_York")
++_SH = ZoneInfo("Asia/Shanghai")
++_TABLE_CHECKS: dict = {}
++
++
++def _completed_open_day(ts_sh: _dt.datetime, cal: "TradeCal", what: str) -> pd.Timestamp:
++    """Latest SSE session completed at ts_sh (same rule as sw_pit_freshness: open day and SH hour >= 18, else the
++    last open day before). SH date beyond the calendar end -> SwPitIntegrityError."""
++    d = pd.Timestamp(ts_sh.date())
++    if d > cal.end:
++        raise SwPitIntegrityError(f"trade calendar ends {cal.end.date()} < SH date of {what} {d.date()}")
++    od = pd.DatetimeIndex(cal.open_days)
++    if d in od and ts_sh.hour >= 18:
++        return d
++    prev = od[od < d]
++    if len(prev) == 0:
++        raise SwPitIntegrityError(f"calendar has no open day before {d.date()}")
++    return prev[-1]
++
++
++def _clean_manifest_check(root: Path, sw: pd.DataFrame, cal: "TradeCal", now_et: _dt.datetime) -> dict:
++    """CLEAN integrity/coverage from data/v2/sw_l1_pit/manifest.json["tushare_candidate"] (top-level rows/n_instruments
++    describe the legacy vote table, not CLEAN). The manifest has NO sha256 and NO "built": integrity = code sha pin
++    + manifest metrics rows / n_instruments / in_date_min / in_date_max == raw table (before non-A exclusion;
++    mismatch raises); coverage = SSE
++    session completed at manifest "fetch_time". Returns None if the manifest does not describe this file."""
++    mpath = Path(root) / SW_L1_CLEAN_MANIFEST_REL
++    try:
++        man = json.loads(mpath.read_text(encoding="utf-8"))
++    except Exception as e:
++        raise SwPitIntegrityError(f"sw_l1_pit manifest unreadable: {mpath} ({type(e).__name__}: {e})")
++    tc = man.get("tushare_candidate") or {}
++    if not tc.get("path") or Path(tc["path"]).resolve() != Path(sw.attrs.get("path", "")).resolve():
++        return None
++    mt = tc.get("metrics") or {}
++    raw = (sw.attrs.get("layout") or {}).get("raw")  # counts BEFORE non-A-share exclusion (C r3b)
++    if raw is None:
++        raise SwPitIntegrityError("CLEAN manifest check needs load_sw_l1(CLEAN) attrs['layout']['raw']")
++    got = dict(raw)
++    bad = {k: (mt.get(k), v) for k, v in got.items() if str(mt.get(k)) != str(v)}
++    if bad:
++        raise SwPitIntegrityError(f"sw_l1_pit manifest tushare_candidate.metrics != table: {bad}")
++    ft = man.get("fetch_time")
++    try:
++        f = _dt.datetime.fromisoformat(str(ft))
++    except (TypeError, ValueError) as e:
++        raise SwPitIntegrityError(f"sw_l1_pit manifest fetch_time missing/unparseable: {ft!r} ({e})")
++    f_et = f.replace(tzinfo=_ET) if f.tzinfo is None else f.astimezone(_ET)
++    cov = _completed_open_day(f_et.astimezone(_SH), cal, "fetch_time")
++    ref = _completed_open_day(now_et.astimezone(_SH), cal, "now")
++    od = pd.DatetimeIndex(cal.open_days)
++    return {"check": "sw_l1_pit manifest tushare_candidate (no sha256/built in manifest; sha = code pin)",
++            "manifest": SW_L1_CLEAN_MANIFEST_REL, "fetch_time_et": f_et.isoformat(timespec="seconds"),
++            "coverage_day": str(cov.date()), "ref_day": str(ref.date()),
++            "lag_tdays": int(((od > cov) & (od <= ref)).sum()), "metrics": got,
++            "promotion_approved": tc.get("promotion_approved")}
++
++
++def sw_l1_table_check(root: Path, sw: pd.DataFrame, as_of, cal: "TradeCal", *, as_of_defaulted: bool = False,
++                      now_et: _dt.datetime | None = None) -> dict:
++    """C r3b freshness/integrity dispatch on the table actually read (sw = load_sw_l1 output):
++    legacy sw_pit file -> research.sw_pit_freshness.ensure_checked (manifest data/v2/sw_pit; unchanged rules);
++    CLEAN -> _clean_manifest_check (integrity raises; lag_tdays >= STALE_LAG_TDAYS and as_of > coverage_day warn);
++    any other file -> warn "no manifest check" (stale=True, disclosure only). Aggregated per path across calls
++    (latest as_of, union of warns); read back with sw_l1_table_check_last(path)."""
++    p = Path(sw.attrs.get("path", "")).resolve()
++    a = None if as_of is None else str(as_of)[:10]
++    if p == (Path(root) / SW_L1_LEGACY_REL).resolve():
++        r = dict(_sw_pit_ensure_checked(Path(root), as_of=a, as_of_defaulted=as_of_defaulted),
++                 check="research.sw_pit_freshness (manifest data/v2/sw_pit)", path=str(p))
++        _TABLE_CHECKS[str(p)] = r
++        return r
++    base = _clean_manifest_check(Path(root), sw, cal, now_et or _dt.datetime.now(_ET))
++    warns = []
++    if base is None:
++        base = {"check": "none (no manifest describes this file)"}
++        warns.append("no manifest check for this table (sha pin only)")
++    else:
++        if base["lag_tdays"] >= STALE_LAG_TDAYS:
++            warns.append(f"lag_tdays={base['lag_tdays']}>={STALE_LAG_TDAYS}")
++        if a is not None and a > base["coverage_day"]:
++            warns.append(f"coverage_gap: as_of={a} > coverage_day={base['coverage_day']}")
++    if as_of_defaulted:
++        warns.append("as_of 取默认值（调用方未传）")
++    prev = _TABLE_CHECKS.get(str(p))
++    r = dict(base, path=str(p), sha256=sw.attrs.get("sha256"), as_of=a, as_of_defaulted=as_of_defaulted,
++             checked_at_et=(now_et or _dt.datetime.now(_ET)).isoformat(timespec="seconds"), warns=warns, n_calls=1)
++    if prev is not None:
++        if prev.get("as_of") is not None and (a is None or prev["as_of"] > a):
++            r["as_of"], r["as_of_defaulted"] = prev["as_of"], prev["as_of_defaulted"]
++        r["warns"] = list(dict.fromkeys(prev["warns"] + warns))
++        r["n_calls"] = prev["n_calls"] + 1
++    blocking = [w for w in r["warns"] if not w.startswith("as_of 取默认值")]
++    r["stale"] = bool(blocking)
++    r["disclosure_zh"] = ("【披露】申万 L1 表检查：" + "；".join(r["warns"]) + f"（{r['check']}）。行业相关结果仅作带披露参考。"
++                          if blocking else "")
++    _TABLE_CHECKS[str(p)] = r
++    return r
++
++
++def sw_l1_table_check_last(path=None) -> dict | None:
++    """Latest aggregated sw_l1_table_check result for `path` (None -> the only / last checked table)."""
++    if path is not None:
++        return _TABLE_CHECKS.get(str(Path(path).resolve()))
++    return list(_TABLE_CHECKS.values())[-1] if _TABLE_CHECKS else None
++
++
++def _reset_table_checks_for_tests() -> None:
++    _TABLE_CHECKS.clear()
++
++
+ def sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
+     """Row filter identical to Intel intel_common.sw_members_asof (expects datetime in_date/out_date)."""
+     d = pd.Timestamp(d).normalize()
+@@ -300,6 +498,7 @@ class IndustryAsOf:
+         self.stats["trade_cal_sha256"] = self.cal.sha256
+         self.sha256 = self.sw.attrs.get("sha256")
+         self.path = self.sw.attrs.get("path")
++        self.layout = self.sw.attrs.get("layout")
+ 
+     def by_session(self, pairs: pd.DataFrame, code_col: str = "instrument",
+                    sess_col: str = "session") -> dict:
+@@ -348,7 +547,7 @@ def sw_pit_required(ia: "IndustryAsOf", rs: dict, unknown_key: str = "n_rows_aso
+     """主 Agent 06:49 ET item 3: mandatory per-arm sw_pit fields. rs = ia.reclass_share(...) on the arm's holdings.
+     sw_pit_sha256 = sha of the bytes actually read (ia.sha256); n_unknown_rows = rs[unknown_key] (unknown-industry
+     holding rows); n_overlap_codes = codes with > 1 active row on some holding day; plus list / tie order."""
+-    return {"sw_pit_sha256": ia.sha256, "sw_pit_path": ia.path, "unknown_key": unknown_key,
++    return {"sw_pit_sha256": ia.sha256, "sw_pit_path": ia.path, "sw_pit_layout": ia.layout, "unknown_key": unknown_key,
+             "n_unknown_rows": rs.get(unknown_key), "n_overlap_codes": rs.get("n_codes_overlap_on_d"),
+             "n_overlap_key_rows": rs.get("n_rows_multi_match"), "on_overlap": ia.on_overlap,
+             "overlap_tiebreak": rs.get("overlap_tiebreak"), "overlap_codes": rs.get("overlap_codes")}
+diff --git a/research/tests_sw_pit/test_sw_members_asof.py b/research/tests_sw_pit/test_sw_members_asof.py
+index 3f5765e..c1ba991 100644
+--- a/research/tests_sw_pit/test_sw_members_asof.py
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -3,10 +3,13 @@ DIFF C: d-1 = previous SSE open day per 主 Agent 06:01 ET / Arch c72f0856 P3-1/
+ C r2: window prev_open(d) <= out_date < d, cal required, d must be open, NaT rejected, in_date <= out_date
+ — Arch c6f97571;
+ C r3: on_overlap='raise' default / 'count' disclosure (主 Agent 06:49 ET), pure-rule NaT raises, mandatory sw_pit fields,
+-load_sw_l1 path parameter — Arch 28eabd35). Fixture O.SZ / T.SZ are DELIBERATE overlaps: tests that query them pass
+-on_overlap="count" explicitly or assert the default raise.
++load_sw_l1 path parameter — Arch 28eabd35; C r3b: CLEAN layout adapter + sw_l1_table_check, synthetic files only).
++Fixture O.SZ / T.SZ are DELIBERATE overlaps: tests that query them pass on_overlap="count" explicitly or assert the
++default raise.
+ In-memory frames / tmp ROOT only; no real data (every gap-carry call passes the synthetic CAL explicitly)."""
++import datetime as dt
+ import hashlib
++import json
+ import os
+ import sys
+ from pathlib import Path
+@@ -371,5 +374,130 @@ def test_load_sw_l1_path_parameter(tmp_path):
+     assert A.load_sw_l1(tmp_path, path="alt/sw.parquet").attrs["sha256"] == sha  # relative to root
+     ia = A.IndustryAsOf(sw, cal=CAL)
+     assert ia.sha256 == sha and ia.path == str(fp.resolve())
+-    with pytest.raises(FileNotFoundError):  # default path (root / SW_L1_REL) absent in tmp root
++    with pytest.raises(FileNotFoundError):  # default path (root / SW_L1_REL, CLEAN since C r3b) absent in tmp root
+         A.load_sw_l1(tmp_path)
++
++
++# Fixture with 6-digit codes (X.SZ -> 000001.SZ, ...) so the CLEAN adapter can map instrument_id back to ts_code.
++_SIX = {c: f"{i + 1:06d}.{c.split('.')[1]}" for i, c in enumerate(sorted(set(SW["ts_code"])))}
++SW6 = SW.assign(ts_code=SW["ts_code"].map(_SIX))
++
++
++def _clean_frame(ids, names, in_dates, out_dates, is_new) -> pd.DataFrame:
++    """Synthetic frame with exactly A.SW_L1_CLEAN_COLUMNS (names + pandas 3 dtypes)."""
++    n = len(ids)
++    ind = pd.to_datetime(pd.Series(list(in_dates))).astype("datetime64[us]")
++    return pd.DataFrame({
++        "instrument_id": pd.Series(list(ids), dtype="str"),
++        "sw_code": pd.Series(["801000.SI"] * n, dtype="str"),
++        "sw_name": pd.Series(list(names), dtype="str"),
++        "in_date": ind,
++        "out_date": pd.to_datetime(pd.Series(list(out_dates))).astype("datetime64[us]"),
++        "available_at": (ind + pd.Timedelta(hours=18)).astype("datetime64[us]"),
++        "source": pd.Series(["synthetic"] * n, dtype="str"),
++        "revision": pd.Series([1] * n, dtype="int64"),
++        "quality_status": pd.Series(["research_tushare_candidate"] * n, dtype="str"),
++        "schema": pd.Series(["quantlab.v2.industry_members_sw_l1.v1"] * n, dtype="str"),
++        "is_new": pd.Series(list(is_new), dtype="str")})
++
++
++def _clean_layout(sw: pd.DataFrame) -> pd.DataFrame:
++    """6-digit fixture rewritten in the CLEAN sw_l1_pit tushare layout (instrument_id sz.000001 / sw_name)."""
++    code, mkt = sw["ts_code"].str.split(".").str[0], sw["ts_code"].str.split(".").str[1].str.lower()
++    return _clean_frame(mkt + "." + code, sw["l1_name"], sw["in_date"], sw["out_date"], sw["is_new"])
++
++
++def test_clean_schema_constant_matches_fixture():
++    got = tuple((c, str(t)) for c, t in _clean_layout(SW6).dtypes.items())
++    assert sorted(got) == sorted(A.SW_L1_CLEAN_COLUMNS)
++
++
++def test_load_sw_l1_clean_layout_adapter(tmp_path):
++    # Data r2 norm_code variants (dot / prefix, any case, surrounding spaces) + one known non-A-share id (T00018)
++    ids = ["sz.000001", "SH.600000", "832317.BJ", " 600001.sh ", "T00018"]
++    real = _clean_frame(ids, ["银行", "银行", "国防军工", "银行", "交通运输"], ["2020-01-02"] * 5, [None] * 5, ["Y"] * 5)
++    fp = tmp_path / "clean.parquet"
++    real.to_parquet(fp, index=False)
++    sw = A.load_sw_l1(tmp_path, path=fp)
++    assert sw["ts_code"].tolist() == ["000001.SZ", "600000.SH", "832317.BJ", "600001.SH"]
++    assert sw["l1_name"].tolist() == ["银行", "银行", "国防军工", "银行"]
++    lay = sw.attrs["layout"]
++    assert lay["layout"].startswith("sw_l1_pit tushare")
++    assert lay["non_a_share_excluded"] == ["T00018"] and lay["n_rows_non_a_share_excluded"] == 1
++    assert lay["raw"] == {"rows": 5, "n_instruments": 5, "in_date_min": "2020-01-02", "in_date_max": "2020-01-02"}
++    ia = A.IndustryAsOf(sw, cal=CAL)
++    assert ia.layout == lay
++    assert A.l1_asof(ia.sw, _k([("000001.SZ", "2025-01-02"), ("T00018", "2025-01-02")])).tolist() == ["银行", None]
++    # same answers as the sw_pit layout on the full fixture (overlap codes in count mode)
++    fp2 = tmp_path / "clean_fixture.parquet"
++    _clean_layout(SW6).to_parquet(fp2, index=False)
++    days = ("2025-03-07", "2025-03-10", "2025-03-11", "2025-03-18")
++    pairs = [(c, d) for c in sorted(set(SW6["ts_code"])) for d in days]
++    got = A.sw_l1_asof_with_gap_carry(A.load_sw_l1(tmp_path, path=fp2), _k(pairs), cal=CAL, on_overlap="count")
++    assert got.tolist() == _q(pairs, carry=True, sw=SW6, on_overlap="count")
++    assert sum(v is not None for v in got) >= 30  # non-trivial: most fixture codes are known on these days
++    # sw_pit layout wins when both exist (no CLEAN schema check); unknown layout / missing dates raise
++    both = SW.assign(instrument_id="xx.000000", sw_name="错误")
++    assert A.normalize_sw_l1_layout(both)[0]["l1_name"].tolist() == SW["l1_name"].tolist()
++    with pytest.raises(SwPitIntegrityError, match="layout not recognised"):
++        A.normalize_sw_l1_layout(SW.rename(columns={"l1_name": "name"}))
++    with pytest.raises(SwPitIntegrityError, match="in_date/out_date"):
++        A.normalize_sw_l1_layout(SW.drop(columns=["out_date"]))
++
++
++def test_clean_schema_mismatch_raises():
++    ok = _clean_layout(SW6)
++    for bad in (ok.drop(columns=["revision"]), ok.assign(extra=1), ok.assign(revision=ok["revision"].astype(str)),
++                ok.assign(in_date=ok["in_date"].astype("datetime64[ns]"))):
++        with pytest.raises(SwPitIntegrityError, match="schema != expected"):
++            A.normalize_sw_l1_layout(bad)
++
++
++@pytest.mark.parametrize("bad_id", ["Tsh.00018", "sh.60000", None, "801010.SI", "600000.SS"])
++def test_clean_unknown_id_format_raises(bad_id):
++    d = _clean_frame(["sz.000001", bad_id], ["银行", "银行"], ["2020-01-02"] * 2, [None] * 2, ["Y"] * 2)
++    with pytest.raises(SwPitIntegrityError, match="whitelist"):
++        A.normalize_sw_l1_layout(d)
++
++
++def _clean_root(tmp_path, metrics_override=None, fetch_time="2026-10-10T10:01:23.213525-04:00"):
++    fp = tmp_path / A.SW_L1_REL
++    fp.parent.mkdir(parents=True)
++    _clean_layout(SW6).to_parquet(fp, index=False)
++    sw = A.load_sw_l1(tmp_path)
++    metrics = {"rows": len(SW6), "n_instruments": int(SW6["ts_code"].nunique()), "in_date_min": "2018-01-01",
++               "in_date_max": "2025-03-18", **(metrics_override or {})}
++    man = {"rows": 7115, "fetch_time": fetch_time,
++           "tushare_candidate": {"path": str(fp), "promotion_approved": True, "metrics": metrics}}
++    (tmp_path / A.SW_L1_CLEAN_MANIFEST_REL).write_text(json.dumps(man), encoding="utf-8")
++    return sw
++
++
++def test_sw_l1_table_check_clean_manifest(tmp_path):
++    A._reset_table_checks_for_tests()
++    sw = _clean_root(tmp_path)
++    now = dt.datetime(2026, 10, 12, 7, 0, tzinfo=A._ET)  # Mon 19:00 SH -> ref 10-12; fetch Sat 22:01 SH -> cov 10-09
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now)
++    assert r["coverage_day"] == "2026-10-09" and r["ref_day"] == "2026-10-12" and r["lag_tdays"] == 1
++    assert r["warns"] == [] and r["stale"] is False and r["sha256"] == sw.attrs["sha256"]
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-12", CAL, now_et=now + dt.timedelta(days=3))  # Thu: lag 4
++    assert r["stale"] and any(w.startswith("coverage_gap") for w in r["warns"]) and "lag_tdays=4>=3" in r["warns"]
++    assert r["n_calls"] == 2 and A.sw_l1_table_check_last(sw.attrs["path"]) is r
++    other = tmp_path / "other.parquet"  # a file the manifest does not describe -> disclosed as unchecked
++    _clean_layout(SW6).to_parquet(other, index=False)
++    r = A.sw_l1_table_check(tmp_path, A.load_sw_l1(tmp_path, path=other), "2026-10-09", CAL, now_et=now)
++    assert r["stale"] and r["check"].startswith("none")
++    A._reset_table_checks_for_tests()
++
++
++@pytest.mark.parametrize("override, fetch, match", [({"rows": 999}, None, "metrics != table"),
++                                                    ({"in_date_max": "2026-09-24"}, None, "metrics != table"),
++                                                    (None, "not-a-time", "fetch_time")])
++def test_sw_l1_table_check_clean_integrity_raises(tmp_path, override, fetch, match):
++    A._reset_table_checks_for_tests()
++    sw = _clean_root(tmp_path, override, fetch or "2026-10-10T10:01:23.213525-04:00")
++    with pytest.raises(SwPitIntegrityError, match=match):
++        A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=dt.datetime(2026, 10, 12, 7, tzinfo=A._ET))
++    (tmp_path / A.SW_L1_CLEAN_MANIFEST_REL).write_text("{", encoding="utf-8")
++    with pytest.raises(SwPitIntegrityError, match="manifest unreadable"):
++        A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=dt.datetime(2026, 10, 12, 7, tzinfo=A._ET))
+diff --git a/research/strategy_hiliq_capadv_b4_x2.py b/research/strategy_hiliq_capadv_b4_x2.py
+index 84c5a64..87b63ec 100644
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -27,6 +27,8 @@ from research.sw_members_asof import (IndustryAsOf, load_sw_l1, sw_l1_asof_with_
+                                       load_trade_cal)  # DIFF C: d-1 = prev SSE open day (主 Agent 10-18 06:01 ET)
+ from research.sw_members_asof import (sw_pit_required, sw_pit_required_ok,  # C r3: 主 Agent 06:49 ET mandatory fields
+                                       OVERLAP_TIEBREAK)
++from research.sw_members_asof import (SW_L1_LEGACY_REL, sw_l1_table_check,  # C r3b: default CLEAN + per-table check
++                                      sw_l1_table_check_last)
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -39,9 +41,16 @@ N_BY_AUM = {600000: 6, 1000000: 10}
+ X2 = ("2024-06-03", "2026-10-09")
+ SEALED = ("2018-01-02", "2024-05-31")
+ FOCUS_INDS = ("电子", "计算机", "通信", "医药生物")
+-# PIT-fix pre/post comparison must read this exact file (manifest 0b1d3432…, built 2026-10-14T04:00:19 ET)
+-SW_L1_SHA_PIN = "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"
+-SW_L1_PATH_DEFAULT = ROOT / SW_L1_REL  # C r3 (Arch 06:50): table path is a parameter; default unchanged
++# C r3b (Arch 2026-10-18 ~07:00 ET): synthesis ind cap + industry disclosure read CLEAN by default
++# (data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet, the table leaf 23/24 pin); --sw-pit-path overrides.
++SW_L1_SHA_PIN = "89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c"
++SW_L1_PATH_DEFAULT = ROOT / SW_L1_REL  # C r3 (Arch 06:50): table path is a parameter; C r3b: SW_L1_REL = CLEAN
++# PIT-fix pre/post comparison (PAUSED, 主 Agent 06:49 ET) reads the old sw_pit file (manifest 0b1d3432…, built
++# 2026-10-14T04:00:19 ET) in BOTH arms: before = verbatim load_industry_map, after = as-of on the same bytes.
++SW_L1_LEGACY_PATH = ROOT / SW_L1_LEGACY_REL
++SW_L1_LEGACY_SHA_PIN = "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"
++PITFIX_PAUSED = True  # 主 Agent 06:49 ET: paused until sw_l1_pit_v2 is reviewed (re-plan with v2 sha + new .ok)
++PITFIX_ALLOW_FIELD = "pitfix_compare_allowed"  # C r3b: PROPOSED .ok field (value true); Arch to fix
+ ON_OVERLAP_RESEARCH = "count"  # 主 Agent 06:49 ET: research runs disclose overlaps instead of raising
+ 
+ 
+@@ -51,10 +60,10 @@ def _sw_path(sw_path=None) -> Path:
+     return (p if p.is_absolute() else ROOT / p).resolve()
+ 
+ 
+-def _check_loaded_pin(ia: IndustryAsOf) -> IndustryAsOf:
++def _check_loaded_pin(ia: IndustryAsOf, pin: str = SW_L1_SHA_PIN) -> IndustryAsOf:
+     """C r3: sha pin still enforced on the bytes actually parsed, whatever --sw-pit-path points to."""
+-    if ia.sha256 != SW_L1_SHA_PIN:
+-        raise SwPitIntegrityError(f"sw_pit l1 sha {ia.sha256} ({ia.path}) != pinned {SW_L1_SHA_PIN}")
++    if ia.sha256 != pin:
++        raise SwPitIntegrityError(f"sw_pit l1 sha {ia.sha256} ({ia.path}) != pinned {pin}")
+     return ia
+ 
+ # T5 (Arch audit 2026-10-14): legs repointed to AI N1 regenerated legs (ind_cap_ok_book=true); old 1953xx-1957xx quarantined in _rejected_ind_cap/.
+@@ -109,18 +118,20 @@ def load_industry_map(as_of: str | None = None) -> dict:
+ 
+ def load_industry_asof(as_of: str | None = None, static_map: dict | None = None, *, sw_path=None) -> IndustryAsOf:
+     """PIT industry as-of each session (in_date < d, out_date null or >= d) + 主 Agent 10-18 gap carry
+-    (d-1 = previous SSE open day; calendar passed explicitly, sha pinned in sw_members_asof). Integrity/stale check kept
+-    (manifest-based, default layout). sw_path: table file (None -> default); on_overlap='count' (主 Agent 06:49 ET)."""
+-    sw_pit_ensure_checked(ROOT, as_of=as_of or X2[1], as_of_defaulted=as_of is None)
+-    return IndustryAsOf(load_sw_l1(ROOT, path=_sw_path(sw_path)), static_map=static_map, cal=load_trade_cal(ROOT),
+-                        on_overlap=ON_OVERLAP_RESEARCH)
++    (d-1 = previous SSE open day; calendar passed explicitly, sha pinned in sw_members_asof). sw_path: table file
++    (None -> CLEAN default, C r3b); on_overlap='count' (主 Agent 06:49 ET). Integrity/stale check on the table actually
++    read (sw_l1_table_check: legacy sw_pit -> sw_pit_freshness; CLEAN -> sw_l1_pit manifest check)."""
++    cal = load_trade_cal(ROOT)
++    sw = load_sw_l1(ROOT, path=_sw_path(sw_path))
++    sw_l1_table_check(ROOT, sw, as_of or X2[1], cal, as_of_defaulted=as_of is None)
++    return IndustryAsOf(sw, static_map=static_map, cal=cal, on_overlap=ON_OVERLAP_RESEARCH)
+ 
+ 
+-def check_sw_l1_pin(sw_path=None) -> str:
++def check_sw_l1_pin(sw_path=None, pin: str = SW_L1_SHA_PIN) -> str:
+     """Explicit raise (not assert; survives python -O) — Arch P3-6. Checks the file actually used (C r3)."""
+     got = hashlib.sha256(_sw_path(sw_path).read_bytes()).hexdigest()
+-    if got != SW_L1_SHA_PIN:
+-        raise SwPitIntegrityError(f"sw_pit l1 sha {got} != pinned {SW_L1_SHA_PIN}")
++    if got != pin:
++        raise SwPitIntegrityError(f"sw_pit l1 sha {got} != pinned {pin}")
+     return got
+ 
+ 
+@@ -384,9 +395,7 @@ def smallcap_and_industry(W: pd.DataFrame, tag: str, *, sw_path=None) -> dict:
+         }),
+         include_groups=False,
+     )
+-    sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])
+-    ia = _check_loaded_pin(IndustryAsOf(load_sw_l1(ROOT, path=_sw_path(sw_path)), cal=load_trade_cal(ROOT),
+-                                        on_overlap=ON_OVERLAP_RESEARCH))
++    ia = _check_loaded_pin(load_industry_asof(as_of=str(Wx["session"].max())[:10], sw_path=sw_path))  # C r3b
+     m2 = Wx.copy()
+     m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session", cal=ia.cal,
+                                               on_overlap=ia.on_overlap).values  # as-of (PIT)
+@@ -733,9 +742,10 @@ def main(sw_path=None):
+         "banner_zh": "过渡 Top-N；主路径 = OPTIMIZER_V1 DRAFT（等 Leo）；未动 FROZEN/纸面轨；live/promotion=false",
+         "live": False,
+         "promotion": False,
+-        "sw_pit_freshness": sw_pit_last_result(),
+-        "industry_cap_on_stale_sw_pit": bool((sw_pit_last_result() or {}).get("stale")),
+-        "disclosure_zh": (sw_pit_last_result() or {}).get("disclosure_zh", ""),
++        # C r3b: freshness/integrity of the table actually read (CLEAN -> sw_l1_pit manifest check)
++        "sw_pit_freshness": sw_l1_table_check_last(ind_map.path),
++        "industry_cap_on_stale_sw_pit": bool((sw_l1_table_check_last(ind_map.path) or {}).get("stale")),
++        "disclosure_zh": (sw_l1_table_check_last(ind_map.path) or {}).get("disclosure_zh", ""),
+         "frozen_config_touched": False,
+         "paper_tracks_touched": False,
+         "track": "HI_LIQ_V1.1_TRANSITIONAL_TOPN",
+@@ -785,26 +795,55 @@ def _arm_ok(sm: dict, m: dict, req: dict | None = None) -> bool:
+                 and sw_pit_required_ok(req))
+ 
+ 
+-def pitfix_compare(out_dir_arg: str, sw_path=None) -> int:
++def _pitfix_allow_check(allow_ok) -> dict:
++    """C r3b (Arch 07:16 ET item 3): while PITFIX_PAUSED, pitfix-compare runs only with --pitfix-allow-ok <path>:
++    the file must exist (absolute or relative to ROOT), be UTF-8, and contain exactly one line
++    `PITFIX_ALLOW_FIELD: true` (or `= true`). Field name / value are PROPOSED; Arch to fix them. Checked before any
++    data read or write; its path + sha256 go into summary.json."""
++    if allow_ok is None:
++        raise SystemExit("pitfix-compare PAUSED (主 Agent 2026-10-18 06:49 ET): pass --pitfix-allow-ok <Arch .ok> with "
++                         f"a line '{PITFIX_ALLOW_FIELD}: true'")
++    p = Path(allow_ok)
++    p = p if p.is_absolute() else ROOT / p
++    if not p.is_file():
++        raise SystemExit(f"--pitfix-allow-ok {p}: not a file")
++    raw = p.read_bytes()
++    try:
++        text = raw.decode("utf-8")
++    except UnicodeDecodeError as e:
++        raise SystemExit(f"--pitfix-allow-ok {p}: not UTF-8 ({e})")
++    hits = []
++    for ln in text.splitlines():
++        k, sep, v = ln.replace("=", ":", 1).partition(":")
++        if sep and k.strip() == PITFIX_ALLOW_FIELD:
++            hits.append(v.strip())
++    if hits != ["true"]:
++        raise SystemExit(f"--pitfix-allow-ok {p}: needs exactly one line '{PITFIX_ALLOW_FIELD}: true', got {hits}")
++    return {"ok_path": str(p.resolve()), "ok_sha256": hashlib.sha256(raw).hexdigest(), "field": PITFIX_ALLOW_FIELD}
++
++
++def pitfix_compare(out_dir_arg: str, sw_path=None, allow_ok=None) -> int:
+     """PIT-fix before/after (prereg docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md). B4 only; same legs/window/cost;
+     only the industry map differs: before = legacy load_industry_map (verbatim), after = as-of + gap carry.
+-    All checks happen BEFORE any write; any arm failure -> VOID.md + all_ok=false + exit 1. Disclosure only."""
++    All checks happen BEFORE any write; any arm failure -> VOID.md + all_ok=false + exit 1. Disclosure only.
++    C r3b: PAUSED by default (PITFIX_PAUSED); runs only with an explicit allow .ok (_pitfix_allow_check)."""
++    allow = _pitfix_allow_check(allow_ok) if PITFIX_PAUSED else None  # nothing is read or written before this
+     t0 = time.time()
+     out_dir = pitfix_out_dir_guard(ROOT, out_dir_arg)          # P2-2: under output/strategy_hiliq/, must not exist
+     mix = GROUPS["B4_50_25_25"]
+     for k in mix:
+         if not P[k].exists():
+             raise SystemExit(f"missing leg {k}: {P[k]}")
+-    swp = _sw_path(sw_path)
+-    if swp != _sw_path(None):  # before arm = verbatim legacy load_industry_map, which reads only the default path
+-        raise SystemExit(f"--sw-pit-path {swp} != default {_sw_path(None)}: legacy before arm reads the default path only "
++    swp = SW_L1_LEGACY_PATH.resolve() if sw_path is None else _sw_path(sw_path)  # C r3b: pitfix default = legacy
++    if swp != SW_L1_LEGACY_PATH.resolve():  # before arm = verbatim legacy load_industry_map (reads the legacy path)
++        raise SystemExit(f"--sw-pit-path {swp} != {SW_L1_LEGACY_PATH}: legacy before arm reads that path only "
+                          "(parametrize load_industry_map in the v2 round)")
+-    sha_pin = check_sw_l1_pin(swp)                              # P3-6: explicit raise; file actually used
++    sha_pin = check_sw_l1_pin(swp, pin=SW_L1_LEGACY_SHA_PIN)    # P3-6: explicit raise; file actually used
+     syn_as_of = max(str(load_leg(P[k])["session"].max())[:10] for k in mix)
+     legacy = load_industry_map(as_of=syn_as_of)                 # P2-4: verbatim legacy (before arm)
+     asof = load_industry_asof(as_of=syn_as_of, static_map=legacy, sw_path=swp)
+-    if asof.sha256 != SW_L1_SHA_PIN:
+-        raise SwPitIntegrityError(f"sw_pit l1 sha at as-of load {asof.sha256} != pinned {SW_L1_SHA_PIN}")
++    if asof.sha256 != SW_L1_LEGACY_SHA_PIN:
++        raise SwPitIntegrityError(f"sw_pit l1 sha at as-of load {asof.sha256} != pinned {SW_L1_LEGACY_SHA_PIN}")
+     out_dir.mkdir(parents=False, exist_ok=False)                # first write; parent output/strategy_hiliq exists
+     res, all_ok = {}, True
+     for arm, im in (("before_static", legacy), ("after_asof", asof)):
+@@ -847,6 +886,7 @@ def pitfix_compare(out_dir_arg: str, sw_path=None) -> int:
+                                "不要求有后继行（见 n_rows_gap_carry_no_successor）；out_date 落在非开市日的沿用见 "
+                                "n_rows_gap_carry_out_on_closed_day"),
+             "trade_cal_sha256": asof.cal.sha256,
++            "pitfix_allow": allow,  # C r3b: allow .ok path + sha (None only if PITFIX_PAUSED is False)
+             "sw_pit_sha256": asof.sha256, "sw_pit_path": asof.path, "on_overlap": asof.on_overlap,
+             "overlap_tiebreak": OVERLAP_TIEBREAK,
+             "sw_l1_sha256_pin_check": sha_pin, "sw_l1_sha256_asof_load": asof.sha256,
+@@ -867,22 +907,35 @@ def pitfix_compare(out_dir_arg: str, sw_path=None) -> int:
+     return 0
+ 
+ 
++def _take_opt(a: list, flag: str):
++    """Remove `flag <value>` from a (in place) and return value; None if absent."""
++    if flag not in a:
++        return None
++    i = a.index(flag)
++    if i + 1 >= len(a) or a[i + 1].startswith("--"):
++        raise SystemExit(f"usage: {flag} <file>")
++    v = a[i + 1]
++    del a[i:i + 2]
++    return v
++
++
+ def _cli(argv: list) -> int:
+-    """[--pitfix-compare <out_dir>] [--sw-pit-path <file>] (C r3: path parameter; default unchanged)."""
+-    a, sw_path, out_dir = list(argv), None, None
+-    if "--sw-pit-path" in a:
+-        i = a.index("--sw-pit-path")
+-        if i + 1 >= len(a) or a[i + 1].startswith("--"):
+-            raise SystemExit("usage: --sw-pit-path <file>")
+-        sw_path = a[i + 1]
+-        del a[i:i + 2]
++    """[--pitfix-compare <out_dir> --pitfix-allow-ok <Arch .ok>] [--sw-pit-path <file>] (C r3: path parameter;
++    C r3b: default CLEAN for main, legacy sw_pit for the paused pitfix-compare, which needs an explicit allow .ok)."""
++    a, out_dir = list(argv), None
++    sw_path = _take_opt(a, "--sw-pit-path")
++    allow_ok = _take_opt(a, "--pitfix-allow-ok")
+     if a and a[0] == "--pitfix-compare":
+         if len(a) != 2:
+-            raise SystemExit("usage: --pitfix-compare <out_dir under output/strategy_hiliq/> [--sw-pit-path <file>]")
++            raise SystemExit("usage: --pitfix-compare <out_dir under output/strategy_hiliq/> "
++                             "--pitfix-allow-ok <Arch .ok> [--sw-pit-path <file>]")
+         out_dir = a[1]
+     elif a:
+         raise SystemExit(f"unknown arguments: {a}")
+-    return pitfix_compare(out_dir, sw_path=sw_path) if out_dir is not None else main(sw_path=sw_path)
++    if out_dir is None and allow_ok is not None:
++        raise SystemExit("--pitfix-allow-ok is only valid with --pitfix-compare")
++    return (pitfix_compare(out_dir, sw_path=sw_path, allow_ok=allow_ok) if out_dir is not None
++            else main(sw_path=sw_path))
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/research/strategy_fulla_b4_x2.py b/research/strategy_fulla_b4_x2.py
+index 4644bcb..89fa1fb 100644
+--- a/research/strategy_fulla_b4_x2.py
++++ b/research/strategy_fulla_b4_x2.py
+@@ -15,10 +15,11 @@ import matplotlib.pyplot as plt
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+-from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
++# C r3b: sw_pit_freshness (主 Agent 10-18 05:06; Arch ccc7546f) is now reached via sw_members_asof.sw_l1_table_check
+ from research.sw_members_asof import IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry  # PIT fix (Arch 10-18 P2; r2 3f195231)
+ from research.sw_members_asof import load_trade_cal  # C r2: calendar passed explicitly (no module default; Arch c6f97571 P3-5)
+ from research.sw_members_asof import SW_L1_REL, sw_pit_required, sw_pit_required_ok  # C r3 (主 Agent 06:49 ET)
++from research.sw_members_asof import sw_l1_table_check, sw_l1_table_check_last  # C r3b: check on the table read
+ from research.sw_pit_freshness import SwPitIntegrityError
+ OUT = ROOT / "output/strategy_fulla/b4"
+ OUT.mkdir(parents=True, exist_ok=True)
+@@ -28,8 +29,9 @@ CAP = 0.06
+ N_BY_AUM = {600000: 6, 1000000: 10}
+ X2 = ("2024-06-03", "2026-10-09")
+ ANN_DAYS = 244  # Eng standard (report note; book-smoke uses its own)
+-SW_L1_PATH_DEFAULT = ROOT / SW_L1_REL  # C r3 (Arch 06:50): table path is a parameter; default unchanged
+-SW_L1_SHA_PIN = "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"  # same pin as hx2
++SW_L1_PATH_DEFAULT = ROOT / SW_L1_REL  # C r3 (Arch 06:50): table path is a parameter; C r3b: SW_L1_REL = CLEAN
++# C r3b (Arch 2026-10-18 ~07:00 ET): CLEAN data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet (leaf 23/24 pin)
++SW_L1_SHA_PIN = "89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c"  # same pin as hx2
+ ON_OVERLAP_RESEARCH = "count"  # 主 Agent 06:49 ET: research runs disclose overlaps instead of raising
+ 
+ 
+@@ -264,11 +266,13 @@ def smallcap_and_industry(W: pd.DataFrame, tag: str, *, sw_path=None) -> dict:
+         })
+     )
+     # industry PIT: as-of join on in_date/out_date
+-    sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])  # integrity raises; stale warns
+     # PIT fix (Arch 10-18 P2 + R4 口径): as-of session, in_date < session AND (out_date null OR out_date >= session)
+     # replaces the previous in_date<=session / static last-known name approximation
+-    ia = IndustryAsOf(load_sw_l1(ROOT, path=_sw_path(sw_path)), cal=load_trade_cal(ROOT),
+-                      on_overlap=ON_OVERLAP_RESEARCH)
++    cal = load_trade_cal(ROOT)
++    sw = load_sw_l1(ROOT, path=_sw_path(sw_path))
++    # C r3b: integrity raises / stale warns on the table actually read (legacy sw_pit or CLEAN manifest)
++    sw_l1_table_check(ROOT, sw, str(Wx["session"].max())[:10], cal)
++    ia = IndustryAsOf(sw, cal=cal, on_overlap=ON_OVERLAP_RESEARCH)
+     if ia.sha256 != SW_L1_SHA_PIN:  # C r3: pin enforced on the bytes actually parsed
+         raise SwPitIntegrityError(f"sw_pit l1 sha {ia.sha256} ({ia.path}) != pinned {SW_L1_SHA_PIN}")
+     m2 = Wx.copy()
+@@ -513,8 +517,8 @@ def main(sw_path=None):
+                           for k, v in attrs.items()},
+         "charts": charts,
+         "mdd25_flag": {},
+-        "sw_pit_freshness": sw_pit_last_result(),
+-        "disclosure_zh": (sw_pit_last_result() or {}).get("disclosure_zh", ""),
++        "sw_pit_freshness": sw_l1_table_check_last(_sw_path(sw_path)),  # C r3b: table actually read
++        "disclosure_zh": (sw_l1_table_check_last(_sw_path(sw_path)) or {}).get("disclosure_zh", ""),
+         # C r3 (主 Agent 06:49 ET item 3): mandatory sw_pit fields (sha of the file actually read, unknown, overlap)
+         "sw_pit_path": str(_sw_path(sw_path)),
+         "sw_pit_required_by_arm": {f"B4_{k}w": v.get("sw_pit_required") for k, v in attrs.items()},

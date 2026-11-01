@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""幂等等待队列 (研究级, promotion_approved=false, 不启 8787, 不碰 moneyflow).
+等 stk_surv(4151716) 完成 且 queue_chain_20261014(4134298) 退出 → 一次一个:
+  (b) report_rc 机构名归一 (本地, 0 请求) → docs/v2/DATA_REPORT_RC_FULLWINDOW_RECEIPT_ZH.md
+  (a) fund_portfolio 公募持仓 2018Q1→2026Q2 满窗 (datahub 按 period 翻页 limit=1000, 断点续传) → docs/v2/DATA_FUND_PORTFOLIO_FULLWINDOW_RECEIPT_ZH.md
+MemAvailable<2GB 暂停. 每项完成追加 output/remaining_queue_status.json. 完成标记 output/markers/*.DONE."""
+import os,sys,json,time,re,bisect,pathlib,datetime
+ROOT=pathlib.Path("/workspace/QuantLab"); sys.path.insert(0,str(ROOT)); sys.path.insert(0,str(ROOT/"scripts/acquire")); os.chdir(ROOT)
+import pandas as pd
+import queue_chain_20261014 as q
+MK=ROOT/"output/markers"; MK.mkdir(parents=True,exist_ok=True)
+def alive(pid):
+    try: os.kill(pid,0); return pathlib.Path(f"/proc/{pid}/cmdline").exists()
+    except OSError: return False
+HEAVY=("queue_chain_20261014","stk_surv_after_report_rc","tier1_materialize")  # 2026-10-14 07:20 ET 主Agent批: 临时去掉 nightly_update (fund_portfolio 只走 datahub)
+def heavy_running():
+    me=os.getpid(); hit=[]
+    for d in pathlib.Path("/proc").iterdir():
+        if not d.name.isdigit() or int(d.name)==me: continue
+        try: c=(d/"cmdline").read_bytes().replace(b"\0",b" ").decode(errors="ignore")
+        except Exception: continue
+        if "python" in c and any(h in c for h in HEAVY): hit.append((int(d.name),c[:120]))
+    return hit
+def wait_prereq():
+    # v2: 不依赖固定 PID(可能已退出/被复用). 条件: stk_surv DONE 标记存在 且 无 queue_chain/stk_surv/大表重建 进程
+    q.log("Q7_remaining","waiting_stk_surv_and_queue_chain",v=2)
+    while not (MK/"stk_surv_2018plus.DONE").exists() or heavy_running(): time.sleep(120)
+    st=[json.loads(l) for l in open(q.ST) if l.strip().startswith("{")]
+    s5=[r for r in st if str(r.get("item","")).startswith("Q5_stk_surv")]
+    q.log("Q7_remaining","prereq_cleared",stk_surv_last=(s5[-1] if s5 else None),stk_surv_done=True,queue_chain_alive=alive(4134298))
+def heavy_gate():
+    while heavy_running(): print("heavy job running, wait",flush=True); time.sleep(120)
+    q.mem_wait()
+
+SUFFIX=["股份有限公司","有限责任公司","有限公司","集团","证券研究所","研究所","研究院","研究中心","研究部","研究"]
+def key(n):
+    s=str(n).strip().replace("（","(").replace("）",")").replace(" ","").replace("　","")
+    s=re.sub(r"\((香港|中国|上海|深圳|北京)?\)$","",s) if s.endswith("()") else s
+    for _ in range(3):
+        for x in SUFFIX:
+            if s.endswith(x) and len(s)>len(x)+1: s=s[:-len(x)]
+    s=re.sub(r"(证券|证券股份|证券资产管理)$","证券",s)
+    return s
+def org_norm():
+    if (MK/"report_rc_orgnorm.DONE").exists(): q.log("Q7b_report_rc_orgnorm","skip_complete"); return
+    heavy_gate(); P=ROOT/"data/v2/events/report_rc_2018plus.parquet"
+    x=pd.read_parquet(P,columns=["org_name"]); vc=x.org_name.dropna().astype(str).value_counts()
+    m=pd.DataFrame({"org_name_raw":vc.index,"n_rows":vc.values}); m["key"]=m.org_name_raw.map(key)
+    std=m.sort_values("n_rows",ascending=False).groupby("key").org_name_raw.first()
+    m["org_name_std"]=m.key.map(std); m["merged"]=m.org_name_raw!=m.org_name_std
+    od=ROOT/"data/v2/events"; mp=od/"report_rc_org_name_map.parquet"; m.to_parquet(mp,index=False); m.to_csv(od/"report_rc_org_name_map.csv",index=False)
+    grp=m.groupby("org_name_std").agg(n_variants=("org_name_raw","size"),n_rows=("n_rows","sum")).sort_values("n_variants",ascending=False)
+    multi=grp[grp.n_variants>1]
+    R=ROOT/"docs/v2/DATA_REPORT_RC_FULLWINDOW_RECEIPT_ZH.md"
+    man=json.load(open(od/"report_rc_2018plus_manifest.json")) if (od/"report_rc_2018plus_manifest.json").exists() else {}
+    head="" if R.exists() else f"# report_rc 满窗回执（研究级，promotion_approved=false）\n\n- 表：`{P.relative_to(ROOT)}`\n- 行数：{man.get('rows')}；日期窗：{man.get('date_range')}；n_fails={man.get('n_fails')}\n- available_at：{man.get('available_at')}\n- SHA256：`{man.get('sha256')}`\n"
+    body=f"""
+## 机构名归一（{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} ET）
+- 规则：全角括号→半角、去空格，逐层去后缀（{'/'.join(SUFFIX)}），标准名=该组内行数最多的原始写法。原表不改，映射另存。
+- 映射表：`data/v2/events/report_rc_org_name_map.parquet`（及 .csv），列 org_name_raw/org_name_std/n_rows/merged
+- 原始写法 {len(m)} 个 → 标准名 {len(grp)} 个；被合并写法 {int(m.merged.sum())} 个，涉及 {int(m.loc[m.merged,'n_rows'].sum())} 行
+- 多写法机构 Top20（标准名 | 写法数 | 行数）：
+""" + "\n".join(f"  - {i} | {r.n_variants} | {r.n_rows}" for i,r in multi.head(20).iterrows()) + "\n- 注意：规则归一可能有误合/漏合，研究使用前建议抽查映射表。\n"
+    R.write_text((R.read_text() if R.exists() else head)+body)
+    (MK/"report_rc_orgnorm.DONE").write_text(q.sha(mp))
+    q.log("Q7b_report_rc_orgnorm","done",n_raw=len(m),n_std=len(grp),n_merged_variants=int(m.merged.sum()),map=str(mp.relative_to(ROOT)))
+
+HOLD=ROOT/"output/HOLD_FUNDPORT_MERGE"  # 2026-10-18 主Agent: cs_panel/D-2/D-3/D-4 修复前挂起 fund_portfolio 与 broker_recommend 合并
+def merge_held(name):
+    if HOLD.exists(): q.log(name,"merge_held",hold=str(HOLD.relative_to(ROOT)),note="分页/原始缓存已拉, 合并挂起; 删除门控文件后重跑本脚本即合并(幂等)"); print(name,"merge held by",HOLD,flush=True); return True
+    return False
+def periods():
+    return [f"{y}{md}" for y in range(2018,2027) for md in ("0331","0630","0930","1231") if f"{y}{md}"<="20260630"]
+def deadline(p):  # 法定披露截止(保守): 季报=季末后15个工作日; 半年报=8/31; 年报=次年3/31
+    y,md=p[:4],p[4:]
+    if md=="0630": return f"{y}0831"
+    if md=="1231": return f"{int(y)+1}0331"
+    cal=q.tdays(p,str(int(y)+1)+"1231"); return cal[min(len(cal)-1,15)]
+def fund_portfolio():
+    if (MK/"fund_portfolio_2018plus.DONE").exists(): q.log("Q7a_fund_portfolio","skip_complete"); return
+    q.log("Q7a_fund_portfolio","start"); od=q.RAW/"fund_portfolio_dh"; fails=[]
+    for p in periods():
+        pd_=od/p; pd_.mkdir(parents=True,exist_ok=True)
+        if (pd_/"_DONE").exists(): continue
+        off=max([int(f.stem) for f in pd_.glob("*.parquet")],default=-1000)+1000
+        while True:
+            heavy_gate()
+            try: t=q.call(q.datahub,"fund_portfolio",period=p,limit=1000,offset=off)
+            except Exception as e: fails.append(f"{p}:{off}:{str(e)[:60]}"); break
+            t.to_parquet(pd_/f"{off:09d}.parquet",index=False)
+            if len(t)<1000: (pd_/"_DONE").write_text(str(off+len(t))); break
+            off+=1000; time.sleep(0.2)
+        q.log("Q7a_fund_portfolio","period_done" if (pd_/"_DONE").exists() else "period_fail",period=p,pages=len(list(pd_.glob('*.parquet'))))
+    if merge_held("Q7a_fund_portfolio"): return
+    heavy_gate()
+    x=pd.concat([pd.read_parquet(f) for p in periods() for f in sorted((od/p).glob("*.parquet")) if f.stat().st_size>0],ignore_index=True).drop_duplicates()
+    for c in ("ann_date","end_date"): x[c]=x[c].astype(str).replace({"None":None,"nan":None})
+    x=x.sort_values("ann_date").drop_duplicates(["ts_code","end_date","symbol"],keep="first")  # 同期多次披露保留首次
+    ad=pd.to_datetime(x.ann_date,format="%Y%m%d",errors="coerce")
+    dl=pd.to_datetime(x.end_date.map(deadline),format="%Y%m%d")
+    x["available_at_basis"]=ad.notna().map({True:"ann_date+1d 09:00",False:"statutory_deadline+1d 09:00"})
+    x["available_at"]=ad.fillna(dl).dt.normalize()+pd.Timedelta(days=1,hours=9)
+    x["promotion_approved"]=False
+    P=ROOT/"data/v2/events/fund_portfolio_2018plus.parquet"; x.to_parquet(P,index=False)
+    m=q.man(P,rows=len(x),periods=[periods()[0],periods()[-1]],n_funds=int(x.ts_code.nunique()),source="datahub fund_portfolio(period 翻页 limit=1000)",
+            available_at="实际公告日次日 09:00；无公告日按法定截止日次日 09:00（季报季末+15交易日/半年报8-31/年报次年3-31）",
+            n_no_ann=int(ad.isna().sum()),n_fails=len(fails),fails=fails[:50])
+    R=ROOT/"docs/v2/DATA_FUND_PORTFOLIO_FULLWINDOW_RECEIPT_ZH.md"
+    R.write_text(f"""# fund_portfolio 公募持仓满窗回执（研究级，promotion_approved=false）
+
+- 表：`{P.relative_to(ROOT)}`；manifest：`data/v2/events/fund_portfolio_2018plus_manifest.json`
+- 报告期：{periods()[0]} → {periods()[-1]}（{len(periods())} 期）；行数 {len(x)}；基金数 {m['n_funds']}；n_fails={len(fails)}
+- 来源：datahub fund_portfolio，按 period 翻页（limit=1000），原始分页在 `data/v2/tushare_raw/fund_portfolio_dh/<period>/`
+- 去重：同一 (ts_code,end_date,symbol) 多次披露保留最早 ann_date
+- available_at：{m['available_at']}；无公告日行数 {m['n_no_ann']}
+- 注意：季报仅前十大重仓，半年报/年报为全持仓；跨期比较需按报告类型分开
+- SHA256：`{m['sha256']}`
+""")
+    if len(fails)==0: (MK/"fund_portfolio_2018plus.DONE").write_text(m["sha256"])
+    q.log("Q7a_fund_portfolio","done" if not fails else "partial",rows=len(x),n_fails=len(fails),sha256=m["sha256"])
+
+def bmonths(): return [f"{y}{m:02d}" for y in range(2018,2027) for m in range(1,13) if f"{y}{m:02d}"<="202610"]
+def broker_recommend():
+    if (MK/"broker_recommend_2018plus.DONE").exists(): q.log("Q8_broker_recommend","skip_complete"); return
+    q.log("Q8_broker_recommend","start"); od=q.RAW/"broker_recommend"; od.mkdir(parents=True,exist_ok=True); fails=[]; src={}
+    for mo in bmonths():
+        f=od/f"{mo}.parquet"
+        if f.exists(): continue
+        heavy_gate(); t=None; errs=[]
+        sys.path.insert(0,str(ROOT/"scripts/acquire")); from relay_health import relay_up
+        chans=(("relay",q.relay),("datahub",q.datahub)) if relay_up() else (("datahub",q.datahub),)  # 中转不通直接走 datahub
+        for n,fn in chans:
+            try: t=q.call(fn,"broker_recommend",tries=3,month=mo); src[mo]=n; break
+            except Exception as e: errs.append(f"{n}:{str(e)[:60]}")
+        if t is None: fails.append(f"{mo}:{';'.join(errs)}"); continue
+        t["source"]=src[mo]; t.to_parquet(f,index=False); time.sleep(0.3)
+    if merge_held("Q8_broker_recommend"): return
+    fs=sorted(od.glob("*.parquet")); x=pd.concat([pd.read_parquet(f) for f in fs],ignore_index=True) if fs else pd.DataFrame()
+    if len(x):
+        x["month"]=x["month"].astype(str); x=x.drop_duplicates([c for c in x.columns if c!="source"])
+        cal=q.tdays("20180101","20261231"); fourth={}
+        for d in cal: fourth.setdefault(d[:6],[]).append(d)
+        x["available_at"]=pd.to_datetime(x.month.map(lambda m:(fourth.get(m,[None]*4)+[None]*4)[3]),format="%Y%m%d")+pd.Timedelta(hours=9)
+        x["promotion_approved"]=False
+    P=ROOT/"data/v2/events/broker_recommend_2018plus.parquet"; x.to_parquet(P,index=False)
+    m=q.man(P,rows=len(x),months=[bmonths()[0],bmonths()[-1]],n_months=int(x.month.nunique()) if len(x) else 0,source="tushare broker_recommend(按月; relay_health 判中转可用则 relay 优先, 否则直接 datahub; 每行 source 列记实际来源)",
+            available_at="当月第4个交易日 09:00",n_fails=len(fails),fails=fails[:50])
+    R=ROOT/"docs/v2/DATA_BROKER_RECOMMEND_RECEIPT_ZH.md"
+    R.write_text(f"""# broker_recommend 券商月度金股回执（研究级，promotion_approved=false）
+
+- 表：`{P.relative_to(ROOT)}`；manifest：`data/v2/events/broker_recommend_2018plus_manifest.json`
+- 月份：{bmonths()[0]} → {bmonths()[-1]}（{len(bmonths())} 月）；有数据月数 {m['n_months']}；行数 {len(x)}；n_fails={len(fails)}
+- 来源：{m['source']}；原始按月缓存 `data/v2/tushare_raw/broker_recommend/<YYYYMM>.parquet`
+- available_at：当月第 4 个交易日 09:00（保守，金股通常月初前几日陆续发布）
+- SHA256：`{m['sha256']}`
+""")
+    if not fails: (MK/"broker_recommend_2018plus.DONE").write_text(m["sha256"])
+    q.log("Q8_broker_recommend","done" if not fails else "partial",rows=len(x),n_fails=len(fails),sha256=m["sha256"])
+
+if __name__=="__main__":
+    wait_prereq()
+    for fn,name in ((org_norm,"Q7b_report_rc_orgnorm"),(fund_portfolio,"Q7a_fund_portfolio"),(broker_recommend,"Q8_broker_recommend")):
+        try: fn()
+        except Exception as e: q.log(name,"error",err=str(e)[:300])
+    q.log("Q7_remaining","finished")

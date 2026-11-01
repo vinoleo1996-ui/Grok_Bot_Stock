@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+"""OPTIMIZER Stage2 · S2-3 execution layer (PREREG §3 C1: Strategy spec, Eng co-build).
+
+Spec: docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md §3 (frozen record docs/v2/S2_3_FREEZE_RECORD_ZH.md).
+Outputs ONLY non-return quantities: turnover (gate TO_d and target-to-target), band suppression, band-disable days and
+reasons, HARD recheck, cash, fill costs (ledger_aligned_s2). It never writes NAV, a NAV/return series, Sharpe/MDD/IR or
+after-cost returns. NAV_d is marked to market internally (spec C1 needs it for w_cur) and is discarded.
+
+Two independent ledgers per run:
+  nobuf  = trade to lot-floored w_tgt every non-carry rebalance (HEADLINE column, spec C6)
+  buf    = 0.5% NAV no-trade band (ABLATION only)
+Gate quantity (C2): TO_d = 0.5·Σ|w̃_post − w̃_cur| = 0.5·Σ|Δshares_i|·P_i,d / stockNAV_d (pre-trade stock mark, day-d close),
+  counted only on rebalance days with ≥1 stock trade. Carry days (INFEASIBLE/LOT_HARD_FAIL/NO_DATA_CARRY) hold shares, TO=0,
+  disclosed separately.
+Also disclosed: Arch P3 (days fully suppressed by the band with zero stock trades; median with those days as 0) and
+Beta B1–B5 (docs/v2/BETA_OPTIMIZER_STAGE2_S2_3_COSIGN_ZH.md §4; B2 optional flag, off by default as it is a mechanism
+change not in the frozen text; B3 not implemented, per Beta "本次不要求改"; B4 rolling β of 510300 vs wb = opt-in --b4-beta, not yet run).
+
+Implementation choices (flagged for Strategy confirmation in the receipt):
+  - lot rounding (Strategy ruling 00:4x): Core v1.3's own procedure research/optimizer_core_v1_1.lot_round_greedy at NAV_d
+    (floor to lots, then add/swap lots with industry vs full-pool wb, Size/MidCap and β rechecked; adds that would breach
+    the name cap are skipped), identical for both columns; then trim one lot at a time from the largest overshoot while
+    cash < 0; full exits sell all; orders < ¥2,000 skipped unless full exit (ledger_aligned_s2). 510300 continuous. 510300 continuous (not lot-rounded, as in v1.3 weights).
+  - A3 corporate actions: shares scaled by adj_factor ratio between rebalance days (adj_factor_2023h2plus; earlier days
+    unadjusted and counted in a3_unadjusted_name_days).
+  - cash_hi bound = max(2%, cash of the no-buffer execution that day); exceeding it is disclosed only and never disables
+    the band (K2). cash < 0 still disables.
+  - B4 rolling β(510300 vs pool wb): b4_rolling_beta() implemented, opt-in --b4-beta (instrument returns only, not
+    strategy returns); NOT run — 主 Agent 00:40: any run needs a matching Arch .ok.
+  - HARD recheck exposures from Beta's prepare_day cache output/beta/s2_3_band_check/_cache (full-pool wb, pool-z Size/MidCap,
+    β vs wb), using research/beta_s2_3_band_sim.expo; slack = disclosure size_slack/ind_slack. Missing cache → band
+    disabled (reason NO_EXPOSURE) and recheck UNCHECKED.
+Guard: weights whose sha256 is not in core_x2/_void_pre_K6_sha.json need --allow-real (real run only after S2-3 freeze is
+effective, i.e. Arch/Beta hash check + release marker). live=false. Single process.
+
+usage: s2_3_exec_layer.py --weights core_x2/core_equity_100_60w.parquet --aum 600000 [--disclosure ...] [--version v1_3]
+                          [--label VOID] [--windows X2] [--allow-real] [--b2]
+"""
+from __future__ import annotations
+import argparse, hashlib, json, math, pickle, resource, sys
+from datetime import datetime
+from pathlib import Path
+import numpy as np, pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "research"))
+OUT = ROOT / "output/strategy_optimizer/core_x2"
+CACHE = ROOT / "output/beta/s2_3_band_check/_cache"
+BAL = "510300.SH"
+BAND = 0.005
+MIN_TRADE = 2000.0
+NAME_CAP = {600_000: 0.06, 1_000_000: 0.05}
+SIZE_BOX, BETA_BOX, IND_ACTIVE, IND_ABS, MIN_KEEP_W = 0.35, 0.10, 0.08, 0.20, 0.02
+TURN_HARD_CAP = 0.40
+GATE = 0.30
+CARRY = ("INFEASIBLE", "LOT_HARD_FAIL", "NO_DATA_CARRY")
+WIN = {"SEALED": ("2018-01-02", "2024-05-31"), "X2": ("2024-06-03", "2026-10-09")}
+TOL = 1e-6
+RSS_CAP_MB = 1500
+
+
+def rss_mb() -> float:
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+
+
+def sha256(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def lot(i: str) -> int:
+    return 200 if i[:3] in ("688", "689") else 100
+
+
+def load_prices(names, s0, s1):
+    import optimizer_lambda_calib_sealed as C
+    bs = C.load_daily_basic_window(sorted(names), s0 - pd.Timedelta(days=15), s1)
+    px = bs.pivot_table(index="trade_date", columns="ts_code", values="close", aggfunc="last").sort_index()
+    px.index = pd.to_datetime(px.index)
+    af = pd.read_parquet(ROOT / "data/v2/adj/adj_factor_2023h2plus.parquet")
+    af = af[af.ts_code.isin(names)]
+    af = af.pivot_table(index="trade_date", columns="ts_code", values="adj_factor", aggfunc="last")
+    af.index = pd.to_datetime(af.index.astype(str)); af = af.sort_index()
+    e = pd.read_parquet(ROOT / "data/v2/etf/etf_daily_adj.parquet", columns=["ts_code", "trade_date", "close", "close_hfq"])
+    e = e[e.ts_code == BAL]; e.index = pd.to_datetime(e.trade_date.astype(str)); e = e.sort_index()
+    return px.ffill(), af.ffill(), e[["close", "close_hfq"]].ffill()
+
+
+def asof(df, d):
+    s = df.loc[:d]
+    return s.iloc[-1] if len(s) else pd.Series(dtype=float)
+
+
+def simulate(T, disc, aum, sleeve, days, px, af, etf, band, b2, expo):
+    """T: dict day -> target weight Series (incl. 510300). Returns per-day rows (non-return)."""
+    sh = pd.Series(dtype=float); etf_val = 0.0; cash = float(aum); prev = None; prev_tgt = None
+    rows = []
+    from quantlab.portfolio.v2_execution_costs import compute_rebalance_costs, mandate_costs
+    import optimizer_core_v1_1 as V
+    MC = mandate_costs(); cap = NAME_CAP[aum]; disabled_prev = False
+    for k, d in enumerate(days):
+        P = asof(px, d); A = asof(af, d)
+        n_unadj = 0
+        if prev is not None and len(sh):
+            A0 = asof(af, prev)
+            r = (A.reindex(sh.index) / A0.reindex(sh.index))
+            n_unadj = int(r.isna().sum())
+            sh = sh * r.fillna(1.0)                                  # A3: 送转/拆股（复权因子比）
+            e0, e1 = asof(etf, prev), asof(etf, d)
+            etf_val *= float(e1.close_hfq / e0.close_hfq)
+        stock_val = float((sh * P.reindex(sh.index)).sum()) if len(sh) else 0.0
+        nav = stock_val + etf_val + cash                              # internal only — never written
+        st = disc.get(d.strftime("%Y-%m-%d"), "OK")
+        tgt = T[d]; tgt_s = tgt.drop(BAL, errors="ignore"); w_etf = float(tgt.get(BAL, 0.0))
+        tgt_cash = 1.0 - float(tgt.sum())
+        te = tgt_s / max(tgt_s.sum(), 1e-12)
+        tt = None
+        if prev_tgt is not None:
+            pe = prev_tgt.drop(BAL, errors="ignore"); pe = pe / max(pe.sum(), 1e-12); u = te.index.union(pe.index)
+            tt = 0.5 * float((te.reindex(u).fillna(0) - pe.reindex(u).fillna(0)).abs().sum())
+        row = dict(date=d.strftime("%Y-%m-%d"), status=st, carry=st in CARRY, initial_build=(k == 0), tt_target_turnover=tt,
+                   a3_unadjusted_names=n_unadj)
+        if st in CARRY and k > 0:
+            w = (sh * P.reindex(sh.index)) / nav if len(sh) else pd.Series(dtype=float)
+            row.update(traded=False, n_stock_trades=0, to_gate=0.0, cash_post=cash / nav, n_names=int((sh > 0).sum()),
+                       band_frozen=0, band_suppressed_cny=0.0, band_disabled=False, disable_reasons="", cost_cny=0.0,
+                       etf_turnover=0.0, onew_nav=0.0, hard_recheck="CARRY", frozen_lt2=0)
+            rows.append(row); prev = d; prev_tgt = prev_tgt if prev_tgt is not None else tgt; disabled_prev = False
+            continue
+        names = te.index.union(sh.index)
+        cur = sh.reindex(names).fillna(0.0)
+        Pn = P.reindex(names)
+        miss = Pn[Pn.isna() & ((cur > 0) | (tgt_s.reindex(names).fillna(0) > 0))].index.tolist()
+        Pn = Pn.fillna(0.0)
+        w_cur = (cur * Pn) / nav if nav > 0 else cur * 0
+        tw = tgt_s.reindex(names).fillna(0.0)
+        # Core v1.3 lot procedure (research/optimizer_core_v1_1.lot_round_greedy, as called by optimizer_core_x2_run v1.3):
+        # floor to lots at NAV_d, then add lots back / swap with industry (full-pool wb), Size/MidCap and β rechecked together,
+        # skipping any add that would breach the name cap. Same procedure for BOTH columns.
+        D = pickle.load(open(CACHE / f"{d:%Y%m%d}.pkl", "rb")) if (CACHE / f"{d:%Y%m%d}.pkl").exists() else None
+        sl = disc.get(("slack", d.strftime("%Y-%m-%d")), {"size_slack": 0.0, "ind_slack": 0.0})
+        tw_px = tw[tw > 0]
+        if D is not None and len(tw_px):
+            sty = V.style_ctx(D, sl["size_slack"], sl["ind_slack"])
+            wlot, linfo = V.lot_round_greedy(tw_px, Pn.where(Pn > 0), nav, D["industry"], D["wb"].reindex(D["alpha"].index).fillna(0.0),
+                                             cap, ballast_frac=w_etf, style=sty, wb_raw=False)
+            lot_mode = "core_v1_3_greedy"
+        else:
+            wlot, linfo = V.lot_round_greedy(tw_px, Pn.where(Pn > 0), nav, {}, pd.Series(dtype=float), cap, ballast_frac=w_etf, style=None) if len(tw_px) else (pd.Series(dtype=float), {"lot_flag": "EMPTY"})
+            lot_mode = "core_floor_topup_no_style(NO_EXPOSURE)"
+        wlot = wlot.drop(BAL, errors="ignore")
+        tsh = pd.Series(0.0, index=names)
+        for i, v in wlot.items():
+            if i in tsh.index and Pn[i] > 0:
+                tsh[i] = round(v * nav / Pn[i] / lot(i)) * lot(i)   # exact lot count back from lot_round_greedy weights
+        # cash feasibility: trim one lot at a time from the largest weight overshoot until projected cash ≥ 0 (and ≥ 0 after est. cost)
+        n_trim = 0
+        while True:
+            proj = cash - float(((tsh - cur) * Pn).sum()) - (w_etf * nav - etf_val) - 0.0015 * float(((tsh - cur).abs() * Pn).sum())
+            if proj >= 0: break
+            over = ((tsh * Pn) / nav - tw).where(tsh > 0)
+            if over.dropna().empty: break
+            j = over.idxmax(); tsh[j] = max(tsh[j] - lot(j), 0.0); n_trim += 1
+        for i in miss:                                                # no price → hold (disclosed)
+            tsh[i] = cur[i]
+        dv = (tsh - cur) * Pn
+        small = (dv.abs() < MIN_TRADE) & (tsh > 0) & (dv.abs() > 0)
+        n_drop = int(small.sum()); tsh[small] = cur[small]
+        exec_nobuf = tsh.copy()
+        etf_tgt = w_etf * nav
+
+        def finish(post):
+            dsh = post - cur
+            ddv = dsh * Pn
+            etf_d = etf_tgt - etf_val
+            wd = {i: float(v / nav) for i, v in ddv.items() if abs(v) > 0}
+            c = compute_rebalance_costs(weight_delta=wd, portfolio_value_cny=nav, session=d.date(), costs=MC, etf_delta=etf_d / nav)
+            cash_post = cash - float(ddv.sum()) - etf_d - c.total_cny
+            wl = (post * Pn) / nav
+            wl = wl[wl > 0]; wl[BAL] = etf_tgt / nav if etf_tgt > 0 else 0.0
+            if etf_tgt <= 0: wl = wl.drop(BAL)
+            return dsh, ddv, etf_d, c, cash_post, wl
+
+        def recheck(wl, cash_post, cash_hi):
+            if D is None:
+                return None
+            e = expo(wl, D); s = SIZE_BOX + sl["size_slack"]; ia = IND_ACTIVE + sl["ind_slack"]
+            f = []
+            if abs(e["beta"]) > BETA_BOX + TOL: f.append("beta")
+            if abs(e["size"]) > s + TOL: f.append("size")
+            if abs(e["mid"]) > s + TOL: f.append("midcap")
+            if e["ind_act"] > ia + TOL or e["ind_abs"] > IND_ABS + TOL: f.append("industry")
+            if e["maxw"] > cap + TOL: f.append("name_cap")
+            if not (20 <= e["n"] <= 30): f.append("n_names")
+            if cash_post / nav < -TOL: f.append("cash_neg")
+            if cash_post / nav > cash_hi + TOL: f.append("cash_high")
+            return f
+
+        def band_fail(f):  # K2 + ruling: cash above max(2%, same-day no-buffer cash) is disclosed only, never fails the band
+            return [x for x in f if x != "cash_high"]
+
+        dsh0, ddv0, etf_d0, c0, cash0, wl0 = finish(exec_nobuf)
+        cash_hi = max(0.02, cash0 / nav)
+        f_nobuf = recheck(wl0, cash0, cash_hi)
+        frozen = []; disabled = False; reasons = []
+        post = exec_nobuf
+        if band > 0 and k > 0:
+            for i in names:
+                if cur[i] > 0 and tw[i] > 0 and abs(tw[i] - w_cur[i]) <= band and (not b2 or w_cur[i] <= cap):
+                    frozen.append(i)
+            if frozen:
+                pb = exec_nobuf.copy(); pb[frozen] = cur[frozen]
+                _, _, _, cb, cashb, wlb = finish(pb)
+                fb = recheck(wlb, cashb, cash_hi)
+                if fb is None:
+                    disabled, reasons = True, ["NO_EXPOSURE"]
+                elif band_fail(fb):
+                    disabled, reasons = True, band_fail(fb)
+                else:
+                    post = pb
+        if disabled:
+            post = exec_nobuf
+        dsh, ddv, etf_d, c, cash_post, wl = finish(post)
+        f_post = recheck(wl, cash_post, cash_hi)
+        stock_trades = int((dsh.abs() > 0).sum())
+        to = 0.5 * float(ddv.abs().sum()) / stock_val if stock_val > 0 else None
+        supp = float(((exec_nobuf - cur).abs() * Pn)[frozen].sum()) if (frozen and not disabled) else 0.0
+        row.update(traded=stock_trades > 0, n_stock_trades=stock_trades, to_gate=to, cash_post=cash_post / nav,
+                   n_names=int((post > 0).sum()), band_frozen=(len(frozen) if not disabled else 0), band_frozen_candidates=len(frozen),
+                   band_suppressed_cny=supp, band_disabled=disabled, disable_reasons=",".join(reasons),
+                   frozen_lt2=int(sum(1 for i in frozen if not disabled and w_cur[i] < MIN_KEEP_W)),
+                   cost_cny=c.total_cny, commission_cny=c.commission_cny, slippage_cny=c.slippage_cny, stamp_cny=c.stamp_tax_cny,
+                   n_dropped_min_trade=n_drop, n_lot_trim_cash=n_trim, lot_mode=lot_mode, core_lot_flag=linfo.get("lot_flag"), tgt_cash=tgt_cash, n_no_price_hold=len(miss), etf_turnover=abs(etf_d) / nav,
+                   onew_nav=0.5 * (float(ddv.abs().sum()) + abs(etf_d)) / nav,
+                   hard_recheck=("UNCHECKED" if f_post is None else ("PASS" if not f_post else "FAIL:" + ",".join(f_post))),
+                   hard_recheck_nobuf_target=("UNCHECKED" if f_nobuf is None else ("PASS" if not f_nobuf else "FAIL:" + ",".join(f_nobuf))),
+                   after_disable_prev=disabled_prev)
+        rows.append(row)
+        sh = post[post > 0]; etf_val = etf_tgt; cash = cash_post; prev = d; prev_tgt = tgt; disabled_prev = disabled
+        if rss_mb() > RSS_CAP_MB:
+            raise SystemExit(f"RSS {rss_mb():.0f}MB > {RSS_CAP_MB}MB cap")
+    return pd.DataFrame(rows)
+
+
+def b4_rolling_beta(days, window=60):
+    """B4: rolling β of 510300 daily returns vs the in-pool wb benchmark (core_x2/bench_hiliq_wb_x2.csv), sampled on rebalance
+    days. Instrument/benchmark returns only; no strategy NAV or returns."""
+    b = pd.read_csv(OUT / "bench_hiliq_wb_x2.csv", index_col=0, parse_dates=True)["ret"].astype(float)
+    e = pd.read_parquet(ROOT / "data/v2/etf/etf_daily_adj.parquet", columns=["ts_code", "trade_date", "close_hfq"])
+    e = e[e.ts_code == BAL]; r = pd.Series(e.close_hfq.values, index=pd.to_datetime(e.trade_date.astype(str))).sort_index().pct_change()
+    x = pd.concat([r.rename("e"), b.rename("b")], axis=1).dropna()
+    beta = x.e.rolling(window).cov(x.b) / x.b.rolling(window).var()
+    s = beta.reindex(pd.DatetimeIndex(days), method="ffill").dropna()
+    return {"window_days": window, "by_rebal_day": {d.strftime("%Y-%m-%d"): round(float(v), 4) for d, v in s.items()},
+            "median": round(float(s.median()), 4) if len(s) else None, "min": round(float(s.min()), 4) if len(s) else None,
+            "max": round(float(s.max()), 4) if len(s) else None}
+
+
+def summarize(R: pd.DataFrame, win: str, aum: int, years: float) -> dict:
+    x = R[~R.initial_build]
+    nc = x[~x.carry]; tr = nc[nc.traded]
+    zero_supp = nc[(~nc.traded) & (nc.band_frozen > 0)] if "band_frozen" in nc else nc.iloc[0:0]
+    to_tr = tr.to_gate.dropna(); to_nc = nc.to_gate.fillna(0.0); to_all = x.to_gate.fillna(0.0)
+    dis = nc[nc.band_disabled.fillna(False).astype(bool)] if "band_disabled" in nc else nc.iloc[0:0]
+    reasons = dis.disable_reasons.str.split(",").explode().value_counts().to_dict() if len(dis) else {}
+    catch = x[x.get("after_disable_prev", False) == True].to_gate.dropna() if "after_disable_prev" in x else pd.Series(dtype=float)
+    cash = nc.cash_post.astype(float)
+    hr = nc.hard_recheck.astype(str)
+    return {
+        "window": win, "n_rebal_days": int(len(x)), "n_carry_days": int(x.carry.sum()), "carry_days": x[x.carry].date.tolist(),
+        "n_traded_days": int(len(tr)),
+        "gate_TO_median_traded_days": round(float(to_tr.median()), 4) if len(to_tr) else None,
+        "gate_TO_mean_traded_days": round(float(to_tr.mean()), 4) if len(to_tr) else None,
+        "gate_pass_le_0.30": (bool(to_tr.median() <= GATE) if len(to_tr) else None),
+        "archP3_days_fully_suppressed_zero_trades": int(len(zero_supp)), "archP3_fully_suppressed_days": zero_supp.date.tolist(),
+        "archP3_median_incl_suppressed_as_0": round(float(to_nc.median()), 4) if len(to_nc) else None,
+        "B5_median_all_rebal_days_carry_as_0": round(float(to_all.median()), 4) if len(to_all) else None,
+        "B5_annual_oneway_sum": round(float(to_all.sum()) / years, 4) if years > 0 else None,
+        "B5_catchup_TO_after_disable_days": [round(float(v), 4) for v in catch], "B5_catchup_TO_median": round(float(catch.median()), 4) if len(catch) else None,
+        "B5_frozen_names_below_2pct": int(nc.frozen_lt2.sum()) if "frozen_lt2" in nc else 0,
+        "B5_band_disable_days": int(len(dis)), "B5_band_disable_reasons": reasons, "B5_band_disable_dates": dis.date.tolist(),
+        "band_frozen_orders": int(nc.band_frozen.sum()), "band_suppressed_cny": round(float(nc.band_suppressed_cny.sum()), 2),
+        "tt_target_turnover_median_stocknorm": round(float(x.tt_target_turnover.dropna().median()), 4) if x.tt_target_turnover.notna().any() else None,
+        "hard_recheck_fail_days": int(hr.str.startswith("FAIL").sum()), "hard_recheck_unchecked_days": int((hr == "UNCHECKED").sum()),
+        "hard_recheck_fail_detail": nc[hr.str.startswith("FAIL")][["date", "hard_recheck"]].values.tolist(),
+        "days_onew_nav_gt_0.40_cap": nc[nc.onew_nav > TURN_HARD_CAP].date.tolist(),
+        "cash_post": {"p5": round(float(cash.quantile(.05)), 4), "p50": round(float(cash.median()), 4), "p95": round(float(cash.quantile(.95)), 4),
+                      "min": round(float(cash.min()), 4), "max": round(float(cash.max()), 4), "days_gt_2pct": int((cash > 0.02 + 1e-9).sum())} if len(cash) else None,
+        "fill_cost_cny": round(float(nc.cost_cny.sum()), 2), "fill_cost_pct_initial_aum": round(100 * float(nc.cost_cny.sum()) / aum, 3),
+        "commission_cny": round(float(nc.commission_cny.sum()), 2), "slippage_cny": round(float(nc.slippage_cny.sum()), 2), "stamp_cny": round(float(nc.stamp_cny.sum()), 2),
+        "orders_dropped_min_trade": int(nc.n_dropped_min_trade.sum()), "no_price_holds": int(nc.n_no_price_hold.sum()),
+        "B4_510300_rebalance_turnover_median": round(float(nc.etf_turnover.median()), 4) if len(nc) else None,
+        "a3_unadjusted_name_days": int(x.a3_unadjusted_names.sum()),
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--weights", required=True); ap.add_argument("--aum", type=int, required=True, choices=(600000, 1000000))
+    ap.add_argument("--disclosure"); ap.add_argument("--version", default="v1_3"); ap.add_argument("--label", default="")
+    ap.add_argument("--windows", default="X2"); ap.add_argument("--allow-real", action="store_true"); ap.add_argument("--b2", action="store_true"); ap.add_argument("--b4-beta", action="store_true")
+    ap.add_argument("--weights-ok", help="Arch .ok listing authorized weight sha256s (e.g. core_x2/ARCH_RESIGN_A_v1_3.ok); real runs must match")
+    ap.add_argument("--arch-ok", help="matching Arch .ok marker authorizing this run (主 Agent 00:40: required for any run incl. dry-run)")
+    a = ap.parse_args()
+    if not a.arch_ok or not Path(a.arch_ok).exists():
+        raise SystemExit("REFUSED: 主 Agent 00:40 ET — every run (incl. smoke/dry-run) needs a matching Arch .ok; pass --arch-ok PATH.")
+    wp = Path(a.weights).resolve(); wsha = sha256(wp)
+    okt = Path(a.arch_ok).read_text(encoding="utf-8")
+    for k, f in (("freeze_record_sha256", "docs/v2/S2_3_FREEZE_RECORD_ZH.md"), ("s2_3_draft_sha256", "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md"),
+                 ("stage2_prereg_sha256", "docs/v2/STRATEGY_OPTIMIZER_STAGE2_PREREG_DRAFT_ZH.md")):
+        want = next((l.split("=", 1)[1].strip() for l in okt.splitlines() if l.startswith(k + "=")), None)
+        if want and sha256(ROOT / f) != want:
+            raise SystemExit(f"STOP: {f} sha256 != {k} in {a.arch_ok}")
+    if a.allow_real:
+        if not a.weights_ok or wsha not in Path(a.weights_ok).read_text(encoding="utf-8"):
+            raise SystemExit("STOP: real run needs --weights-ok whose text lists this weight file's sha256")
+    void_reg = json.loads((OUT / "_void_pre_K6_sha.json").read_text(encoding="utf-8"))["files"]
+    is_void = wsha in {v["sha256"] for v in void_reg.values()}
+    if not is_void and not a.allow_real:
+        raise SystemExit("REFUSED: weights are not in _void_pre_K6_sha.json. A real S2-3 run needs --allow-real and must wait until "
+                         "the S2-3 freeze is effective (Arch/Beta hash check + release marker).")
+    if is_void and "VOID" not in a.label.upper():
+        raise SystemExit("REFUSED: void pre-K6 weights must be run with --label VOID (dry run only; never a baseline, never in a scorecard).")
+    W = pd.read_parquet(wp, columns=["session", "instrument", "weight", "aum", "sleeve", "is_rebalance_day", "window"])
+    W = W[W.aum == a.aum]; sleeve = W.sleeve.iloc[0]
+    rb = W[W.is_rebalance_day].copy(); rb["session"] = pd.to_datetime(rb.session)
+    T = {d: g.set_index("instrument").weight.groupby(level=0).sum() for d, g in rb.groupby("session")}
+    all_days = sorted(T)
+    wins = [w.strip() for w in a.windows.split(",")]
+    s0 = min(pd.Timestamp(WIN[w][0]) for w in wins); s1 = max(pd.Timestamp(WIN[w][1]) for w in wins)
+    days = [d for d in all_days if s0 <= d <= s1]
+    pre = [d for d in all_days if d < s0]
+    if pre: days = [pre[-1]] + days                                   # warm-up build on last rebalance before window
+    disc = {}
+    dp = Path(a.disclosure).resolve() if a.disclosure else wp.parent / f"core_{a.version.split('_VOID')[0] if 'VOID' in a.version else a.version}_disclosure.csv"
+    if dp.exists():
+        Dd = pd.read_csv(dp); Dd = Dd[(Dd.aum == a.aum) & (Dd.sleeve == sleeve)]
+        for r in Dd.itertuples():
+            disc[r.date] = r.status
+            disc[("slack", r.date)] = {"size_slack": float(r.size_slack) if pd.notna(r.size_slack) else 0.0,
+                                       "ind_slack": float(r.ind_slack) if pd.notna(r.ind_slack) else 0.0}
+    names = sorted({i for d in days for i in T[d].index if i != BAL})
+    px, af, etf = load_prices(names, days[0], days[-1])
+    from beta_s2_3_band_sim import expo
+    res, per_day = {}, []
+    ndays = len(pd.bdate_range(days[1] if len(days) > 1 else days[0], days[-1]))
+    years = ndays / 261.0  # ~calendar bdays; annual one-way sum only (no returns)
+    for col, band in (("nobuf_HEADLINE", 0.0), ("buf_ABLATION", BAND)):
+        R = simulate(T, disc, a.aum, sleeve, days, px, af, etf, band, a.b2, expo)
+        R.insert(0, "column", col); per_day.append(R)
+        res[col] = {}
+        for w in wins:
+            m = R.initial_build | ((R.date >= WIN[w][0]) & (R.date <= WIN[w][1]))
+            y = len(pd.bdate_range(WIN[w][0], min(pd.Timestamp(WIN[w][1]), days[-1]))) / 261.0
+            res[col][w] = summarize(R[m], w, a.aum, y)
+    b4 = b4_rolling_beta(days) if a.b4_beta else None
+    tag = f"{a.version}_{sleeve}_{a.aum // 10000}w"
+    od = OUT / f"s2_3_{tag}"; od.mkdir(parents=True, exist_ok=True)
+    meta = {"label": a.label or "REAL", "void_pre_K6": is_void, "version": a.version, "sleeve": sleeve, "aum": a.aum,
+            "weights": str(wp.relative_to(ROOT)), "weights_sha256": wsha, "arch_ok": str(a.arch_ok), "arch_ok_sha256": sha256(Path(a.arch_ok)), "weights_ok": str(a.weights_ok), "weights_ok_sha256": (sha256(Path(a.weights_ok)) if a.weights_ok else None), "disclosure": str(dp.relative_to(ROOT)) if dp.exists() else None,
+            "spec": "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md §3 (freeze record S2_3_FREEZE_RECORD_ZH.md)",
+            "band_nav": BAND, "gate": GATE, "headline": "nobuf_HEADLINE", "ablation": "buf_ABLATION", "b2_flag": a.b2,
+            "B1": "w_tgt read from pre-produced weights file; post-band holdings are never fed back to the solver w0 (by construction).",
+            "B3": "not implemented (whole-day disable kept, per Beta).", "B4_rolling_beta_510300_vs_wb": (b4 if b4 is not None else "implemented, not run (opt-in --b4-beta)"),
+            "returns_computed": False, "nav_written": False, "live": False,
+            "run_et": datetime.now().strftime("%Y-%m-%d %H:%M:%S ET"), "rss_peak_mb": round(rss_mb(), 1)}
+    (od / "exec_metrics.json").write_text(json.dumps({"meta": meta, "metrics": res}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    flat = []
+    for col, ws in res.items():
+        for w, m in ws.items():
+            flat.append({"label": meta["label"], "column": col, **{k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v) for k, v in m.items()}})
+    pd.DataFrame(flat).to_csv(od / "exec_metrics.csv", index=False)
+    pd.concat(per_day).to_csv(od / "exec_days.csv", index=False)
+    print(json.dumps({"out": str(od.relative_to(ROOT)), "rss_peak_mb": meta["rss_peak_mb"],
+                      **{c: {w: {k: res[c][w][k] for k in ("n_traded_days", "gate_TO_median_traded_days", "archP3_days_fully_suppressed_zero_trades",
+                                                           "archP3_median_incl_suppressed_as_0", "B5_band_disable_days", "hard_recheck_fail_days",
+                                                           "fill_cost_pct_initial_aum")} for w in res[c]} for c in res}}, ensure_ascii=False, indent=1))
+
+
+if __name__ == "__main__":
+    main()

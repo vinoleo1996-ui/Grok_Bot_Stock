@@ -1,0 +1,167 @@
+{
+  "leaf": 39,
+  "mechanism_tag": "g1g5_ashare_abcfo_rem_resid_v1",
+  "asof_et": "2026-10-27",
+  "window": {
+    "start": "2024-06-03",
+    "end": "2026-10-09",
+    "rebal_every": 20
+  },
+  "n_rebal": 30,
+  "coverage_raw": {
+    "median": 2979.5,
+    "min": 1254.0,
+    "p10": 1582.4,
+    "n_days": 30,
+    "zero_frac": 0.0
+  },
+  "coverage_masked": {
+    "median": 2838.5,
+    "min": 1149.0,
+    "p10": 1478.2,
+    "n_days": 30,
+    "zero_frac": 0.0
+  },
+  "exclude_sw": {
+    "银行": "801780.SI",
+    "房地产": "801180.SI",
+    "非银金融": "801790.SI"
+  },
+  "overlap_days": [
+    "2024-06-03",
+    "2024-11-28",
+    "2025-05-30",
+    "2025-10-28",
+    "2026-04-27",
+    "2026-10-09"
+  ],
+  "overlap_rows": [
+    {
+      "date": "2024-06-03",
+      "n": 1782,
+      "rho_leaf19": -0.26655527212318936,
+      "j20_leaf19": 0.0,
+      "rho_leaf25": -0.14852325312251216,
+      "j20_leaf25": 0.0,
+      "rho_leaf30": -0.1451357671868596,
+      "j20_leaf30": 0.0
+    },
+    {
+      "date": "2024-11-28",
+      "n": 3128,
+      "rho_leaf19": -0.28983248267927864,
+      "j20_leaf19": 0.0,
+      "rho_leaf25": -0.1427370563046815,
+      "j20_leaf25": 0.0,
+      "rho_leaf30": -0.24609259598973654,
+      "j20_leaf30": 0.0
+    },
+    {
+      "date": "2025-05-30",
+      "n": 2584,
+      "rho_leaf19": -0.24196070772303396,
+      "j20_leaf19": 0.02564102564102564,
+      "rho_leaf25": -0.12620688186556894,
+      "j20_leaf25": 0.0,
+      "rho_leaf30": -0.1865615621435398,
+      "j20_leaf30": 0.0
+    },
+    {
+      "date": "2025-10-28",
+      "n": 2657,
+      "rho_leaf19": -0.3012669444234327,
+      "j20_leaf19": 0.0,
+      "rho_leaf25": -0.10807548895884996,
+      "j20_leaf25": 0.0,
+      "rho_leaf30": -0.2349604635886757,
+      "j20_leaf30": 0.0
+    },
+    {
+      "date": "2026-04-27",
+      "n": 2892,
+      "rho_leaf19": -0.2724068702477409,
+      "j20_leaf19": 0.0,
+      "rho_leaf25": null,
+      "j20_leaf25": null,
+      "rho_leaf30": -0.19710876420428944,
+      "j20_leaf30": 0.0
+    },
+    {
+      "date": "2026-10-09",
+      "n": 2594,
+      "rho_leaf19": -0.27962699647138023,
+      "j20_leaf19": 0.0,
+      "rho_leaf25": null,
+      "j20_leaf25": null,
+      "rho_leaf30": -0.18877743476369113,
+      "j20_leaf30": 0.0
+    }
+  ],
+  "rho_excess_approx": {
+    "leaf19": {
+      "mean": -0.27527487894467595,
+      "max": -0.24196070772303396,
+      "n": 6
+    },
+    "leaf25": {
+      "mean": -0.13138567006290314,
+      "max": -0.10807548895884996,
+      "n": 4
+    },
+    "leaf30": {
+      "mean": -0.19977276464613203,
+      "max": -0.1451357671868596,
+      "n": 6
+    }
+  },
+  "jaccard_top20": {
+    "leaf19": {
+      "mean": 0.004273504273504273,
+      "max": 0.02564102564102564,
+      "n": 6
+    },
+    "leaf25": {
+      "mean": 0.0,
+      "max": 0.0,
+      "n": 4
+    },
+    "leaf30": {
+      "mean": 0.0,
+      "max": 0.0,
+      "n": 6
+    }
+  },
+  "hard_overlap_threshold": 0.5,
+  "hard_reject_hits": [],
+  "hard_reject": false,
+  "gate_cov_pass": true,
+  "gate_pass": true,
+  "gate_rule": "masked_median>=300.0 AND zero_frac<=0.05 AND NOT (Jaccard_top20 OR rho_excess vs leaf19/25/30 any max >0.5)",
+  "approx": [
+    "YTD cashflow/sales differenced to single-quarter within fiscal year",
+    "cross-section OLS within SW L1 at rebalance (NOT full year×industry historical panel as Northeast Securities may use)",
+    "A_lag = prior end_date total_assets; sales=total_revenue fallback revenue",
+    "rho/jaccard vs leaf19/25/30 on up to 6 rebal days; rho is rank Spearman on alpha (not excess-return rho)",
+    "no style residual beyond SW L1 grouped OLS; size/style residual left to FROZEN/X2"
+  ],
+  "gaps": [],
+  "input_sha8": {
+    "hiliq": "c5433e80",
+    "cashflow": "71d5c3d3",
+    "financials": "bc0f4c3d",
+    "bs_cf": "01a015bf",
+    "sw_l1": "89d4afa3",
+    "leaf19_alpha": "16202b2e",
+    "leaf25_alpha": "8be12024",
+    "leaf30_alpha": "c8c7a5a5"
+  },
+  "peak_rss_mb": 704.90625,
+  "mem_available_gi_start": 12.311347961425781,
+  "mem_available_gi_end": 11.768680572509766,
+  "elapsed_sec": 5.04421854019165,
+  "EXECUTED_full_alpha": false,
+  "ok_requested": false,
+  "live": false,
+  "promotion_approved": false,
+  "leo_notify": false
+}

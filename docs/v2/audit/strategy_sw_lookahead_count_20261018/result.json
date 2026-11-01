@@ -1,0 +1,909 @@
+{
+  "started_et": "2026-10-18 07:04:39 EDT",
+  "inputs_sha256": {
+    "data/v2/sw_pit/industry_members_sw_l1_pit.parquet": "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6",
+    "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet": "89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c",
+    "data/v2/calendar/trade_cal_sse_pit.parquet": "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41",
+    "output/strategy_hiliq/legs/g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet": "3b288c832b956820af9802f02861af459e215e7d4097a6420724b26cf2d31c4d",
+    "output/strategy_hiliq/legs/g1g5_earnings_event_hiliq_v1_daily_weights_20261014_202822.parquet": "6bb3b3f3160eafce410079ac49203faed609f9d722a55b9ef6f15c82af6d69e0",
+    "output/strategy_hiliq/legs/g1g5_insider_increase_hiliq_v1_daily_weights_20261014_202928.parquet": "c4b93255b694adb9b0484e55413abf80072be1e48d750e25a39dc4e37917b5e2",
+    "output/strategy_hiliq/b4/B4_50_25_25_topN_60w.parquet": "ca77bc8cf05a8cc5665a0532ce5221e05f3d0431cf87ee614c7779064cad627a",
+    "output/strategy_hiliq/b4/B4_50_25_25_topN_100w.parquet": "f75ace33da3e919e799ee1e63fd141ed6d34b3b2a509d7bdf7659ab05849e315",
+    "data/v2/valuation/daily_basic_full_tushare.parquet": "f6bbf9e51af78dfab2c021fa8809c58ad0d36df7293f8a488200b9dd5ceaf948"
+  },
+  "pandas": "3.0.6",
+  "window": [
+    "2024-06-03",
+    "2026-10-09"
+  ],
+  "clean_adapter": {
+    "code": "instrument_id sz.000001 -> ts_code 000001.SZ",
+    "name": "sw_name -> l1_name",
+    "n_rows": 7920,
+    "n_instrument_id_malformed": 1,
+    "malformed": [
+      "Tsh.00018"
+    ]
+  },
+  "market_scope_note": "daily_basic_full_tushare 当日有记录的代码（停牌日无记录不计）；非 ETF",
+  "scopes": {
+    "synth_legs_plus_b4": {
+      "n_keys": 34138,
+      "n_codes": 881,
+      "n_sessions": 570,
+      "n_keys_not_open_day": 0,
+      "legacy_unknown_keys": 2024,
+      "legacy_BAD_vs_pit_BAD": {
+        "ref": "legacy_BAD",
+        "new": "pit_BAD",
+        "n_keys": 34138,
+        "n_codes": 881,
+        "diff_both_known_keys": 486,
+        "diff_both_known_codes": 18,
+        "diff_both_known_share_keys": 0.01423633487609116,
+        "new_unknown_ref_known_keys": 477,
+        "new_unknown_ref_known_codes": 15,
+        "new_unknown_keys": 2501,
+        "new_unknown_codes": 71,
+        "new_unknown_share_keys": 0.07326146815865019,
+        "ref_unknown_keys": 2024,
+        "ref_unknown_codes": 56,
+        "ref_unknown_new_known_keys": 0,
+        "ref_unknown_new_known_codes": 0,
+        "neq_incl_unknown_keys": 963,
+        "neq_incl_unknown_codes": 33,
+        "neq_incl_unknown_share_keys": 0.028209033921143593
+      },
+      "legacy_BAD_vs_pit_CLEAN": {
+        "ref": "legacy_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 34138,
+        "n_codes": 881,
+        "diff_both_known_keys": 900,
+        "diff_both_known_codes": 29,
+        "diff_both_known_share_keys": 0.026363583103872518,
+        "new_unknown_ref_known_keys": 1,
+        "new_unknown_ref_known_codes": 1,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 2.9292870115413907e-05,
+        "ref_unknown_keys": 2024,
+        "ref_unknown_codes": 56,
+        "ref_unknown_new_known_keys": 2024,
+        "ref_unknown_new_known_codes": 56,
+        "neq_incl_unknown_keys": 2925,
+        "neq_incl_unknown_codes": 86,
+        "neq_incl_unknown_share_keys": 0.08568164508758568
+      },
+      "pit_BAD_vs_pit_CLEAN": {
+        "ref": "pit_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 34138,
+        "n_codes": 881,
+        "diff_both_known_keys": 31,
+        "diff_both_known_codes": 1,
+        "diff_both_known_share_keys": 0.0009080789735778312,
+        "new_unknown_ref_known_keys": 0,
+        "new_unknown_ref_known_codes": 0,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 2.9292870115413907e-05,
+        "ref_unknown_keys": 2501,
+        "ref_unknown_codes": 71,
+        "ref_unknown_new_known_keys": 2500,
+        "ref_unknown_new_known_codes": 70,
+        "neq_incl_unknown_keys": 2531,
+        "neq_incl_unknown_codes": 71,
+        "neq_incl_unknown_share_keys": 0.0741402542621126,
+        "diff_both_known_code_list": [
+          "002597.SZ"
+        ]
+      },
+      "overlap_BAD": {
+        "table": "BAD",
+        "overlap_keys": 98,
+        "overlap_codes": 3,
+        "overlap_codes_conflict": 2,
+        "codes": [
+          {
+            "code": "002597.SZ",
+            "first_day": "2026-01-23",
+            "last_day": "2026-06-29",
+            "n_days": 31,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300777.SZ",
+            "first_day": "2025-03-27",
+            "last_day": "2025-05-27",
+            "n_days": 40,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "基础化工"
+            ]
+          },
+          {
+            "code": "688002.SH",
+            "first_day": "2025-03-20",
+            "last_day": "2026-03-31",
+            "n_days": 27,
+            "conflict": false,
+            "candidates": [
+              "国防军工"
+            ]
+          }
+        ]
+      },
+      "overlap_CLEAN": {
+        "table": "CLEAN",
+        "overlap_keys": 0,
+        "overlap_codes": 0,
+        "overlap_codes_conflict": 0,
+        "codes": []
+      }
+    },
+    "b4_book_60w": {
+      "n_keys": 9854,
+      "n_codes": 415,
+      "n_sessions": 570,
+      "n_keys_not_open_day": 0,
+      "legacy_unknown_keys": 558,
+      "legacy_BAD_vs_pit_BAD": {
+        "ref": "legacy_BAD",
+        "new": "pit_BAD",
+        "n_keys": 9854,
+        "n_codes": 415,
+        "diff_both_known_keys": 129,
+        "diff_both_known_codes": 11,
+        "diff_both_known_share_keys": 0.013091130505378527,
+        "new_unknown_ref_known_keys": 134,
+        "new_unknown_ref_known_codes": 10,
+        "new_unknown_keys": 692,
+        "new_unknown_codes": 30,
+        "new_unknown_share_keys": 0.0702252892226507,
+        "ref_unknown_keys": 558,
+        "ref_unknown_codes": 20,
+        "ref_unknown_new_known_keys": 0,
+        "ref_unknown_new_known_codes": 0,
+        "neq_incl_unknown_keys": 263,
+        "neq_incl_unknown_codes": 21,
+        "neq_incl_unknown_share_keys": 0.02668966916988025,
+        "diff_both_known_share_weight": 0.00997668410764176,
+        "neq_incl_unknown_share_weight": 0.021070459355987965,
+        "new_unknown_share_weight": 0.0714418213458949
+      },
+      "legacy_BAD_vs_pit_CLEAN": {
+        "ref": "legacy_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 9854,
+        "n_codes": 415,
+        "diff_both_known_keys": 247,
+        "diff_both_known_codes": 20,
+        "diff_both_known_share_keys": 0.025065963060686015,
+        "new_unknown_ref_known_keys": 1,
+        "new_unknown_ref_known_codes": 1,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 0.00010148163182463974,
+        "ref_unknown_keys": 558,
+        "ref_unknown_codes": 20,
+        "ref_unknown_new_known_keys": 558,
+        "ref_unknown_new_known_codes": 20,
+        "neq_incl_unknown_keys": 806,
+        "neq_incl_unknown_codes": 41,
+        "neq_incl_unknown_share_keys": 0.08179419525065963,
+        "diff_both_known_share_weight": 0.019658186460071236,
+        "neq_incl_unknown_share_weight": 0.08015754751075387,
+        "new_unknown_share_weight": 0.0001513149531339351
+      },
+      "pit_BAD_vs_pit_CLEAN": {
+        "ref": "pit_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 9854,
+        "n_codes": 415,
+        "diff_both_known_keys": 23,
+        "diff_both_known_codes": 1,
+        "diff_both_known_share_keys": 0.002334077531966714,
+        "new_unknown_ref_known_keys": 0,
+        "new_unknown_ref_known_codes": 0,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 0.00010148163182463974,
+        "ref_unknown_keys": 692,
+        "ref_unknown_codes": 30,
+        "ref_unknown_new_known_keys": 691,
+        "ref_unknown_new_known_codes": 29,
+        "neq_incl_unknown_keys": 714,
+        "neq_incl_unknown_codes": 30,
+        "neq_incl_unknown_share_keys": 0.07245788512279278,
+        "diff_both_known_share_weight": 0.001933468845600282,
+        "neq_incl_unknown_share_weight": 0.07322397523836124,
+        "new_unknown_share_weight": 0.0001513149531339351,
+        "diff_both_known_code_list": [
+          "002597.SZ"
+        ]
+      },
+      "overlap_BAD": {
+        "table": "BAD",
+        "overlap_keys": 33,
+        "overlap_codes": 2,
+        "overlap_codes_conflict": 2,
+        "codes": [
+          {
+            "code": "002597.SZ",
+            "first_day": "2026-01-23",
+            "last_day": "2026-06-29",
+            "n_days": 23,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300777.SZ",
+            "first_day": "2025-03-27",
+            "last_day": "2025-04-10",
+            "n_days": 10,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "基础化工"
+            ]
+          }
+        ]
+      },
+      "overlap_CLEAN": {
+        "table": "CLEAN",
+        "overlap_keys": 0,
+        "overlap_codes": 0,
+        "overlap_codes_conflict": 0,
+        "codes": []
+      }
+    },
+    "b4_book_100w": {
+      "n_keys": 16146,
+      "n_codes": 576,
+      "n_sessions": 570,
+      "n_keys_not_open_day": 0,
+      "legacy_unknown_keys": 1013,
+      "legacy_BAD_vs_pit_BAD": {
+        "ref": "legacy_BAD",
+        "new": "pit_BAD",
+        "n_keys": 16146,
+        "n_codes": 576,
+        "diff_both_known_keys": 241,
+        "diff_both_known_codes": 12,
+        "diff_both_known_share_keys": 0.014926297534993187,
+        "new_unknown_ref_known_keys": 224,
+        "new_unknown_ref_known_codes": 13,
+        "new_unknown_keys": 1237,
+        "new_unknown_codes": 48,
+        "new_unknown_share_keys": 0.07661340270035923,
+        "ref_unknown_keys": 1013,
+        "ref_unknown_codes": 35,
+        "ref_unknown_new_known_keys": 0,
+        "ref_unknown_new_known_codes": 0,
+        "neq_incl_unknown_keys": 465,
+        "neq_incl_unknown_codes": 25,
+        "neq_incl_unknown_share_keys": 0.028799702712746192,
+        "diff_both_known_share_weight": 0.011012385267016731,
+        "neq_incl_unknown_share_weight": 0.02243926331059207,
+        "new_unknown_share_weight": 0.08586928481186029
+      },
+      "legacy_BAD_vs_pit_CLEAN": {
+        "ref": "legacy_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 16146,
+        "n_codes": 576,
+        "diff_both_known_keys": 440,
+        "diff_both_known_codes": 22,
+        "diff_both_known_share_keys": 0.027251331599157685,
+        "new_unknown_ref_known_keys": 1,
+        "new_unknown_ref_known_codes": 1,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 6.19348445435402e-05,
+        "ref_unknown_keys": 1013,
+        "ref_unknown_codes": 35,
+        "ref_unknown_new_known_keys": 1013,
+        "ref_unknown_new_known_codes": 35,
+        "neq_incl_unknown_keys": 1454,
+        "neq_incl_unknown_codes": 58,
+        "neq_incl_unknown_share_keys": 0.09005326396630745,
+        "diff_both_known_share_weight": 0.021217550079374686,
+        "neq_incl_unknown_share_weight": 0.09576113515990112,
+        "new_unknown_share_weight": 0.00010117831224148912
+      },
+      "pit_BAD_vs_pit_CLEAN": {
+        "ref": "pit_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 16146,
+        "n_codes": 576,
+        "diff_both_known_keys": 29,
+        "diff_both_known_codes": 1,
+        "diff_both_known_share_keys": 0.0017961104917626656,
+        "new_unknown_ref_known_keys": 0,
+        "new_unknown_ref_known_codes": 0,
+        "new_unknown_keys": 1,
+        "new_unknown_codes": 1,
+        "new_unknown_share_keys": 6.19348445435402e-05,
+        "ref_unknown_keys": 1237,
+        "ref_unknown_codes": 48,
+        "ref_unknown_new_known_keys": 1236,
+        "ref_unknown_new_known_codes": 47,
+        "neq_incl_unknown_keys": 1265,
+        "neq_incl_unknown_codes": 48,
+        "neq_incl_unknown_share_keys": 0.07834757834757834,
+        "diff_both_known_share_weight": 0.001353979693762543,
+        "neq_incl_unknown_share_weight": 0.08712208619338134,
+        "new_unknown_share_weight": 0.00010117831224148912,
+        "diff_both_known_code_list": [
+          "002597.SZ"
+        ]
+      },
+      "overlap_BAD": {
+        "table": "BAD",
+        "overlap_keys": 66,
+        "overlap_codes": 3,
+        "overlap_codes_conflict": 2,
+        "codes": [
+          {
+            "code": "002597.SZ",
+            "first_day": "2026-01-23",
+            "last_day": "2026-06-29",
+            "n_days": 29,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300777.SZ",
+            "first_day": "2025-03-27",
+            "last_day": "2025-05-27",
+            "n_days": 34,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "基础化工"
+            ]
+          },
+          {
+            "code": "688002.SH",
+            "first_day": "2025-04-03",
+            "last_day": "2025-04-08",
+            "n_days": 3,
+            "conflict": false,
+            "candidates": [
+              "国防军工"
+            ]
+          }
+        ]
+      },
+      "overlap_CLEAN": {
+        "table": "CLEAN",
+        "overlap_keys": 0,
+        "overlap_codes": 0,
+        "overlap_codes_conflict": 0,
+        "codes": []
+      }
+    },
+    "market_daily_basic": {
+      "n_keys": 3090198,
+      "n_codes": 5660,
+      "n_sessions": 570,
+      "n_keys_not_open_day": 0,
+      "legacy_unknown_keys": 177160,
+      "legacy_BAD_vs_pit_BAD": {
+        "ref": "legacy_BAD",
+        "new": "pit_BAD",
+        "n_keys": 3090198,
+        "n_codes": 5660,
+        "diff_both_known_keys": 56927,
+        "diff_both_known_codes": 182,
+        "diff_both_known_share_keys": 0.01842179692045623,
+        "new_unknown_ref_known_keys": 27585,
+        "new_unknown_ref_known_codes": 285,
+        "new_unknown_keys": 204745,
+        "new_unknown_codes": 604,
+        "new_unknown_share_keys": 0.0662562722518104,
+        "ref_unknown_keys": 177160,
+        "ref_unknown_codes": 319,
+        "ref_unknown_new_known_keys": 0,
+        "ref_unknown_new_known_codes": 0,
+        "neq_incl_unknown_keys": 84512,
+        "neq_incl_unknown_codes": 318,
+        "neq_incl_unknown_share_keys": 0.027348409389948477
+      },
+      "legacy_BAD_vs_pit_CLEAN": {
+        "ref": "legacy_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 3090198,
+        "n_codes": 5660,
+        "diff_both_known_keys": 75466,
+        "diff_both_known_codes": 215,
+        "diff_both_known_share_keys": 0.024421088875211234,
+        "new_unknown_ref_known_keys": 1656,
+        "new_unknown_ref_known_codes": 249,
+        "new_unknown_keys": 1829,
+        "new_unknown_codes": 251,
+        "new_unknown_share_keys": 0.0005918714593692702,
+        "ref_unknown_keys": 177160,
+        "ref_unknown_codes": 319,
+        "ref_unknown_new_known_keys": 176987,
+        "ref_unknown_new_known_codes": 318,
+        "neq_incl_unknown_keys": 254109,
+        "neq_incl_unknown_codes": 627,
+        "neq_incl_unknown_share_keys": 0.08223065318144662
+      },
+      "pit_BAD_vs_pit_CLEAN": {
+        "ref": "pit_BAD",
+        "new": "pit_CLEAN",
+        "n_keys": 3090198,
+        "n_codes": 5660,
+        "diff_both_known_keys": 2843,
+        "diff_both_known_codes": 5,
+        "diff_both_known_share_keys": 0.0009200057730928569,
+        "new_unknown_ref_known_keys": 10,
+        "new_unknown_ref_known_codes": 9,
+        "new_unknown_keys": 1829,
+        "new_unknown_codes": 251,
+        "new_unknown_share_keys": 0.0005918714593692702,
+        "ref_unknown_keys": 204745,
+        "ref_unknown_codes": 604,
+        "ref_unknown_new_known_keys": 202926,
+        "ref_unknown_new_known_codes": 364,
+        "neq_incl_unknown_keys": 205779,
+        "neq_incl_unknown_codes": 378,
+        "neq_incl_unknown_share_keys": 0.06659087864272775,
+        "diff_both_known_code_list": [
+          "002597.SZ",
+          "300741.SZ",
+          "300858.SZ",
+          "603020.SH",
+          "605077.SH"
+        ]
+      },
+      "overlap_BAD": {
+        "table": "BAD",
+        "overlap_keys": 8522,
+        "overlap_codes": 18,
+        "overlap_codes_conflict": 14,
+        "codes": [
+          {
+            "code": "000016.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2024-07-29",
+            "n_days": 39,
+            "conflict": false,
+            "candidates": [
+              "家用电器"
+            ]
+          },
+          {
+            "code": "000408.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-06-30",
+            "n_days": 498,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "有色金属"
+            ]
+          },
+          {
+            "code": "000639.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2024-07-29",
+            "n_days": 40,
+            "conflict": true,
+            "candidates": [
+              "农林牧渔",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "002420.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 566,
+            "conflict": true,
+            "candidates": [
+              "家用电器",
+              "综合"
+            ]
+          },
+          {
+            "code": "002481.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "农林牧渔",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "002597.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "002719.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2024-07-29",
+            "n_days": 40,
+            "conflict": false,
+            "candidates": [
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "003030.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "农林牧渔",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300699.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "基础化工"
+            ]
+          },
+          {
+            "code": "300741.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 569,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300777.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "基础化工"
+            ]
+          },
+          {
+            "code": "300858.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 569,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "300972.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 568,
+            "conflict": true,
+            "candidates": [
+              "农林牧渔",
+              "商贸零售",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "301087.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-08-20",
+            "n_days": 540,
+            "conflict": false,
+            "candidates": [
+              "医药生物"
+            ]
+          },
+          {
+            "code": "302132.SZ",
+            "first_day": "2024-06-03",
+            "last_day": "2026-08-20",
+            "n_days": 539,
+            "conflict": false,
+            "candidates": [
+              "国防军工"
+            ]
+          },
+          {
+            "code": "603020.SH",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 570,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "605077.SH",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 565,
+            "conflict": true,
+            "candidates": [
+              "基础化工",
+              "食品饮料"
+            ]
+          },
+          {
+            "code": "688002.SH",
+            "first_day": "2024-06-03",
+            "last_day": "2026-10-09",
+            "n_days": 569,
+            "conflict": true,
+            "candidates": [
+              "国防军工",
+              "电子"
+            ]
+          }
+        ]
+      },
+      "overlap_CLEAN": {
+        "table": "CLEAN",
+        "overlap_keys": 0,
+        "overlap_codes": 0,
+        "overlap_codes_conflict": 0,
+        "codes": []
+      }
+    }
+  },
+  "overlap_18_vs_12": {
+    "bad_all_codes_overlap_any_day_x2": 18,
+    "bad_all_codes_overlap_any_day_x2_listed_daily_basic": 18,
+    "bad_codes_overlap_any_day_0924_1016": 12,
+    "bad_codes_overlap_every_day_0924_1016": 12,
+    "bad_codes_two_open_rows_out_null": 12,
+    "per_day_overlap_codes_min_max_x2": [
+      11,
+      18
+    ],
+    "per_day_overlap_codes_0924_1016": {
+      "2026-09-24": 12,
+      "2026-09-28": 12,
+      "2026-09-29": 12,
+      "2026-09-30": 12,
+      "2026-10-08": 12,
+      "2026-10-09": 12,
+      "2026-10-12": 12,
+      "2026-10-13": 12,
+      "2026-10-14": 12,
+      "2026-10-15": 12,
+      "2026-10-16": 12
+    },
+    "codes_any_day_x2": [
+      {
+        "code": "000016.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2024-07-29",
+        "n_days": 40,
+        "conflict": false,
+        "candidates": [
+          "家用电器"
+        ]
+      },
+      {
+        "code": "000408.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-06-30",
+        "n_days": 503,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "有色金属"
+        ]
+      },
+      {
+        "code": "000639.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2024-07-29",
+        "n_days": 40,
+        "conflict": true,
+        "candidates": [
+          "农林牧渔",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "002420.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 574,
+        "conflict": true,
+        "candidates": [
+          "家用电器",
+          "综合"
+        ]
+      },
+      {
+        "code": "002481.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "农林牧渔",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "002597.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "002719.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2024-07-29",
+        "n_days": 40,
+        "conflict": false,
+        "candidates": [
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "003030.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "农林牧渔",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "300699.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "国防军工",
+          "基础化工"
+        ]
+      },
+      {
+        "code": "300741.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "300777.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "国防军工",
+          "基础化工"
+        ]
+      },
+      {
+        "code": "300858.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "300972.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 573,
+        "conflict": true,
+        "candidates": [
+          "农林牧渔",
+          "商贸零售",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "301087.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-08-20",
+        "n_days": 540,
+        "conflict": false,
+        "candidates": [
+          "医药生物"
+        ]
+      },
+      {
+        "code": "302132.SZ",
+        "first_day": "2024-06-03",
+        "last_day": "2026-08-20",
+        "n_days": 540,
+        "conflict": false,
+        "candidates": [
+          "国防军工"
+        ]
+      },
+      {
+        "code": "603020.SH",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "605077.SH",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 575,
+        "conflict": true,
+        "candidates": [
+          "基础化工",
+          "食品饮料"
+        ]
+      },
+      {
+        "code": "688002.SH",
+        "first_day": "2024-06-03",
+        "last_day": "2026-10-16",
+        "n_days": 574,
+        "conflict": true,
+        "candidates": [
+          "国防军工",
+          "电子"
+        ]
+      }
+    ]
+  },
+  "elapsed_sec": 30.5,
+  "finished_et": "2026-10-18 07:05:10 EDT"
+}

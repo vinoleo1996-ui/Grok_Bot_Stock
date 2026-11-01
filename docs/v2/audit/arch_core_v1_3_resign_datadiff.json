@@ -1,0 +1,67 @@
+{
+ "cur": "/workspace/QuantLab/data/v2/valuation/daily_basic_full_tushare.parquet",
+ "bak": "/workspace/QuantLab/backups/valuation/daily_basic_full_tushare.20261018_0020.parquet",
+ "window_end": "2026-10-09",
+ "cols": [
+  "ts_code",
+  "trade_date",
+  "close",
+  "turnover_rate",
+  "float_mktcap",
+  "available_at"
+ ],
+ "by_year": {
+  "2017": {
+   "rows_cur": 743941,
+   "rows_bak": 743941,
+   "identical": true
+  },
+  "2018": {
+   "rows_cur": 817637,
+   "rows_bak": 817637,
+   "identical": true
+  },
+  "2019": {
+   "rows_cur": 885332,
+   "rows_bak": 885332,
+   "identical": true
+  },
+  "2020": {
+   "rows_cur": 946539,
+   "rows_bak": 946539,
+   "identical": true
+  },
+  "2021": {
+   "rows_cur": 1062121,
+   "rows_bak": 1062121,
+   "identical": true
+  },
+  "2022": {
+   "rows_cur": 1171417,
+   "rows_bak": 1171417,
+   "identical": true
+  },
+  "2023": {
+   "rows_cur": 1258463,
+   "rows_bak": 1258463,
+   "identical": true
+  },
+  "2024": {
+   "rows_cur": 1292960,
+   "rows_bak": 1292960,
+   "identical": true
+  },
+  "2025": {
+   "rows_cur": 1313182,
+   "rows_bak": 1313182,
+   "identical": true
+  },
+  "2026": {
+   "rows_cur": 1007340,
+   "rows_bak": 1007340,
+   "identical": true
+  }
+ },
+ "all_identical": true,
+ "peak_rss_mb": 804
+}

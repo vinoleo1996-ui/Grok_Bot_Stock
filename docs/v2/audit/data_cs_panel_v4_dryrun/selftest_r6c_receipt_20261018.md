@@ -1,0 +1,26 @@
+# 单测回执 · test_sd1_common.py（SD1 r6c / v4 dry-run 前置）
+
+- 时间：开始 2026-10-18 05:04:26 EDT；结束 2026-10-18 05:04:28 EDT（America/New_York）；执行人：QuantLab Data；live=false，promotion=false
+- 命令（沿用 v3 回执原调用）：`cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/QuantLab/.venv_opt/bin/python3 scripts/fix_sd1/test_sd1_common.py`
+  - 说明：脚本不解析 argv（.ok 路径在脚本内硬编码为 output/data/ARCH_RUN_AUTH_SELFTEST_SD1_COMMON.ok），Arch 给的 `--arch-ok` 参数在旧回执里没有用过，因此按旧回执原命令跑。环境里没有 `/usr/bin/time`，峰值 RSS 和 v3 一样，用外层 `python3` + subprocess 读 `resource.getrusage(RUSAGE_CHILDREN).ru_maxrss`（外层不 import 项目模块）。
+- 授权核对（运行前）：
+  - `output/data/ARCH_RUN_AUTH_SELFTEST_SD1_COMMON.ok` sha256=5ffe8ac513892c0d7342c98b9e58d3bc0cc6afffe263007c6576c2435d0a4321
+  - ok_revision=selftest_r6c；scope=selftest；allow_selftest=true；allow_real_data=false；allow_dryrun/full/execute/smoke/diagnostic/disclosure_only 全部为 false；live=false；promotion=false；out_dir=mkdtemp；run_niceness=10；run_serial=true
+  - expires_et=2026-10-19T05:06:00-04:00（未过期）；supersedes_ok_sha256=a7159eca…（旧 selftest .ok）
+  - 异常披露：signed_et=2026-10-18T05:06:00-04:00，比实际核对时刻（05:03:57 EDT）晚约 2 分钟，即签发时间写在未来。门禁没有拦截。请 Arch 确认这是笔误还是有意为之。
+  - gate_ok_runner_pin_sha256=c7805d9a…，与 scripts_eng/ok_runner_pin.py 实际 sha 一致
+- 钉死文件（工作区实测 = .ok pin）：
+  - runner `scripts/fix_sd1/test_sd1_common.py` sha256=7dbcf5d38e2874c1ccf53614cdae94826b51560056c904e77f4d418d2fcec325 ✓
+  - dep `scripts/fix_sd1/sd1_common.py` sha256=542dd13650979983f926778d5c7ea39a6f6e7655c2ac40ed1823601eb45ba4b9 ✓
+  - 门禁顺序：第 9 行 `enforce(__file__, [OK_PATH], modes=["selftest"], deps=...)` 在第 17 行 `import sd1_common` 之前 ✓
+- 内存：运行前 MemAvailable=9,270,716 KB（核对时）/ 9,186,056 KB（ps 留证时），约 8.8 GB，≥ 2GB ✓
+- ps 留证（05:04:19 EDT，存于 `pre_selftest_r6c_ps_20261018.txt`）：没有 nightly_update.py、tier3_daily_snapshot.py、relay_outage_backfill 进程；/proc/94403/stat 不存在，说明 94403 已退出。存活判断读的是 /proc，没有用 kill -0。
+- 结果：exit 0（WRAPPER_EXIT 0）；stdout 含 `ALL SYNTHETIC TESTS PASS` ✓。单测是单个 `run()`，遇错即停，失败 0。
+  - 用例：r6c 新增 manual_override 6 例全部通过：good 1 例，判为 []；extra code、missing code、wrong period_start、非 override 行带 source 字段、非 override 行带 verified 标志，共 5 例，均判为报错。其余既有断言：ResumeState、classify_restore 9 例 + 2 例 raise、parse_run_auth 1 例 good + 12 例 block、check_expiry 边界 2 例、classify_procs 9 进程、D3D4 expectation 2 例 + 6 例 block，全部通过。
+- 峰值 RSS：105,368 KB（约 103 MB），≤ 1.5GB ✓
+- stdout：`selftest_r6c_stdout_20261018.txt` sha256=88c9204b34bc830c78ea2afc07e53814569bcc37481e17e186866caf46d94698
+- 真实数据写入核对：运行前 touch 了 /tmp/selftest_r6c_start_marker（05:04:26 之前），之后执行 `find data/v2 output/data -newer marker`：
+  - 命中 `data/v2/tushare_raw/fund_portfolio_dh/20240630/000173000.parquet` 及其目录。经核实，写入方是常驻进程 pid 94322 `python3 scripts/acquire/remaining_after_stk_surv.py`（状态 S，01:22:39 启动，VmRSS 约 134MB），它约每 1.6 秒写一个 fund_portfolio_dh 文件，之后还有 000174000、000175000、000176000 持续写入。这与单测无关：单测门禁 allow_real_data=false，只写 mkdtemp，结束时已 rmtree，/tmp 下没有新增 tmp 目录残留。
+  - output/data 无新文件；scripts/ 下没有新的 __pycache__。
+  - 披露：94322 是并行的写盘进程。r6 门禁 classify_procs 不把它列为 forbid（用例 pid 6）。D3D4 dry-run 和 execute 前是否需要它让路，由 Arch 或主 Agent 裁定。
+- 未做：未跑 D3D4 dry-run；未跑 D1a/D1b/D2；未对 94403 发 STOP/CONT；未碰补数队列；未碰 moneyflow；未启 8787；未发消息。

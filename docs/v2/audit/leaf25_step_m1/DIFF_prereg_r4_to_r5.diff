@@ -1,0 +1,19 @@
+--- docs/v2/AI_LEAF25_ACCRUALS_PREREG_DRAFT_r4.md	2026-10-18 10:45:55.135931890 -0400
++++ docs/v2/AI_LEAF25_ACCRUALS_PREREG_DRAFT_r5.md	2026-10-18 10:52:44.495931890 -0400
+@@ -1,5 +1,6 @@
+-# 【DRAFT r4 — NOT FROZEN】Leaf 25 preregistration draft: cash-flow accruals / earnings quality (g1g5_ashare_cfacc_desens_cs_v1)
++# 【DRAFT r5 — NOT FROZEN】Leaf 25 preregistration draft: cash-flow accruals / earnings quality (g1g5_ashare_cfacc_desens_cs_v1)
+ 
++- r5 (2026-10-18T10:52:44-04:00, from `date`): wording fix only, R4-P3-1 of Arch review docs/v2/ARCH_AI_LEAF25_PREREG_R4_REVIEW_ZH.md (efb013d8…) L39–40: r4 L83 “Q1 earlier than annual → fallback rule” replaced by “NaN until the annual report is available” (r5 L84). No other change; r4 (6678c9b7…) unchanged. Note: the r4 status line said “~10:55 ET”, which was an estimate; the r4 file mtime is 10:45 ET. Times are from `date` from now on.
+ - Status: DRAFT r4 by AI, 2026-10-18 ~10:55 ET. Revises r3 (0fb784f2d5a751dc006ee5624298fdbf08425f13ef223517609d5a8a39423d9f) per Arch review docs/v2/ARCH_AI_LEAF25_PREREG_R3_REVIEW_ZH.md (fc5fa9377d0bfe81…). r1, r2, r3 unchanged. Not frozen, leaf not opened, no data or schema read by AI, nothing run.
+ - Provenance (Arch review L103–106, P3): the step −1 script research/leaf25_ttm_recon_step_m1.py was overwritten in place on 2026-10-18 at 10:33:22 ET (file mtime, from `stat`), changing sha 6f508001… to 7edf577f875512e8d5eab28c9f3590ec5d2bfb85add9bdc99b925adf6524cf83. 6f508001 was never run, never referenced by any .ok, and no result depends on it. Arch rated this P3. The fix is the new file research/leaf25_ttm_recon_step_m1_r2.py (§11); 7edf577f is kept unchanged (superseded). From now on, every file whose sha Arch has seen gets a new filename when it changes.
+ - **Cannot be frozen** until Strategy DIFF C r3b (913e6830) is Arch-reviewed and its shared function sw_l1_asof_with_gap_carry has landed with a pinned sha (§4).
+@@ -80,7 +81,7 @@
+ - Absolute cap (P3-A): E < d − 15 months → NaN. Counts of fallback and NaN name-days reported per year.
+ - IPO (P3-B): pre-listing periods usable only if their row available_at < d; missing A_{y−1}, YTD_{y−1} or TA_{t−4q} → NaN; IPO-caused NaN counted per year.
+ - Fiscal year: end_date must be 03-31/06-30/09-30/12-31, else the row is ignored and counted. A fiscal-year change cannot be identified from end_date (the table has no end_type column); this is disclosed, not detected. (The r3 “two annual reports in one year” rule is removed: it cannot trigger once only quarter-end end_dates are used.)
+-- Annual + Q1 same day (P3-E): both become usable the same session; TTM_Q1 uses that A_y; no fallback; counted. Q1 earlier than annual (rare) → fallback rule.
++- Annual + Q1 same day (P3-E): both become usable the same session; TTM_Q1 uses that A_y; no fallback; counted. Q1 earlier than annual (rare): under the max-one-fiscal-quarter-lag cap (§2.3 fallback) the only allowed fallback period is the not-yet-available annual A_{y−1}, so the value stays NaN until the annual report is available; counted (matches script fallback break; R4-P3-1).
+ - No forecast / express / consensus / analyst / survey fields.
+ 
+ ## 3. 信号（Signal）

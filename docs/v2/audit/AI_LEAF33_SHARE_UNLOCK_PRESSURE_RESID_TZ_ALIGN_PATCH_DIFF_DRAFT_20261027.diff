@@ -1,0 +1,167 @@
+--- research/leaf33_share_unlock_pressure_resid_alpha_build.py
++++ research/leaf33_share_unlock_pressure_resid_alpha_build.py
+@@ -22,6 +22,7 @@
+ PRIMARY: --universe HILIQ --window x2  (FULLA only via --also-fulla-research; never PRIMARY)
+ X2: 2024-06-03 -> 2026-10-09; rebal every 20 trade days
+ share_float: data/v2/share_float/share_float_pit.parquet (PIT=available_at)
++tz_align_mode=naive_calendar_day (patch vs base 05c45917; VOID 8a3b25ba / RUN 481bacda)
+ Float: data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet
+ Bars: data/v2/tushare_raw/daily/{YYYYMMDD}.parquet (+ adj_factor for STYLE only)
+ C4 overlap: vs leaf19/25/27/30/31/32 + margin_delta/hk_hold/moneyflow;
+@@ -66,6 +67,10 @@
+ WHO_PAYS_SHA8 = "1032477d"
+ COVER_SHA8 = "61d9f656"
+ PIN_SHA8 = "4e17ccfc"
++TZ_ALIGN_MODE = "naive_calendar_day"
++TZ_PATCH_BASE_SCRIPT_SHA8 = "05c45917"
++TZ_VOID_ABORT_SHA8 = "8a3b25ba"
++TZ_RUN_ABORT_SHA8 = "481bacda"
+ LEAF32_SKELETON_SHA8 = "4e0f3c00"  # read-only template; ban edit
+ # Leaf30 KEEP repair DRAFT — C10 separate queue; NOT merged into this script
+ LEAF30_KEEP_REPAIR_SHA8_SEPARATE = "0087c928"
+@@ -115,7 +120,7 @@
+     "keep_does_not_unblock_x2_accept": True,
+     "note": (
+         "KEEP = conjunction of three gates; script does not execute decay gate; "
+-        "KEEP does NOT unblock X2 ACCEPT"
++        "KEEP does NOT unblock X2 ACCEPT; tz_align_mode=naive_calendar_day; base_script=05c45917; VOID=8a3b25ba; RUN=481bacda"
+     ),
+ }
+ 
+@@ -325,6 +330,49 @@
+     raise SystemExit(f"STOP: unknown --universe={u!r}; PRIMARY is HILIQ")
+ 
+ 
++def _as_naive_norm_ts(x):
++    """Align one Timestamp/datetime to tz-naive calendar day.
++
++    Strategy (LOCKED this patch): naive_calendar_day.
++    If tz-aware → tz_convert("Asia/Shanghai") → tz_localize(None) → normalize().
++    If already naive → normalize(). NaT stays NaT.
++    """
++    import pandas as pd
++
++    if x is None:
++        return pd.NaT
++    try:
++        if pd.isna(x):
++            return pd.NaT
++    except (TypeError, ValueError):
++        pass
++    ts = pd.Timestamp(x)
++    if pd.isna(ts):
++        return pd.NaT
++    if ts.tzinfo is not None:
++        ts = ts.tz_convert("Asia/Shanghai").tz_localize(None)
++    return ts.normalize()
++
++
++def _as_naive_norm_series(s):
++    """Align a datetime Series to tz-naive calendar days (same strategy as _as_naive_norm_ts).
++
++    Fast path for DatetimeTZDtype / naive datetime64; object/mixed → elementwise
++    (avoids pandas coercing naive→NaT when mixed with tz-aware in one Series).
++    """
++    import pandas as pd
++
++    s = pd.Series(s)
++    if isinstance(s.dtype, pd.DatetimeTZDtype):
++        return s.dt.tz_convert("Asia/Shanghai").dt.tz_localize(None).dt.normalize()
++    if pd.api.types.is_datetime64_dtype(s.dtype):
++        return pd.to_datetime(s, errors="coerce").dt.normalize()
++    # object / mixed / strings
++    return pd.to_datetime(s.map(_as_naive_norm_ts), errors="coerce")
++
++
++
++
+ def dry_compile_only_print(args) -> int:
+     """Zero big-table load; print hard pins for Arch/Main precheck."""
+     uni = normalize_universe(args.universe) if args.universe != "FULLA" else "FULLA"
+@@ -370,6 +418,10 @@
+         "who_pays_sha8": WHO_PAYS_SHA8,
+         "cover_sha8": COVER_SHA8,
+         "pin_sha8": PIN_SHA8,
++        "tz_align_mode": TZ_ALIGN_MODE,
++        "tz_patch_base_script_sha8": TZ_PATCH_BASE_SCRIPT_SHA8,
++        "tz_void_abort_sha8": TZ_VOID_ABORT_SHA8,
++        "tz_run_abort_sha8": TZ_RUN_ABORT_SHA8,
+         "leaf32_skeleton_sha8_readonly": LEAF32_SKELETON_SHA8,
+         "leaf30_keep_repair_sha8_separate": LEAF30_KEEP_REPAIR_SHA8_SEPARATE,
+         "forbid_ok_sha8": list(FORBID_OK_SHA8),
+@@ -599,16 +651,16 @@
+     )
+     sw = t.to_pandas()
+     sw["ts_code"] = sw["instrument_id"].map(to_ts)
+-    sw["in_date"] = pd.to_datetime(sw["in_date"], errors="coerce")
+-    sw["out_date"] = pd.to_datetime(sw["out_date"], errors="coerce")
+-    sw["available_at"] = pd.to_datetime(sw["available_at"], errors="coerce")
++    sw["in_date"] = _as_naive_norm_series(sw["in_date"])
++    sw["out_date"] = _as_naive_norm_series(sw["out_date"])
++    sw["available_at"] = _as_naive_norm_series(sw["available_at"])
+     return sw
+ 
+ 
+ def _sw_asof_codes(sw, asof, codes: list[str]) -> dict[str, str]:
+     import pandas as pd
+ 
+-    asof = pd.Timestamp(asof)
++    asof = _as_naive_norm_ts(asof)
+     sub = sw[sw["ts_code"].isin(codes)].copy()
+     ok = (sub["in_date"].isna() | (sub["in_date"] <= asof)) & (
+         sub["out_date"].isna() | (sub["out_date"] > asof)
+@@ -782,9 +834,9 @@
+         raise SystemExit(
+             f"STOP: share_float_pit missing {share_float_path}; PIN_GAP refuse silent skip"
+         )
+-    lo = pd.Timestamp(float_date_lo).normalize()
+-    hi = pd.Timestamp(float_date_hi).normalize()
+-    asof = pd.Timestamp(asof_max).normalize()
++    lo = _as_naive_norm_ts(float_date_lo)
++    hi = _as_naive_norm_ts(float_date_hi)
++    asof = _as_naive_norm_ts(asof_max)
+     lo_s = lo.strftime("%Y%m%d")
+     hi_s = hi.strftime("%Y%m%d")
+     codes_l = sorted(codes)
+@@ -812,10 +864,12 @@
+         format="%Y%m%d",
+         errors="coerce",
+     ).dt.normalize()
+-    df["available_at"] = pd.to_datetime(df["available_at"], errors="coerce")
++    # tz-align: share_float available_at may be datetime64[us, Asia/Shanghai]
++    df["available_at"] = _as_naive_norm_series(df["available_at"])
+     df["float_share"] = pd.to_numeric(df["float_share"], errors="coerce")
+     # coarse PIT: drop events not yet available by asof_max (per-day refine later)
+-    pit_ok = df["available_at"].isna() | (df["available_at"].dt.normalize() <= asof)
++    # both sides naive calendar day (tz_align_mode=naive_calendar_day)
++    pit_ok = df["available_at"].isna() | (df["available_at"] <= asof)
+     df = df.loc[pit_ok].copy()
+     df = df.dropna(subset=["float_date", "float_share"])
+     df = df[(df["float_date"] >= lo) & (df["float_date"] <= hi)]
+@@ -980,7 +1034,7 @@
+ 
+     sf = share_float_df.copy()
+     sf["float_date"] = pd.to_datetime(sf["float_date"]).dt.normalize()
+-    sf["available_at"] = pd.to_datetime(sf["available_at"], errors="coerce")
++    sf["available_at"] = _as_naive_norm_series(sf["available_at"])
+     sf_by = {k: g for k, g in sf.groupby("ts_code", sort=False)}
+ 
+     f = float_df.copy()
+@@ -1065,14 +1119,12 @@
+             continue
+         ratios = []
+         for d in win_days:
+-            d = pd.Timestamp(d).normalize()
++            d = _as_naive_norm_ts(d)
+             flo, fhi = trade_window_bounds(d)
+             if flo is None:
+                 continue
+-            # PIT: available_at <= d
+-            pit_ok = eg["available_at"].isna() | (
+-                eg["available_at"].dt.normalize() <= d
+-            )
++            # PIT: available_at <= d (both sides naive calendar day)
++            pit_ok = eg["available_at"].isna() | (eg["available_at"] <= d)
+             ev = eg.loc[pit_ok & (eg["float_date"] >= flo) & (eg["float_date"] <= fhi)]
+             if ev.empty:
+                 continue

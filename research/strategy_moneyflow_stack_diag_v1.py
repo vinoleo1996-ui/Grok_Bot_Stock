@@ -1,0 +1,1047 @@
+#!/usr/bin/env python3
+"""moneyflow_resid 剥舱 + 80/20 叠 capacity_adv 研究级组合诊断 v1.
+
+依据：
+  - 接口 docs/v2/STRATEGY_MONEYFLOW_STACK_INTERFACE_20261025_ZH.md sha 17ac041f…
+  - Arch 裁示 A docs/v2/ARCH_STRATEGY_MONEYFLOW_STACK_DIAG_TOOL_DECISION_ZH.md sha 02ce98c3…
+  - code_change .ok output/strategy_hiliq/ARCH_RUN_AUTH_STRATEGY_MONEYFLOW_STACK_DIAG_CODE_CHANGE.ok
+    sha 951f3ce2…（仅授权写本文件；allow_run=false，不能当 run 用）
+
+实跑须 Arch 另签 allow_run=true 的 run .ok（pin 主干/卫星/本脚本/对照 NAV sha、
+decay_outcome、out_dir、expires 等）。本文件不授权读权重/行情/跑 book-smoke。
+lowmem v1.1（Arch b2340c67…）：book-smoke 分档串行、--arms BOOK、aum_* 子目录+gc；
+code_change 不开跑。
+deeper P0（Arch 27d6b462…）：run.ok 钉 reuse_blended_path+sha 时硬链/拷贝 blended，
+跳过再读 trunk/sat 与重算混合；仍串行 BOOK；book-smoke 前 del 大对象+gc
+（Eng dig c416f43d…）；不开跑直至另签 run.ok。
+
+live=false; promotion=false; 禁纸面; 禁再单独 moneyflow X2 烟; 禁扩展 CMC。
+
+混合规则（简单口径，见 summary.blend_policy）：
+  卫星剔除 strip-codes（默认 510300）后按日归一；仅在主干∩卫星共同交易日混合；
+  w = blend_trunk*trunk + blend_sat*sat_stripped；按日 clip 非负再归一。
+  本脚本不做 topN / 单名 6% 截断（与 GATE_V3 预注册叠仓口径的差异在 summary 披露）。
+
+Pure helpers (parse_run_auth / enforce_run_auth / check_out_dir / file_sha256 /
+normalize_code / …) load no market data and may be imported safely.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import gc
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TRUNK = (
+    "output/strategy_hiliq/legs/"
+    "g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet"
+)
+DEFAULT_SAT = "output/ai_factory/g1g5_moneyflow_resid_daily_weights_20261013_050716.parquet"
+DEFAULT_OUT = "output/strategy_hiliq/moneyflow_stack_8020_reuse_blended_20261025"
+DEFAULT_NAV_60 = "output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK/nav.csv"
+DEFAULT_NAV_100 = "output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK/nav.csv"
+SCRIPT_REL = "research/strategy_moneyflow_stack_diag_v1.py"
+PAPER_PATH_MARKERS = (
+    "output/paper/",
+    "FROZEN_CONFIG",
+    "paper_active",
+    "paper_track",
+    "/paper/",
+)
+ANN_DAYS = 244  # Eng / book-smoke convention
+
+# Keys the run .ok must present (values validated in enforce_run_auth).
+AUTH_REQUIRED = (
+    "format",
+    "signed_by",
+    "signed_et",
+    "expires_et",
+    "allow_run",
+    "live",
+    "promotion",
+    "out_dir",
+    "script_sha256",
+    "trunk_sha256",
+    "sat_sha256",
+    "trunk_ref_nav_60w_sha256",
+    "trunk_ref_nav_100w_sha256",
+    "decay_outcome",
+)
+
+
+def file_sha256(p: Path) -> str:
+    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+
+def _parse_bool(k: str, v: str) -> bool:
+    if v not in ("true", "false"):
+        raise SystemExit(f"mf_stack_diag blocked: {k}={v!r}, must be exactly true or false")
+    return v == "true"
+
+
+def _parse_iso_aware(k: str, v: str) -> _dt.datetime:
+    try:
+        d = _dt.datetime.fromisoformat(v)
+    except ValueError as e:
+        raise SystemExit(f"mf_stack_diag blocked: {k}={v!r} not ISO8601: {e}") from e
+    if d.tzinfo is None:
+        raise SystemExit(f"mf_stack_diag blocked: {k}={v!r} must be timezone-aware")
+    return d
+
+
+def parse_run_auth(path: Path) -> dict:
+    """Parse key=value run-auth. Ignores non-matching lines. No market I/O."""
+    path = Path(path)
+    if not path.exists():
+        raise SystemExit(
+            f"mf_stack_diag blocked: run-auth missing: {path} "
+            "(Arch writes it; code_change .ok is not a run .ok)"
+        )
+    name = path.name
+    if "DRAFT" in name.upper() or name.endswith(".ok.DRAFT"):
+        raise SystemExit(f"mf_stack_diag blocked: refuse DRAFT auth file: {path}")
+    if "_consumed" in name.lower() or path.suffix == ".consumed":
+        raise SystemExit(f"mf_stack_diag blocked: refuse consumed auth file: {path}")
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("\ufeff"):
+        raise SystemExit("mf_stack_diag blocked: run-auth has BOM")
+    kv: dict = {}
+    for ln in text.splitlines():
+        m = re.match(r"^([a-z0-9_]+)=(.*)$", ln.strip())
+        if not m:
+            continue
+        k, v = m.group(1), m.group(2).strip()
+        if k in kv:
+            raise SystemExit(f"mf_stack_diag blocked: run-auth field '{k}' duplicated")
+        kv[k] = v
+    # code_change / write-only tokens must never authorize a run (check before required-field list)
+    if kv.get("auth_type") == "code_change" or kv.get("kind") == "code_change":
+        raise SystemExit(
+            "mf_stack_diag blocked: this .ok is auth_type/kind=code_change "
+            "(allow_write_code only); need a separate allow_run=true run .ok"
+        )
+    if kv.get("allow_write_code") == "true" and kv.get("allow_run") != "true":
+        raise SystemExit(
+            "mf_stack_diag blocked: code_change-style .ok (allow_write_code without "
+            "allow_run=true) cannot authorize execution"
+        )
+    if kv.get("allow_run") == "false":
+        raise SystemExit(
+            "mf_stack_diag blocked: allow_run=false (code_change or non-run .ok); "
+            "need a separate allow_run=true run .ok"
+        )
+    miss = [k for k in AUTH_REQUIRED if not kv.get(k)]
+    if miss:
+        raise SystemExit(f"mf_stack_diag blocked: run-auth lacks fields {miss}")
+    if kv["format"] != "quantlab_run_auth_v1":
+        raise SystemExit(f"mf_stack_diag blocked: format={kv['format']!r}")
+    if kv.get("signed_by", "").lower() != "arch":
+        raise SystemExit(f"mf_stack_diag blocked: signed_by={kv.get('signed_by')!r}")
+    kv["allow_run"] = _parse_bool("allow_run", kv["allow_run"])
+    kv["live"] = _parse_bool("live", kv["live"])
+    kv["promotion"] = _parse_bool("promotion", kv["promotion"])
+    if "promotion_approved" in kv:
+        kv["promotion_approved"] = _parse_bool("promotion_approved", kv["promotion_approved"])
+    kv["_signed_et"] = _parse_iso_aware("signed_et", kv["signed_et"])
+    kv["_expires_et"] = _parse_iso_aware("expires_et", kv["expires_et"])
+    for k in (
+        "script_sha256",
+        "trunk_sha256",
+        "sat_sha256",
+        "trunk_ref_nav_60w_sha256",
+        "trunk_ref_nav_100w_sha256",
+    ):
+        if not re.fullmatch(r"[0-9a-f]{64}", kv[k]):
+            raise SystemExit(f"mf_stack_diag blocked: {k} is not 64-hex lowercase sha256")
+    return kv
+
+
+def enforce_run_auth(
+    kv: dict,
+    *,
+    script_path: Path,
+    trunk: Path,
+    sat: Path,
+    nav60: Path,
+    nav100: Path,
+    out_rel: str,
+    root: Path = ROOT,
+) -> dict:
+    """Mode + expiry + pinned sha checks. Returns measured shas."""
+    if kv["allow_run"] is not True:
+        raise SystemExit("mf_stack_diag blocked: allow_run is not true")
+    if kv["live"] is not False:
+        raise SystemExit("mf_stack_diag blocked: live must be false")
+    if kv["promotion"] is not False:
+        raise SystemExit("mf_stack_diag blocked: promotion must be false")
+    if kv.get("promotion_approved") is True:
+        raise SystemExit("mf_stack_diag blocked: promotion_approved must be false if present")
+    now = _dt.datetime.now().astimezone()
+    if kv["_expires_et"] <= now:
+        raise SystemExit(f"mf_stack_diag blocked: expired at {kv['expires_et']}")
+    if kv["_expires_et"] <= kv["_signed_et"]:
+        raise SystemExit("mf_stack_diag blocked: expires_et not after signed_et")
+    if kv["out_dir"] != out_rel:
+        raise SystemExit(
+            f"mf_stack_diag blocked: out_dir={kv['out_dir']!r} != CLI/default {out_rel!r}"
+        )
+    pins = {
+        "script_sha256": script_path,
+        "trunk_sha256": trunk,
+        "sat_sha256": sat,
+        "trunk_ref_nav_60w_sha256": nav60,
+        "trunk_ref_nav_100w_sha256": nav100,
+    }
+    got = {}
+    for k, p in pins.items():
+        p = Path(p)
+        if not p.is_absolute():
+            p = Path(root) / p
+        if not p.exists():
+            raise SystemExit(f"mf_stack_diag blocked: pinned file missing: {p}")
+        got[k] = file_sha256(p)
+        if got[k] != kv[k]:
+            raise SystemExit(
+                f"mf_stack_diag blocked: sha256 mismatch for {k}: "
+                f"measured {got[k]} != authorized {kv[k]}"
+            )
+    decay = kv["decay_outcome"].strip().upper()
+    if decay not in ("KEEP", "REJECT", "WATCH", "FAIL", "SKIP"):
+        raise SystemExit(
+            f"mf_stack_diag blocked: decay_outcome={kv['decay_outcome']!r} "
+            "(expected KEEP|REJECT|WATCH|FAIL|SKIP)"
+        )
+    kv["_decay_outcome"] = decay
+    return got
+
+
+def check_out_dir(out: Path) -> None:
+    out = Path(out)
+    rel = str(out)
+    for m in PAPER_PATH_MARKERS:
+        if m in rel:
+            raise SystemExit(f"mf_stack_diag blocked: out_dir looks like paper path: {out}")
+    if out.exists() and (not out.is_dir() or any(out.iterdir())):
+        raise SystemExit(
+            f"mf_stack_diag blocked: output dir exists and is not empty: {out}"
+        )
+
+
+def check_quiet_lock(root: Path = ROOT) -> None:
+    lock = Path(root) / "RESEARCH_QUIET.lock"
+    if lock.exists():
+        raise SystemExit(f"mf_stack_diag blocked: RESEARCH_QUIET.lock present at {lock}")
+
+
+def normalize_code(x: str) -> str:
+    """Bare 6-digit (or raw) code for strip matching: 'sh.510300'/'510300.SH'/'510300' -> '510300'."""
+    s = str(x).strip()
+    if not s:
+        return s
+    if "." in s:
+        a, b = s.split(".", 1)
+        if a.lower() in ("sh", "sz", "bj"):
+            return b
+        return a  # CODE.MKT
+    return s
+
+
+def void(out: Path, msg: str) -> None:
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "VOID.md").write_text(
+            f"# VOID — moneyflow_stack_diag_v1\n\n{msg}\n\n"
+            "No partial results may be reported; summary.json not written.\n",
+            encoding="utf-8",
+        )
+    finally:
+        raise SystemExit(f"mf_stack_diag VOID: {msg}")
+
+
+def write_manifest(out: Path) -> Path:
+    rows = []
+    for p in sorted(out.rglob("*")):
+        if p.is_file() and p.name != "ARTIFACT_MANIFEST.txt":
+            rel = p.relative_to(out).as_posix()
+            rows.append(f"{file_sha256(p)}  {rel}")
+    man = out / "ARTIFACT_MANIFEST.txt"
+    man.write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
+    return man
+
+
+# ----- weight / blend (imported only after auth; pandas used inside) -----
+
+
+def _load_weights(path: Path):
+    """Load weight parquet with column compatibility. Call only after allow_run auth."""
+    import pandas as pd
+
+    d = pd.read_parquet(path)
+    if "weight" not in d.columns and "target_weight" in d.columns:
+        d = d.rename(columns={"target_weight": "weight"})
+    if "weight" not in d.columns:
+        raise SystemExit(f"mf_stack_diag blocked: no weight/target_weight in {path}")
+    if "session" not in d.columns:
+        if "date" in d.columns:
+            d = d.copy()
+            d["session"] = d["date"].astype(str).str[:10]
+        else:
+            raise SystemExit(f"mf_stack_diag blocked: no session/date in {path}")
+    else:
+        d = d.copy()
+        d["session"] = d["session"].astype(str).str[:10]
+    if "instrument" not in d.columns:
+        if "instrument_id" in d.columns:
+            d["instrument"] = d["instrument_id"].astype(str)
+        else:
+            raise SystemExit(f"mf_stack_diag blocked: no instrument/instrument_id in {path}")
+    d["instrument"] = d["instrument"].astype(str)
+    d["weight"] = pd.to_numeric(d["weight"], errors="coerce")
+    d = d[d["weight"].notna() & (d["weight"] > 0)].copy()
+    d["code"] = d["instrument"].map(normalize_code)
+    return d[["session", "instrument", "code", "weight"]]
+
+
+def strip_and_renorm(sat, strip_codes: set[str]):
+    """Drop strip codes from satellite; renorm per session to Σw=1.
+    Returns (stripped_df, empty_sessions_list)."""
+    import pandas as pd
+
+    strip_codes = {normalize_code(c) for c in strip_codes}
+    keep = sat[~sat["code"].isin(strip_codes)].copy()
+    empty = []
+    parts = []
+    for sess, g in keep.groupby("session", sort=True):
+        s = float(g["weight"].sum())
+        if s <= 0 or g.empty:
+            empty.append(sess)
+            continue
+        gg = g.copy()
+        gg["weight"] = gg["weight"] / s
+        parts.append(gg)
+    if not parts:
+        return keep.iloc[0:0].copy(), sorted(set(empty) | set(sat["session"].unique()))
+    out = pd.concat(parts, ignore_index=True)
+    return out, empty
+
+
+def blend_weights(trunk, sat_stripped, w_trunk: float, w_sat: float):
+    """Inner-join sessions; w = w_trunk*trunk + w_sat*sat; clip>=0; renorm.
+    Returns (blended_df, coverage_dict)."""
+    import pandas as pd
+
+    t_sess = set(trunk["session"].unique())
+    s_sess = set(sat_stripped["session"].unique())
+    common = sorted(t_sess & s_sess)
+    coverage = dict(
+        trunk_sessions=len(t_sess),
+        sat_sessions=len(s_sess),
+        common_sessions=len(common),
+        trunk_only=len(t_sess - s_sess),
+        sat_only=len(s_sess - t_sess),
+        calendar_policy="inner_join_common_sessions_only",
+    )
+    if not common:
+        return trunk.iloc[0:0].copy(), coverage
+    rows = []
+    for sess in common:
+        tw = trunk.loc[trunk["session"] == sess].groupby("instrument")["weight"].sum()
+        sw = sat_stripped.loc[sat_stripped["session"] == sess].groupby("instrument")[
+            "weight"
+        ].sum()
+        idx = tw.index.union(sw.index)
+        b = w_trunk * tw.reindex(idx).fillna(0.0) + w_sat * sw.reindex(idx).fillna(0.0)
+        b = b.clip(lower=0.0)
+        s = float(b.sum())
+        if s <= 0:
+            continue
+        b = b / s
+        for inst, w in b.items():
+            if w > 0:
+                rows.append((sess, str(inst), float(w)))
+    blended = pd.DataFrame(rows, columns=["session", "instrument", "weight"])
+    return blended, coverage
+
+
+def to_instrument_id(x: str) -> str:
+    s = str(x)
+    if "." in s:
+        a, b = s.split(".", 1)
+        if a.lower() in ("sh", "sz", "bj"):
+            return f"{a.lower()}.{b}"
+        return f"{b.lower()}.{a}"  # CODE.MKT -> mkt.code
+    return s
+
+
+def install_reused_blended(
+    src: Path, dst: Path, expected_sha256: str, *, root: Path = ROOT
+) -> dict:
+    """Hardlink or copy a pinned blended parquet; no trunk/sat read, no re-blend.
+
+    Deeper P0 (Arch 27d6b462…): src sha must MATCH expected; dst overwritten only
+    after sha check. Prefer hardlink; fall back to copy2.
+    """
+    src = Path(src)
+    dst = Path(dst)
+    if not src.is_absolute():
+        src = Path(root) / src
+    if not src.exists():
+        raise SystemExit(f"mf_stack_diag blocked: reuse_blended missing: {src}")
+    got = file_sha256(src)
+    if got != expected_sha256:
+        raise SystemExit(
+            f"mf_stack_diag blocked: reuse_blended sha mismatch: "
+            f"measured {got} != expected {expected_sha256}"
+        )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    method = "hardlink"
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+        method = "copy2"
+    # verify destination bytes
+    got_dst = file_sha256(dst)
+    if got_dst != expected_sha256:
+        raise SystemExit(
+            f"mf_stack_diag blocked: reused blended dst sha mismatch after {method}: "
+            f"{got_dst}"
+        )
+    try:
+        src_rel = str(src.resolve().relative_to(Path(root).resolve()))
+    except ValueError:
+        src_rel = str(src)
+    return dict(
+        mode="reuse_blended",
+        method=method,
+        src=src_rel,
+        sha256=got_dst,
+        skip_trunk_sat_read=True,
+        skip_reblend=True,
+    )
+
+
+def prepare_smoke_weights(blended, dst: Path) -> Path:
+    import pandas as pd
+
+    d = blended.copy()
+    d["instrument_id"] = d["instrument"].map(to_instrument_id)
+    d["target_weight"] = d["weight"]
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    d[["session", "instrument", "instrument_id", "weight", "target_weight"]].to_parquet(
+        dst, index=False
+    )
+    return dst
+
+
+def turnover_2s_mean(blended) -> float:
+    """Mean daily two-sided turnover = mean_t sum_i |Δw|."""
+    import pandas as pd
+
+    if blended.empty:
+        return float("nan")
+    P = (
+        blended.pivot_table(
+            index="session", columns="instrument", values="weight", aggfunc="sum"
+        )
+        .fillna(0.0)
+        .sort_index()
+    )
+    if len(P) < 2:
+        return float("nan")
+    return float(P.diff().abs().sum(axis=1).iloc[1:].mean())
+
+
+def nav_metrics(nav_csv: Path) -> dict:
+    import numpy as np
+    import pandas as pd
+
+    nav = pd.read_csv(nav_csv)
+    et_col = "_et" if "_et" in nav.columns else nav.columns[0]
+    nav[et_col] = pd.to_datetime(nav[et_col])
+    nav = nav.sort_values(et_col).set_index(et_col)
+    if "nav" not in nav.columns:
+        raise SystemExit(f"mf_stack_diag blocked: no nav column in {nav_csv}")
+    s = nav["nav"].astype(float)
+    r = s.pct_change().dropna()
+    n = len(r)
+    if n < 2:
+        raise SystemExit(f"mf_stack_diag blocked: nav too short: {nav_csv}")
+    cagr = float((s.iloc[-1] / s.iloc[0]) ** (ANN_DAYS / n) - 1)
+    dd = s / s.cummax() - 1
+    mdd = float(dd.min())
+    vol = float(r.std() * np.sqrt(ANN_DAYS)) if r.std() > 0 else float("nan")
+    sharpe = float(r.mean() / r.std() * np.sqrt(ANN_DAYS)) if r.std() > 0 else float("nan")
+    calmar = float(cagr / abs(mdd)) if mdd != 0 else float("nan")
+    return dict(
+        cagr=cagr,
+        mdd=mdd,
+        sharpe=sharpe,
+        calmar=calmar,
+        vol=vol,
+        n_ret_days=n,
+        win_daily=float((r > 0).mean()),
+    )
+
+
+def run_book_smoke(
+    stock_path: Path, out_dir: Path, capital: int, root: Path = ROOT
+) -> dict:
+    """Invoke Eng book-smoke for ONE capital, BOOK arm only (lowmem v1.1).
+
+    Arch code_change .ok b2340c67… / decision LOWMEM_V11: serial single-capital,
+    --arms BOOK (no C0), per-aum subdir. Never silently skip.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        stock_rel = str(stock_path.relative_to(root))
+        out_rel = str(out_dir.relative_to(root))
+    except ValueError as e:
+        raise SystemExit(
+            f"mf_stack_diag blocked: paths must be under repo root for book-smoke: {e}"
+        ) from e
+    cmd = [
+        sys.executable,
+        "-m",
+        "quantlab.cli",
+        "book-smoke",
+        "--run-nav",
+        "--stock-path",
+        stock_rel,
+        "--out",
+        out_rel,
+        "--windows",
+        "X2",
+        "--capitals",
+        str(int(capital)),
+        "--sleeves",
+        '{"core":0,"stock":1,"alpha_event":0}',
+        "--arms",
+        "BOOK",
+    ]
+    log = out_dir / "run.log"
+    summary_path = out_dir / "book_smoke_summary.json"
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    t0 = time.time()
+    pre_mtime = summary_path.stat().st_mtime if summary_path.exists() else None
+    try:
+        with open(log, "w", encoding="utf-8") as f:
+            f.write("CMD: " + " ".join(cmd) + "\n\n")
+            f.flush()
+            proc = subprocess.run(
+                cmd,
+                cwd=str(root),
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+    except FileNotFoundError as e:
+        raise SystemExit(
+            f"mf_stack_diag blocked: book-smoke launcher missing ({e}); "
+            "need venv with quantlab.cli (expected /workspace/qlvenv)"
+        ) from e
+    except Exception as e:
+        raise SystemExit(f"mf_stack_diag blocked: book-smoke subprocess failed to start: {e}") from e
+    fresh = summary_path.exists() and summary_path.stat().st_mtime >= t0 and (
+        pre_mtime is None or summary_path.stat().st_mtime > pre_mtime
+    )
+    if proc.returncode != 0 or not fresh:
+        return {
+            "ok": False,
+            "returncode": proc.returncode,
+            "summary_fresh": bool(fresh),
+            "log": str(log),
+            "cmd": cmd,
+            "capital": int(capital),
+        }
+    return {
+        "ok": True,
+        "returncode": 0,
+        "summary_fresh": True,
+        "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+        "log": str(log),
+        "cmd": cmd,
+        "capital": int(capital),
+        "summary_path": str(summary_path),
+    }
+
+
+def run_book_smoke_serial(
+    stock_path: Path, smoke_root: Path, tiers: list, root: Path = ROOT
+) -> dict:
+    """Serial per-tier book-smoke; aggregate by_capital for extract_book_arm.
+
+    One subprocess per AUM under smoke_root/aum_<tier>/; gc.collect() after each.
+    """
+    smoke_root.mkdir(parents=True, exist_ok=True)
+    per = []
+    by_capital = {}
+    for t in tiers:
+        tier_dir = smoke_root / f"aum_{int(t)}"
+        smoke = run_book_smoke(stock_path, tier_dir, int(t), root=root)
+        per.append(
+            dict(
+                capital=int(t),
+                ok=bool(smoke.get("ok")),
+                returncode=smoke.get("returncode"),
+                summary_fresh=smoke.get("summary_fresh"),
+                log=smoke.get("log"),
+                cmd=smoke.get("cmd"),
+                summary_path=smoke.get("summary_path"),
+            )
+        )
+        if not smoke.get("ok"):
+            return {
+                "ok": False,
+                "failed_capital": int(t),
+                "returncode": smoke.get("returncode"),
+                "summary_fresh": smoke.get("summary_fresh"),
+                "log": smoke.get("log"),
+                "cmd": smoke.get("cmd"),
+                "per_tier": per,
+            }
+        summ = smoke["summary"] or {}
+        bc = (summ.get("by_capital") or {}).get(str(int(t)))
+        if bc is None:
+            # tolerate alternate keying
+            for k, v in (summ.get("by_capital") or {}).items():
+                if str(k) == str(int(t)) or str(k).replace(",", "") == str(int(t)):
+                    bc = v
+                    break
+        if bc is None:
+            return {
+                "ok": False,
+                "failed_capital": int(t),
+                "returncode": 0,
+                "summary_fresh": True,
+                "log": smoke.get("log"),
+                "cmd": smoke.get("cmd"),
+                "error": "missing_by_capital_for_tier",
+                "per_tier": per,
+            }
+        by_capital[str(int(t))] = bc
+        gc.collect()
+    agg = {"by_capital": by_capital, "lowmem_v11": True, "arms": "BOOK", "serial": True}
+    agg_path = smoke_root / "book_smoke_summary_agg.json"
+    agg_path.write_text(json.dumps(agg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {
+        "ok": True,
+        "returncode": 0,
+        "summary_fresh": True,
+        "summary": agg,
+        "log": str(smoke_root / "serial.log"),
+        "cmd": [p.get("cmd") for p in per],
+        "per_tier": per,
+        "summary_path": str(agg_path),
+    }
+
+
+def extract_book_arm(summary: dict, aum: int) -> dict:
+    by = (summary or {}).get("by_capital", {})
+    block = by.get(str(aum), {}) or {}
+    book = None
+    for k, v in block.items():
+        if "BOOK" in str(k):
+            book = v
+            break
+    if book is None:
+        return {"aum": aum, "error": "no_BOOK"}
+    cagr = book.get("cagr")
+    mdd = book.get("mdd")
+    calmar = book.get("calmar")
+    if calmar is None and cagr is not None and mdd not in (None, 0):
+        calmar = cagr / abs(mdd)
+    return dict(
+        aum=aum,
+        cagr=cagr,
+        mdd=mdd,
+        calmar=calmar,
+        sharpe=book.get("sharpe"),
+        cost_pct_initial=book.get("cost_pct_initial"),
+        fill_ratio=book.get("fill_ratio"),
+        turnover=book.get("turnover") or book.get("turnover_ann") or book.get("turnover_oneway"),
+    )
+
+
+def judge_gates(combo_by_tier: dict, trunk_by_tier: dict, *, decay_outcome: str, to_2s_mean: float) -> dict:
+    """门B (ALPHA_GATE_AB_PREREG) + GATE_V3 (GATE_V3_MDD25_PREREG) booleans."""
+    tiers = sorted(combo_by_tier.keys())
+    gate_b_per = {}
+    gate_v3_per = {}
+    for t in tiers:
+        c, b = combo_by_tier[t], trunk_by_tier[t]
+        cc, cm, ccal = c.get("cagr"), c.get("mdd"), c.get("calmar")
+        bc, bm, bcal = b.get("cagr"), b.get("mdd"), b.get("calmar")
+        gate_b_per[str(t)] = dict(
+            calmar_gt_trunk=bool(
+                ccal is not None and bcal is not None and ccal > bcal
+            ),
+            mdd_le_15=bool(cm is not None and cm >= -0.15),
+        )
+        gate_v3_per[str(t)] = dict(
+            mdd_le_25=bool(cm is not None and cm >= -0.25),
+            cagr_gt_trunk=bool(cc is not None and bc is not None and cc > bc),
+            mdd_le_15_ref=bool(cm is not None and cm >= -0.15),
+        )
+    gate_b_pass = bool(
+        tiers
+        and all(v["calmar_gt_trunk"] and v["mdd_le_15"] for v in gate_b_per.values())
+    )
+    decay_keep = decay_outcome == "KEEP"
+    tradable = bool(to_2s_mean == to_2s_mean and to_2s_mean <= 0.20)  # NaN-safe
+    gate_v3_pass = bool(
+        tiers
+        and all(v["mdd_le_25"] and v["cagr_gt_trunk"] for v in gate_v3_per.values())
+        and decay_keep
+        and tradable
+    )
+    return dict(
+        gate_b=dict(
+            pass_=gate_b_pass,
+            per_tier=gate_b_per,
+            rule="both_tiers: calmar > trunk_calmar AND mdd >= -0.15 (ALPHA_GATE_AB_PREREG 门B)",
+        ),
+        gate_v3=dict(
+            pass_=gate_v3_pass,
+            per_tier=gate_v3_per,
+            decay_outcome=decay_outcome,
+            decay_keep=decay_keep,
+            turnover_2s_mean=to_2s_mean,
+            tradable_to_le_20pct=tradable,
+            rule=(
+                "both_tiers: mdd>=-0.25 AND cagr>trunk_cagr; decay_outcome==KEEP "
+                "(from run .ok pin); mean daily two-sided turnover<=0.20 "
+                "(GATE_V3_MDD25_PREREG; cost-drag subchecks reported from book-smoke if present)"
+            ),
+            note_zh=(
+                "本诊断混合未做 topN(6/10)/单名≤6%（见 blend_policy）；"
+                "与 GATE_V3 预注册叠仓口径有差异，结果仅研究披露，终判仍以 Eng Book-Smoke 为准"
+            ),
+        ),
+    )
+
+
+def _cli(argv=None):
+    ap = argparse.ArgumentParser(
+        description="moneyflow strip-ballast + 80/20 stack diag (research-only; needs Arch run .ok)"
+    )
+    ap.add_argument(
+        "--arch-ok",
+        required=True,
+        help="Arch run .ok path (allow_run=true); code_change .ok is refused",
+    )
+    ap.add_argument("--trunk", default=DEFAULT_TRUNK, help="capacity_adv HI_LIQ weights parquet")
+    ap.add_argument("--sat", default=DEFAULT_SAT, help="moneyflow_resid weights parquet")
+    ap.add_argument("--out-dir", default=DEFAULT_OUT, help="must not exist beforehand")
+    ap.add_argument("--blend-trunk", type=float, default=0.8)
+    ap.add_argument("--blend-sat", type=float, default=0.2)
+    ap.add_argument("--tiers", default="600000,1000000")
+    ap.add_argument(
+        "--strip-codes",
+        default="510300",
+        help="comma-separated codes stripped from satellite before renorm",
+    )
+    ap.add_argument("--trunk-nav-60w", default=DEFAULT_NAV_60)
+    ap.add_argument("--trunk-nav-100w", default=DEFAULT_NAV_100)
+    return ap.parse_args(argv)
+
+
+def main(argv=None) -> None:
+    args = _cli(argv)
+    check_quiet_lock(ROOT)
+
+    arch_ok = Path(args.arch_ok)
+    if not arch_ok.is_absolute():
+        arch_ok = ROOT / arch_ok
+
+    trunk = Path(args.trunk)
+    sat = Path(args.sat)
+    nav60 = Path(args.trunk_nav_60w)
+    nav100 = Path(args.trunk_nav_100w)
+    out_rel = args.out_dir
+    for p in (trunk, sat, nav60, nav100):
+        if not p.is_absolute() and not str(p).startswith("/"):
+            pass  # resolved vs ROOT below
+    trunk_p = trunk if trunk.is_absolute() else ROOT / trunk
+    sat_p = sat if sat.is_absolute() else ROOT / sat
+    nav60_p = nav60 if nav60.is_absolute() else ROOT / nav60
+    nav100_p = nav100 if nav100.is_absolute() else ROOT / nav100
+    out = ROOT / out_rel if not Path(out_rel).is_absolute() else Path(out_rel)
+    # recompute out_rel as repo-relative for .ok match
+    try:
+        out_rel = str(out.resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        raise SystemExit(f"mf_stack_diag blocked: out-dir not under repo: {out}")
+
+    if abs(args.blend_trunk + args.blend_sat - 1.0) > 1e-9:
+        raise SystemExit(
+            f"mf_stack_diag blocked: blend_trunk+blend_sat must be 1.0, got "
+            f"{args.blend_trunk}+{args.blend_sat}"
+        )
+    if args.blend_trunk < 0 or args.blend_sat < 0:
+        raise SystemExit("mf_stack_diag blocked: blend weights must be non-negative")
+
+    tiers = tuple(int(x.strip()) for x in args.tiers.split(",") if x.strip())
+    if not tiers:
+        raise SystemExit("mf_stack_diag blocked: empty --tiers")
+    strip_codes = {c.strip() for c in args.strip_codes.split(",") if c.strip()}
+
+    kv = parse_run_auth(arch_ok)
+    shas = enforce_run_auth(
+        kv,
+        script_path=ROOT / SCRIPT_REL,
+        trunk=trunk_p,
+        sat=sat_p,
+        nav60=nav60_p,
+        nav100=nav100_p,
+        out_rel=out_rel,
+        root=ROOT,
+    )
+    check_out_dir(out)
+
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+
+    w_path = out / "blended_weights_8020.parquet"
+    reuse_path = (kv.get("reuse_blended_path") or "").strip()
+    reuse_sha = (
+        (kv.get("reuse_blended_sha256") or kv.get("expected_blended_sha256") or "")
+        .strip()
+        .lower()
+    )
+    reuse_meta = None
+    blended = None
+    coverage = None
+    trunk_w = None
+    sat_w = None
+    sat_stripped = None
+
+    if reuse_path:
+        if not re.fullmatch(r"[0-9a-f]{64}", reuse_sha):
+            raise SystemExit(
+                "mf_stack_diag blocked: reuse_blended_path set but "
+                "reuse_blended_sha256/expected_blended_sha256 missing or not 64-hex"
+            )
+        # P0: no trunk/sat DataFrame load; no re-blend. Pin check of trunk/sat
+        # already done in enforce_run_auth via file sha only.
+        reuse_meta = install_reused_blended(
+            Path(reuse_path), w_path, reuse_sha, root=ROOT
+        )
+        coverage = dict(
+            mode="reuse_blended",
+            src=reuse_meta["src"],
+            sha256=reuse_meta["sha256"],
+            method=reuse_meta["method"],
+            note_zh="跳过再读 trunk/sat 与重算混合；blended 来自 Arch 钉死的 recovery 产物",
+        )
+        # Light import only for turnover on the small reused parquet
+        import pandas as pd  # noqa: F401
+
+        blended = pd.read_parquet(w_path)
+        if "weight" not in blended.columns:
+            void(out, "reused blended missing weight column")
+    else:
+        # Heavy imports only on recompute path after auth.
+        import numpy as np  # noqa: F401
+        import pandas as pd  # noqa: F401
+
+        trunk_w = _load_weights(trunk_p)
+        sat_w = _load_weights(sat_p)
+        sat_stripped, empty_sess = strip_and_renorm(sat_w, strip_codes)
+        if empty_sess:
+            void(
+                out,
+                f"satellite empty after strip on {len(empty_sess)} session(s); "
+                f"first5={empty_sess[:5]} strip={sorted(strip_codes)}",
+            )
+        if sat_stripped.empty:
+            void(out, "satellite has no rows after strip/renorm")
+
+        blended, coverage = blend_weights(
+            trunk_w, sat_stripped, args.blend_trunk, args.blend_sat
+        )
+        if blended.empty:
+            void(out, "no common sessions between trunk and stripped satellite")
+
+        prepare_smoke_weights(blended, w_path)
+        # post-write sha vs optional expected pin
+        if reuse_sha and file_sha256(w_path) != reuse_sha:
+            void(
+                out,
+                f"blended sha mismatch after recompute: "
+                f"{file_sha256(w_path)} != expected {reuse_sha}",
+            )
+
+    meta = dict(
+        banner="RESEARCH moneyflow_stack_diag_v1; live=false; promotion=false; paper untouched",
+        interface_sha256_prefix="17ac041f",
+        arch_decision="A_new_script_plus_deeper_P0_reuse_blended",
+        code_change_ok_sha256_prefix="27d6b462",
+        run_auth=dict(
+            file=str(arch_ok.resolve().relative_to(ROOT.resolve())),
+            sha256=file_sha256(arch_ok),
+            expires_et=kv["expires_et"],
+            decay_outcome=kv["_decay_outcome"],
+        ),
+        measured_sha256=shas,
+        inputs=dict(
+            trunk=str(trunk_p.relative_to(ROOT)),
+            sat=str(sat_p.relative_to(ROOT)),
+            trunk_nav_60w=str(nav60_p.relative_to(ROOT)),
+            trunk_nav_100w=str(nav100_p.relative_to(ROOT)),
+        ),
+        blend_policy=dict(
+            blend_trunk=args.blend_trunk,
+            blend_sat=args.blend_sat,
+            strip_codes=sorted(strip_codes),
+            calendar="inner_join_common_sessions",
+            post="clip_nonneg_renorm_per_session",
+            topN=None,
+            name_cap=None,
+            reuse_blended=bool(reuse_meta),
+            reuse=reuse_meta,
+            note_zh=(
+                "P0 复用钉死 blended：不读腿、不重算混合"
+                if reuse_meta
+                else "简单混合：不做 topN/单名上限；与 CMC 溢出 510300 相反（剥舱）"
+            ),
+        ),
+        coverage=coverage,
+        tiers=list(tiers),
+    )
+    (out / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    to_mean = turnover_2s_mean(blended)
+
+    # Eng dig c416f43d… L3：子进程前释放主进程大对象，避免与 book-smoke 叠树峰
+    blended = None
+    trunk_w = None
+    sat_w = None
+    sat_stripped = None
+    gc.collect()
+
+    smoke_dir = out / "book_smoke"
+    smoke_dir.mkdir(parents=True, exist_ok=True)
+    # lowmem v1.1: serial single-capital BOOK-only (Arch decision LOWMEM_V11)
+    (smoke_dir / "serial.log").write_text(
+        "lowmem_v11 serial BOOK-only capitals=" + ",".join(str(t) for t in tiers) + "\n",
+        encoding="utf-8",
+    )
+    smoke = run_book_smoke_serial(w_path, smoke_dir, list(tiers), root=ROOT)
+    if not smoke.get("ok"):
+        void(
+            out,
+            f"book-smoke failed capital={smoke.get('failed_capital')} "
+            f"returncode={smoke.get('returncode')} "
+            f"fresh={smoke.get('summary_fresh')} log={smoke.get('log')} "
+            f"err={smoke.get('error')}",
+        )
+
+    trunk_metrics = {
+        600000: nav_metrics(nav60_p),
+        1000000: nav_metrics(nav100_p),
+    }
+    # Allow only requested tiers; require nav pins for those we judge.
+    trunk_by = {}
+    combo_by = {}
+    for t in tiers:
+        if t not in trunk_metrics:
+            # fallback: try path pattern under capadv_x2
+            alt = ROOT / f"output/strategy_hiliq/capadv_x2/aum_{t}/X2/BOOK/nav.csv"
+            if not alt.exists():
+                void(out, f"no trunk reference nav for tier {t}")
+            trunk_by[t] = nav_metrics(alt)
+        else:
+            trunk_by[t] = trunk_metrics[t]
+        arm = extract_book_arm(smoke["summary"], t)
+        if arm.get("error"):
+            void(out, f"book-smoke missing BOOK arm for aum={t}")
+        # Prefer engine summary; fill calmar if needed already done
+        nav_p = smoke_dir / f"aum_{t}" / f"aum_{t}" / "X2" / "BOOK" / "nav.csv"
+        if not nav_p.exists():
+            nav_p = smoke_dir / f"aum_{t}" / "X2" / "BOOK" / "nav.csv"
+        if nav_p.exists():
+            nm = nav_metrics(nav_p)
+            for k in ("cagr", "mdd", "calmar", "sharpe"):
+                if arm.get(k) is None:
+                    arm[k] = nm[k]
+            arm["nav_metrics"] = nm
+        combo_by[t] = arm
+
+    gates = judge_gates(
+        combo_by, trunk_by, decay_outcome=kv["_decay_outcome"], to_2s_mean=to_mean
+    )
+    # JSON-friendly: rename pass_ -> pass
+    gate_b = gates["gate_b"]
+    gate_v3 = gates["gate_v3"]
+    gate_b_out = dict(pass_=gate_b["pass_"], **{k: v for k, v in gate_b.items() if k != "pass_"})
+    gate_b_out["pass"] = gate_b_out.pop("pass_")
+    gate_v3_out = dict(pass_=gate_v3["pass_"], **{k: v for k, v in gate_v3.items() if k != "pass_"})
+    gate_v3_out["pass"] = gate_v3_out.pop("pass_")
+
+    summary = dict(
+        banner=meta["banner"],
+        elapsed_sec=round(time.time() - t0, 3),
+        blend_policy=meta["blend_policy"],
+        coverage=coverage,
+        turnover_2s_mean=to_mean,
+        trunk_ref={str(t): trunk_by[t] for t in tiers},
+        combo={str(t): {k: v for k, v in combo_by[t].items() if k != "nav_metrics"} for t in tiers},
+        combo_nav_metrics={
+            str(t): combo_by[t].get("nav_metrics") for t in tiers if combo_by[t].get("nav_metrics")
+        },
+        gate_b=gate_b_out,
+        gate_v3=gate_v3_out,
+        book_smoke=dict(
+            ok=True,
+            lowmem_v11=True,
+            arms="BOOK",
+            serial=True,
+            log=smoke.get("log"),
+            cmd=smoke.get("cmd"),
+            per_tier=smoke.get("per_tier"),
+            summary_path=str(Path(smoke["summary_path"]).relative_to(ROOT))
+            if smoke.get("summary_path")
+            else str((smoke_dir / "book_smoke_summary_agg.json").relative_to(ROOT)),
+        ),
+        live=False,
+        promotion=False,
+        promotion_approved=False,
+        research_only=True,
+        forbid_paper_handoff=True,
+    )
+    (out / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    write_manifest(out)
+    print(
+        json.dumps(
+            dict(
+                ok=True,
+                out_dir=out_rel,
+                gate_b=gate_b_out["pass"],
+                gate_v3=gate_v3_out["pass"],
+                turnover_2s_mean=to_mean,
+            ),
+            ensure_ascii=False,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

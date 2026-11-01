@@ -1,0 +1,250 @@
+{
+ "window": [
+  "2024-06-03",
+  "2026-10-09"
+ ],
+ "n_sessions": 570,
+ "suspend_d_files": 570,
+ "definition": "held(t)=前一交易日收盘目标权重>0；停牌=suspend_d S 类且 suspend_timing 为空(全天)；退市=stock_delisted.last_trade_date 落在 X2",
+ "by_strategy": {
+  "core_v1_3_equity_100_60w": {
+   "n_stock_names_held": 162,
+   "stock_holding_days": 11781,
+   "suspend_hold_episodes": 2,
+   "suspend_hold_days": 15,
+   "suspend_episode_len_median": 7.5,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 0
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "002828.SZ",
+     "start": "2026-07-27",
+     "days": 5
+    },
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    }
+   ]
+  },
+  "core_v1_3_equity_100_100w": {
+   "n_stock_names_held": 130,
+   "stock_holding_days": 11856,
+   "suspend_hold_episodes": 2,
+   "suspend_hold_days": 16,
+   "suspend_episode_len_median": 8.0,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 1
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    },
+    {
+     "ts": "688981.SH",
+     "start": "2025-09-01",
+     "days": 6
+    }
+   ]
+  },
+  "core_v1_3_eq80_etf20_60w": {
+   "n_stock_names_held": 162,
+   "stock_holding_days": 11660,
+   "suspend_hold_episodes": 2,
+   "suspend_hold_days": 15,
+   "suspend_episode_len_median": 7.5,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 0
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "002828.SZ",
+     "start": "2026-07-27",
+     "days": 5
+    },
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    }
+   ]
+  },
+  "core_v1_3_eq80_etf20_100w": {
+   "n_stock_names_held": 130,
+   "stock_holding_days": 11879,
+   "suspend_hold_episodes": 2,
+   "suspend_hold_days": 16,
+   "suspend_episode_len_median": 8.0,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 1
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    },
+    {
+     "ts": "688981.SH",
+     "start": "2025-09-01",
+     "days": 6
+    }
+   ]
+  },
+  "B4_50_25_25_60w": {
+   "n_stock_names_held": 417,
+   "stock_holding_days": 9915,
+   "suspend_hold_episodes": 1,
+   "suspend_hold_days": 1,
+   "suspend_episode_len_median": 1.0,
+   "suspend_episode_len_max": 1,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 1,
+    "buy_or_add": 0
+   },
+   "delist_events": [
+    {
+     "ts": "600297.SH",
+     "name": "广汇汽车(退)",
+     "last_trade_date": "2024-07-17",
+     "category": "疑似主动/吸收合并/私有化退市(退市前非ST)",
+     "held_into_last_trade_date": false,
+     "held_within_last20": true,
+     "face_value_inferred": true
+    }
+   ],
+   "episodes": [
+    {
+     "ts": "600711.SH",
+     "start": "2024-07-31",
+     "days": 1
+    }
+   ]
+  },
+  "B4_50_25_25_100w": {
+   "n_stock_names_held": 570,
+   "stock_holding_days": 16182,
+   "suspend_hold_episodes": 3,
+   "suspend_hold_days": 8,
+   "suspend_episode_len_median": 1.0,
+   "suspend_episode_len_max": 6,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 1,
+    "buy_or_add": 1
+   },
+   "delist_events": [
+    {
+     "ts": "600297.SH",
+     "name": "广汇汽车(退)",
+     "last_trade_date": "2024-07-17",
+     "category": "疑似主动/吸收合并/私有化退市(退市前非ST)",
+     "held_into_last_trade_date": false,
+     "held_within_last20": true,
+     "face_value_inferred": true
+    }
+   ],
+   "episodes": [
+    {
+     "ts": "001270.SZ",
+     "start": "2025-04-23",
+     "days": 1
+    },
+    {
+     "ts": "600711.SH",
+     "start": "2024-07-31",
+     "days": 1
+    },
+    {
+     "ts": "688981.SH",
+     "start": "2025-09-01",
+     "days": 6
+    }
+   ]
+  },
+  "capadv_only_60w": {
+   "n_stock_names_held": 229,
+   "stock_holding_days": 14225,
+   "suspend_hold_episodes": 3,
+   "suspend_hold_days": 19,
+   "suspend_episode_len_median": 6.0,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 1
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "000592.SZ",
+     "start": "2025-11-18",
+     "days": 3
+    },
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    },
+    {
+     "ts": "688981.SH",
+     "start": "2025-09-01",
+     "days": 6
+    }
+   ]
+  },
+  "capadv_only_100w": {
+   "n_stock_names_held": 229,
+   "stock_holding_days": 14225,
+   "suspend_hold_episodes": 3,
+   "suspend_hold_days": 19,
+   "suspend_episode_len_median": 6.0,
+   "suspend_episode_len_max": 10,
+   "suspend_partial_day_hold": 0,
+   "rebalance_orders_hitting_suspension": {
+    "sell_or_reduce": 0,
+    "buy_or_add": 1
+   },
+   "delist_events": [],
+   "episodes": [
+    {
+     "ts": "000592.SZ",
+     "start": "2025-11-18",
+     "days": 3
+    },
+    {
+     "ts": "600150.SH",
+     "start": "2024-09-03",
+     "days": 10
+    },
+    {
+     "ts": "688981.SH",
+     "start": "2025-09-01",
+     "days": 6
+    }
+   ]
+  }
+ },
+ "peak_rss_mb": 246.15234375
+}

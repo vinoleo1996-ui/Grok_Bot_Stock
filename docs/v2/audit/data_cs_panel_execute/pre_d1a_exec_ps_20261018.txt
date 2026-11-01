@@ -1,0 +1,13 @@
+# pre-D1a execute ps evidence 2026-10-18 05:18:19.874183185 EDT
+  94322 Tsl  Sun Oct 18 01:22:39 2026 136620 python3 scripts/acquire/remaining_after_stk_surv.py
+--- /proc/94403/stat:
+cat: /proc/94403/stat: No such file or directory
+--- /proc/94322/stat:
+pid=94322 state=T
+--- forbidden scan /proc/*/cmdline + stat:
+--: line 1: /proc/503765/cmdline: No such file or directory
+(scan done)
+MemAvailable:   11381820 kB
+               total        used        free      shared  buff/cache   available
+Mem:           16002        4887        5873         115        5687       11115
+Swap:              0           0           0

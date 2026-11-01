@@ -1,0 +1,30 @@
+--- scripts/acquire/relay_outage_backfill.py	2026-10-18 01:13:37.360683904 -0400
++++ /tmp/backfill_fix_draft/relay_outage_backfill.py	2026-10-18 05:03:32.609122197 -0400
+@@ -30,6 +30,12 @@
+     today = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
+     c = pd.read_parquet(ROOT / "data/v2/calendar/trade_cal_sse_pit.parquet")
+     return max(d for d in c[c.is_open == 1].cal_date.astype(str) if d <= today)
++def step_status(item):
++    """per-step status from logs/nightly/<date>_summary.json written by nightly_update (steps[<step>].status)."""
++    try:
++        d = item["params"]["date"]; k = item["params"]["step"]
++        return json.loads((ROOT / f"logs/nightly/{d}_summary.json").read_text())["steps"].get(k, {}) or {}
++    except Exception as e: return {"status": f"unreadable: {type(e).__name__}"}
+ def save(q): Q.write_text(json.dumps(q, ensure_ascii=False, indent=1))
+ def run(name, cmd, env_extra):
+     env = dict(os.environ, **env_extra); t = time.time()
+@@ -58,7 +64,13 @@
+             q["events_last"] = dict(rc=rc, n_fails=sm.get("n_fails")); save(q)
+         for i in [i for i in q.get("extra", []) if i["status"] != "done" and i.get("retry_cmd")]:
+             rc = run(i["api"], i["retry_cmd"].split(), {})
+-            i["status"] = "done" if rc == 0 else "retry"; i["last_rc"] = rc; save(q)
++            # 2026-10-18 r-fix (draft): nightly_update exits 0 even when the step failed/was skipped -> judge by its summary
++            stp = step_status(i)
++            i["last_rc"] = rc; i["last_step_status"] = stp; i["last_try"] = datetime.now(ET).isoformat(timespec="seconds")
++            if rc == 0 and stp.get("status") == "ok": i["status"] = "done"; i.pop("false_done_reason", None)
++            else: i["status"] = "pending"; i["false_done_reason"] = f"rc={rc} step_status={stp.get('status')} {stp.get('skipped', '')}".strip()
++            save(q)
++            if stp.get("skipped") == "RELAY_DOWN fast-fail": log("relay down (step fast-fail), back off"); break   # no hammering; outer loop sleeps 900
+         hs = [i for i in q.get("extra", []) if i["status"] != "done" and not i.get("retry_cmd")]
+         if hs:
+             rc = 2

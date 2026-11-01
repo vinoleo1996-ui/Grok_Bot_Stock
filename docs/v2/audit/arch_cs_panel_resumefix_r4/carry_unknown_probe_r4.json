@@ -1,0 +1,174 @@
+{
+ "by_year": {
+  "2018": {
+   "void_new": 0,
+   "unknown": 293,
+   "unknown_resume": 217,
+   "unknown_intra": 76,
+   "unknown_pure_seed": 288,
+   "unknown_traded_never_normal": 5,
+   "old_r3_void": 217,
+   "restored": 990,
+   "hc": 296,
+   "fc": 990
+  },
+  "2019": {
+   "void_new": 0,
+   "unknown": 143,
+   "unknown_resume": 2,
+   "unknown_intra": 141,
+   "unknown_pure_seed": 138,
+   "unknown_traded_never_normal": 5,
+   "old_r3_void": 2,
+   "restored": 472,
+   "hc": 214,
+   "fc": 472
+  }
+ },
+ "samples_unknown": [
+  [
+   "000032.SZ",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "000790.SZ",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "002442.SZ",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "002697.SZ",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "600671.SH",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "600859.SH",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "601005.SH",
+   "2018-01-03",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "603080.SH",
+   "2018-01-03",
+   "intraday",
+   "nonseed",
+   "None"
+  ],
+  [
+   "002015.SZ",
+   "2018-01-04",
+   "resume",
+   "seed",
+   "None"
+  ],
+  [
+   "002569.SZ",
+   "2018-01-04",
+   "resume",
+   "seed",
+   "None"
+  ]
+ ],
+ "samples_nonseed_unknown": [
+  [
+   "002569.SZ",
+   "2018-01-19",
+   "resume",
+   "seed",
+   "2018-01-04 00:00:00"
+  ],
+  [
+   "002569.SZ",
+   "2018-01-24",
+   "resume",
+   "seed",
+   "2018-01-19 00:00:00"
+  ],
+  [
+   "002312.SZ",
+   "2018-05-09",
+   "resume",
+   "seed",
+   "2018-05-07 00:00:00"
+  ],
+  [
+   "300090.SZ",
+   "2018-07-02",
+   "resume",
+   "seed",
+   "2018-06-01 00:00:00"
+  ],
+  [
+   "600733.SH",
+   "2018-09-27",
+   "resume",
+   "seed",
+   "2018-02-01 00:00:00"
+  ],
+  [
+   "688010.SH",
+   "2019-07-23",
+   "intraday",
+   "nonseed",
+   "2019-07-22 00:00:00"
+  ],
+  [
+   "688010.SH",
+   "2019-07-24",
+   "intraday",
+   "nonseed",
+   "2019-07-23 00:00:00"
+  ],
+  [
+   "688288.SH",
+   "2019-11-07",
+   "intraday",
+   "nonseed",
+   "2019-11-06 00:00:00"
+  ],
+  [
+   "688299.SH",
+   "2019-11-07",
+   "intraday",
+   "nonseed",
+   "2019-11-06 00:00:00"
+  ],
+  [
+   "688258.SH",
+   "2019-12-10",
+   "intraday",
+   "nonseed",
+   "2019-12-09 00:00:00"
+  ]
+ ],
+ "first_session": "2018-01-02",
+ "peak_rss_mb": 422
+}

@@ -1,0 +1,34 @@
+SELFTEST start 2026-10-18T11:41:41-04:00 workdir /tmp/qd_v31_selftest_xavkbpeu ok_keys ['allow_daily_pull', 'allow_delete', 'allow_force', 'allow_network', 'allow_real_data', 'allow_restore_cyq_202610_from_backup', 'allow_run_nightly_update', 'allow_selftest', 'allow_sw_write', 'allow_trade_cal_write', 'cmd', 'expires_et', 'issued_at', 'live', 'ok_id', 'ok_type', 'out_dir', 'precondition_no_plan_r_run', 'precondition_pgrep', 'promotion', 'require_no_repo_pycache', 'require_orphans_run1_empty', 'review_doc_sha', 'scope', 'sha_runner', 'sha_selftest', 'signed_by', 'signed_et', 'single_use']
+PASS P1-1 dryrun cmd1 rc==0 rc=0
+PASS P1-1 dryrun cmd1 argv==CMD[1:]+--dry-run ['scripts/nightly_update.py', '--date', '20261016', '--steps', 'cyq', '--dry-run']
+PASS P1-1 cmd1 解释器只出现一次 ['nice', '-n', '10', '/usr/bin/python3', 'scripts/nightly_update.py', '--date', '20261016', '--steps', 'cyq', '--dry-run']
+PASS P1-1 dryrun cmd2 rc==0 rc=0
+PASS P1-1 dryrun cmd2 argv==CMD[1:]+--dry-run ['scripts/nightly_update.py', '--date', '20261016', '--steps', 'tier3,bundle,freshness', '--dry-run']
+PASS P1-1 cmd2 解释器只出现一次 ['nice', '-n', '10', '/usr/bin/python3', 'scripts/nightly_update.py', '--date', '20261016', '--steps', 'tier3,bundle,freshness', '--dry-run']
+PASS P1-1 assert 拒绝重复解释器 
+PASS P3-3 行内注释被拒 ['L2 allow_restore_cyq_202610_from_backup 含行内注释']
+2026-10-18T11:41:41-04:00 RUN1 start npid=157827 cmd=/usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq
+2026-10-18T11:41:41-04:00 STOP_TREE npid=157827 reason=RSS 采样和 452 kB > 1
+2026-10-18T11:41:41-04:00 SIGNAL SIGSTOP pid=157827 ppid=157824 cmd='nice -n 10 /usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+2026-10-18T11:41:41-04:00 SIGNAL SIGKILL pid=157827 ppid=157824 cmd='nice -n 10 /usr/bin/python3 scripts/nightly_update.py --date 20261016 --steps cyq'
+2026-10-18T11:41:41-04:00 ORPHAN_SCAN run1 found=0
+2026-10-18T11:41:41-04:00 RUN1 end rc=-9 stopped=RSS 采样和 452 kB > 1 orphans=0 rss_max_sum=452
+PASS P2-1 第一步是 SIGSTOP nightly [('SIGSTOP', 157827, 'sent'), ('SIGKILL', 157827, 'sent')]
+PASS P2-1 最后一步是 SIGKILL nightly [('SIGSTOP', 157827, 'sent'), ('SIGKILL', 157827, 'sent')]
+PASS P2-1 wait 未超时且已停 'RSS 采样和 452 kB > 1'
+PASS P2-1 无存活子孙 [157827]
+PASS P2-1 nightly 未起下一步 
+PASS P3-2 runN.out 用 x（再开同名应失败） /tmp/qd_v31_selftest_xavkbpeu/logs/nightly/backfill_20261018_run1.out
+PASS P2-1 孤儿扫描已记录 []
+PASS P2-2 陈旧 finished 被拒 ["summary finished='2026-10-18T16:59:22+08:00' 不在本次 t_stale 窗口 a–b"]
+PASS P2-2 本次 summary 通过 []
+2026-10-18T11:41:42-04:00 cyq 恢复未授权，只报告
+PASS Q4 未授权只报告 report_only（.ok allow_restore_cyq_202610_from_backup=false）
+2026-10-18T11:41:42-04:00 cyq 恢复：data/v2/cyq/manifest.json sha 三方不一致，只报告
+PASS Q4 sha 不一致只报告 report_only（data/v2/cyq/manifest.json 三方 sha 不一致）
+2026-10-18T11:41:42-04:00 cyq 判 FAIL 且 202610 parquet rows=None：按备份原子恢复
+2026-10-18T11:41:42-04:00 RESTORE data/v2/cyq/cyq_perf_202610.parquet sha_ok=True
+2026-10-18T11:41:42-04:00 RESTORE data/v2/cyq/manifest.json sha_ok=True
+PASS Q4 损坏 parquet 触发恢复并复核 {"trigger_parquet_rows": null, "allowed": true, "files": {"data/v2/cyq/cyq_perf_202610.parquet": {"backup": "32d3e9cccc33d6bd97426e1c7e2b0687b81b8e7b7b95e327f3e32aee0e9da4d1", "sums": "32d3e9cccc33d6bd97426e1c7e2b0687b81b8e7b7b95e327f3e32aee0e9da4d1", "before_snap": "32d3e9cccc33d6bd97426e1c7e2b0687
+PASS Q7 锁 sha 变化被拒 'RESEARCH_QUIET.lock sha 与 run1 前不同（c93ff10b0d2b609969056eaf7fc4de94301ba7df041f10b2bdc3371c58ac3f20 != 0000000000000000000000000000000000000000000000000000000000000000，t）'
+SELFTEST end pass=21 fail=0 workdir=/tmp/qd_v31_selftest_xavkbpeu

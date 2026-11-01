@@ -1,0 +1,52 @@
+--- docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh	2026-10-25 01:17:34.731672964 -0400
++++ docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh	2026-10-25 11:25:07.664589187 -0400
+@@ -1,28 +1,43 @@
+ #!/bin/bash
+-# cmc_wrapper_v4: successor of cmc_wrapper_v3 (61676a3c). Arch 09:44: P1-W1 vm_peak_kb excluded from peak (VmPeak = virtual, runguard L114-122); P2-W2 C4 vs 1331200 + STAGE ru_maxrss (kB, Linux getrusage) in peak; P2-W3 C5 adds scripts_eng/, python -c "import research", -m quantlab; P3 assert default alpha_combo_marginal_v1_2, PGID mismatch also kills children.
++# cmc_wrapper_v5: successor of cmc_wrapper_v4 (6174eacb). Arch 2026-10-25 P2 (leaf25 CONSUMED_PASS open item): DEFAULT sampler path MUST be under /tmp (NOT log_dir/output*). Hard-refuse sampler under /workspace/QuantLab/output* or /workspace/QuantLab/data*. Optional --sampler-dir DIR | --sampler-file PATH (both must resolve under /tmp). Other artifacts (exit/c5/log/marker/ps_*) stay in --logdir. C5/C4/STOP/guard semantics unchanged from v4.
++# (v4 header:) successor of cmc_wrapper_v3 (61676a3c). Arch 09:44: P1-W1 vm_peak_kb excluded from peak (VmPeak = virtual, runguard L114-122); P2-W2 C4 vs 1331200 + STAGE ru_maxrss (kB, Linux getrusage) in peak; P2-W3 C5 adds scripts_eng/, python -c "import research", -m quantlab; P3 assert default alpha_combo_marginal_v1_2, PGID mismatch also kills children.
+ # (v3 header:) successor of cmc_wrapper_v2 (dcfef770). Arch 09:28 rulings: guard default-on (94322, pass iff state T or exited);
+ #   --no-guard only with allow_no_guard=true in --arch-ok; --c5-ignore only in synthetic selftests (refused for real runs unless allow_c5_ignore=true);
+ #   pre-launch ps snapshot incl. guard pid state. Selftest-only hooks: --test-stopkb N, --test-force-pgid-mismatch, --selftest-assert.
+-# usage: cmc_wrapper_v4.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID] --tag TAG --logdir DIR --outdir DIR
+-#                          [--meta JSON] [--assert STR] [--cwd DIR] -- CMD [ARGS...]      (CMD/interpreter unbound)
++# usage: cmc_wrapper_v5.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID] --tag TAG --logdir DIR --outdir DIR
++#                          [--sampler-dir DIR|--sampler-file PATH] [--meta JSON] [--assert STR] [--cwd DIR] -- CMD [ARGS...]
+ # rc: child rc | 89 guard pid not T at launch | 90 --no-guard refused | 91 --c5-ignore refused | 92 test hook outside --selftest
+-#     | 95 stopline | 96 C5 hit | 97 PGID_MISMATCH | 98 cmdline assert failed | 2 usage
++#     | 95 stopline | 96 C5 hit | 97 PGID_MISMATCH | 98 cmdline assert failed | 2 usage / sampler path refused
+ set -u
+ GUARDPID=94322; NOGUARD=0; C5IGN=""; OK=""; STOPKB=1484800; TGTKB=1331200; HARDKB=1536000; DT=0.2; SELFTEST=0; SELFASSERT=0
+-ASSERT=alpha_combo_marginal_v1_2; C4KB=1331200; META=""; RUNCWD=/workspace/QuantLab; TAG=""; L=""; OD=""; TSTOP=""; TMISMATCH=0
++ASSERT=alpha_combo_marginal_v1_2; C4KB=1331200; META=""; RUNCWD=/workspace/QuantLab; TAG=""; L=""; OD=""; TSTOP=""; TMISMATCH=0; SAMPLER_DIR=""; SAMPLER_FILE=""
+ while [ $# -gt 0 ]; do case "$1" in
+   --selftest) SELFTEST=1; shift;; --selftest-assert) SELFASSERT=1; shift;; --arch-ok) OK=$2; shift 2;;
+   --guard-pid) GUARDPID=$2; shift 2;; --no-guard) NOGUARD=1; shift;; --c5-ignore) C5IGN=$2; shift 2;;
+   --test-stopkb) TSTOP=$2; shift 2;; --test-force-pgid-mismatch) TMISMATCH=1; shift;;
+   --tag) TAG=$2; shift 2;; --logdir) L=$2; shift 2;; --outdir) OD=$2; shift 2;; --meta) META=$2; shift 2;;
++  --sampler-dir) SAMPLER_DIR=$2; shift 2;; --sampler-file) SAMPLER_FILE=$2; shift 2;;
+   --assert) ASSERT=$2; shift 2;; --cwd) RUNCWD=$2; shift 2;; --) shift; break;; *) echo "usage error: $1" >&2; exit 2;; esac; done
+ [ -n "$TAG" ] && [ -n "$L" ] && [ -n "$OD" ] && [ $# -gt 0 ] || { echo "usage: --tag --logdir --outdir -- CMD" >&2; exit 2; }
+-mkdir -p "$L"; S="$L/${TAG}_sampler.txt"; X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; LOG="$L/${TAG}.log"; MK="$L/${TAG}_start.marker"
++mkdir -p "$L"
++# P2: sampler DEFAULT under /tmp; hard-ban output*/data* (Arch leaf25 2026-10-25)
++if [ -n "$SAMPLER_FILE" ]; then S="$SAMPLER_FILE"
++elif [ -n "$SAMPLER_DIR" ]; then mkdir -p "$SAMPLER_DIR"; S="$SAMPLER_DIR/${TAG}_sampler.txt"
++else mkdir -p /tmp/quantlab_wrapper_sampler; S="/tmp/quantlab_wrapper_sampler/${TAG}_sampler.txt"; fi
++case "$S" in /tmp/*) ;; *) echo "usage error: sampler must be under /tmp: $S" >&2; exit 2;; esac
++case "$S" in /workspace/QuantLab/output*|/workspace/QuantLab/data*) echo "usage error: sampler under output*/data* forbidden: $S" >&2; exit 2;; esac
++# also refuse if log_dir-relative sneak (e.g. --sampler-file $L/foo when L under output)
++_SABS=$(readlink -f "$S" 2>/dev/null || python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$S" 2>/dev/null || echo "$S")
++case "$_SABS" in /workspace/QuantLab/output*|/workspace/QuantLab/data*) echo "usage error: sampler resolves under output*/data*: $_SABS" >&2; exit 2;; esac
++case "$_SABS" in /tmp/*) ;; *) echo "usage error: sampler abs must be under /tmp: $_SABS" >&2; exit 2;; esac
++mkdir -p "$(dirname "$S")"
++X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; LOG="$L/${TAG}.log"; MK="$L/${TAG}_start.marker"
+ log() { echo "$(date +%H:%M:%S.%N) $*" >> "$S"; }
+ refuse() { log "REFUSED rc=$1 $2"; echo "exit=$1 refused=1 reason=$2 launched=0" >> "$X"; echo "WRAPPER_REFUSED tag=$TAG rc=$1 $2"; exit "$1"; }
+ okkey() { [ -n "$OK" ] && [ -f "$OK" ] && grep -qxE "$1=true" "$OK"; }
+ REAL=0; [ -n "$OK" ] && REAL=1
+ [ -n "$OK" ] && { [ -f "$OK" ] || refuse 2 "arch-ok not found: $OK"; log "ARCH_OK $OK sha256=$(sha256sum "$OK" | cut -c1-64)"; }
++log "SAMPLER_PATH $S"
+ # --- policy checks before anything is launched ---
+ if [ "$SELFTEST" = 0 ] && { [ -n "$TSTOP" ] || [ "$TMISMATCH" = 1 ] || [ "$SELFASSERT" = 1 ]; }; then refuse 92 "test hook given without --selftest"; fi
+ if [ "$NOGUARD" = 1 ]; then okkey allow_no_guard || refuse 90 "--no-guard requires allow_no_guard=true in --arch-ok"; GUARDPID=""; log "NO_GUARD allowed by .ok allow_no_guard=true"; fi

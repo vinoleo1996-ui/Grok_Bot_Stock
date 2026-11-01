@@ -1,0 +1,53 @@
+--- research/leaf25_ttm_recon_step_m1_r4.py	2026-10-18 10:58:41.375931890 -0400
++++ research/leaf25_ttm_recon_step_m1_r5.py	2026-10-18 11:03:34.847931890 -0400
+@@ -1,8 +1,8 @@
+ #!/usr/bin/env python3
+-"""Leaf 25 step -1 r4: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
++"""Leaf 25 step -1 r5: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
+ 
+-New file per Arch diff review 1b63c05f (R3-P3-1, R3-P3-2); predecessor research/leaf25_ttm_recon_step_m1_r3.py
+-(eb979015) is kept unchanged and is superseded (_r2 f46e0fb5 and 7edf577f also kept unchanged).
++New file per Arch diff review 3c508dd7 (R4-P3-1); predecessor research/leaf25_ttm_recon_step_m1_r4.py
++(2f7ea713) is kept unchanged and is superseded (_r3 eb979015, _r2 f46e0fb5 and 7edf577f also kept unchanged).
+ 
+ Reads ONLY data/v2/financials_pit/{financials,cashflow,balancesheet}_pit_tushare.parquet and the SSE calendar
+ (column projection; full-table pass on key columns for the deterministic pick, then ts_code filter to 3 codes;
+@@ -33,7 +33,8 @@
+       balance: TA_E, TA_{E-1y}) on BOTH days. If a third version dd[2] exists with next_open(dd[2]) <= d_after
+       (e.g. dd[1] Friday, dd[2] Saturday), the candidate is skipped, so the version usable on d_after is dd[1].
+  (ii) (ts_code, y, a_date, q_date): y >= 2019, first Q1(y) income date <= first annual(y-1) income date;
+-      same_day means same effective session: next_open(q_date) == next_open(a_date) (not the same calendar day).
++      same_day means same effective session: next_open(q_date) == next_open(a_date) (not the same calendar day);
++      a same_day candidate is taken only if avail_E(code, next_open(q_date)) == Q1(y) (all three tables usable).
+  (iii)(ts_code, first_period, first_date): first report_type-1 income period >= 2019-03-31.
+  rule_exercised per case is written into run_meta; any false -> exit code 4 (outputs still written).
+  Case (ii) with Q1 before annual: on the Q1 effective day TTM must be NaN (one-quarter fallback cap), not merely
+@@ -317,7 +318,9 @@
+     jj = j[j["ts_code"] != trig_i["ts_code"]]
+     if jj.empty:
+         die("no candidate for rule ii")
+-    r2 = jj.iloc[0]
++    r2 = next((r for _, r in jj.iterrows() if next_open(r["avail_sh_date_q"]) != next_open(r["avail_sh_date_a"]) or avail_E(r["ts_code"], next_open(r["avail_sh_date_q"]), G) == pd.Timestamp(year=int(r["y"]), month=3, day=31)), None)  # R4-P3-1
++    if r2 is None:
++        die("no candidate for rule ii")
+     trig_ii = {"ts_code": r2["ts_code"], "y": int(r2["y"]), "a_date": r2["avail_sh_date_a"], "q_date": r2["avail_sh_date_q"],
+                "same_day": bool(next_open(r2["avail_sh_date_q"]) == next_open(r2["avail_sh_date_a"]))}  # R3-P3-2
+     # (iii) trigger tuples
+@@ -385,7 +388,7 @@
+     pd.DataFrame(rows).to_csv(out / "ttm_script.csv", index=False)
+     all_ok = all(exercised.values())
+     meta = {
+-        "script": "research/leaf25_ttm_recon_step_m1_r4.py", "input_sha256": shas, "codes": codes,
++        "script": "research/leaf25_ttm_recon_step_m1_r5.py", "input_sha256": shas, "codes": codes,
+         "triggers": {"i": trig_i, "ii": trig_ii, "iii": trig_iii}, "rule_exercised": exercised, "rule_detail": detail,
+         "asof_dates": dates, "n_tie_groups": len(ties), "ties": ties[:200], "nonquarter_end_rows": nonq,
+         "report_type_update_flag_counts": counts, "arch_ruling_required_report_type_share_gt_0_5pct": arch_ruling,
+@@ -396,7 +399,7 @@
+     }
+     (out / "run_meta.json").write_text(json.dumps(meta, indent=1, default=str), encoding="utf-8")
+     stage("done")
+-    print(f"peak_check step_m1_r4 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
++    print(f"peak_check step_m1_r5 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
+     if not all_ok:
+         print(f"STOP: rule_exercised false: {exercised}", file=sys.stderr, flush=True)
+         return 4

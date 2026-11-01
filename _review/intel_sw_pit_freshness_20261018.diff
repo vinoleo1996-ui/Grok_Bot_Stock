@@ -1,0 +1,222 @@
+--- a/research/intel/intel_common.py
++++ b/research/intel/intel_common.py
+@@ -161,7 +161,75 @@
+     return hits
+ 
+ 
++# ---- 2026-10-18 05:10 ET（待 Arch 审）：读 sw_pit / cyq / tier3 前的过期检查 + 申万成分 as-of 取数 ----
++# 主 Agent 10-18 05:06 ET 裁定：不得以 freshness overall=ok 为依据（不覆盖这三张表）。
++# 只登记盘上确有 manifest 的表；cyq / tier3 目前 research/intel 下没有读取点，未登记（不编造路径）。
++FRESHNESS_TABLES = {
++    "sw_pit": {"manifest": "data/v2/sw_pit/manifest.json", "manifest_key": "l1",
++               "parquet": "data/v2/sw_pit/industry_members_sw_l1_pit.parquet", "date_col": "in_date",
++               "quarantine_glob": "data/v2/_quarantine/sw_pit_INCOMPLETE_*"},
++}
++STALE_LAG_TRADING_DAYS = 3   # 建议值，待 Arch 定：built 覆盖到的交易日落后 asof 最近交易日 ≥3 个交易日 → stale
++
++
++def _trading_days() -> list:
++    """A 股交易日：以 tushare_raw/daily 文件名为准（盘上实际有日线的日子）。"""
++    return sorted(pd.Timestamp(f.stem) for f in (ROOT / "data/v2/tushare_raw/daily").glob("*.parquet"))
++
++
++def check_table_freshness(table: str, asof=None) -> dict:
++    """返回 {table, max_date, built, covered_through, lag_days, status: ok/stale, disclosure}。
++    max_date = manifest 的 in_date_range[1]（没有就读 parquet date_col 的实际最大值）——只代表“最后一次成分变动”，不单独判过期；
++    built = manifest.built（构建时刻，按 Asia/Shanghai 理解）；covered_through = built 当日 18:00 前构建则取前一交易日，否则取当日；
++    lag_days = (covered_through, asof 当日或之前最后一个交易日] 内的交易日数。"""
++    cfg = FRESHNESS_TABLES[table]
++    asof = pd.Timestamp(asof or datetime.now(ET_TZ).strftime("%Y-%m-%d")).normalize()
++    man = json.loads((ROOT / cfg["manifest"]).read_text()) if (ROOT / cfg["manifest"]).exists() else {}
++    sub = man.get(cfg.get("manifest_key"), {}) if cfg.get("manifest_key") else man
++    rng = sub.get("in_date_range") or []
++    if len(rng) == 2:
++        max_date, max_src = pd.Timestamp(rng[1]), "manifest.in_date_range"
++    else:
++        max_date, max_src = pd.read_parquet(ROOT / cfg["parquet"], columns=[cfg["date_col"]])[cfg["date_col"]].max(), "parquet." + cfg["date_col"]
++    built = pd.Timestamp(man["built"]) if man.get("built") else None
++    td = _trading_days()
++    last_td = max([d for d in td if d <= asof], default=asof)
++    if built is not None:
++        bd = built.normalize()
++        cov = bd if (built.hour >= 18 and bd in td) else max([d for d in td if d < bd], default=bd)
++        lag = sum(1 for d in td if cov < d <= last_td)
++    else:
++        cov, lag = None, None
++    stale = lag is None or lag >= STALE_LAG_TRADING_DAYS
++    quar = sorted(str(q.relative_to(ROOT)) for q in ROOT.glob(cfg["quarantine_glob"])) if cfg.get("quarantine_glob") else []
++    disc = (f"{table}: built={man.get('built')}，覆盖到 {cov.date() if cov is not None else '未知'}，"
++            f"落后 {lag} 个交易日（asof {asof.date()}，最近交易日 {last_td.date()}，阈值 ≥{STALE_LAG_TRADING_DAYS}）；"
++            f"最后一次成分变动 {max_date.date()}（{max_src}）")
++    if quar:
++        disc += f"；存在未完成刷新隔离目录 {', '.join(quar)}"
++    return {"table": table, "max_date": str(max_date.date()), "built": man.get("built"),
++            "covered_through": str(cov.date()) if cov is not None else None, "lag_days": lag,
++            "status": "stale" if stale else "ok", "disclosure": disc + ("（STALE）" if stale else "")}
++
++
++def require_fresh(table: str, asof=None, allow_stale: bool = False) -> dict:
++    """事件研究 / 特征构建用：stale 默认停跑；allow_stale=True 放行并返回 disclosure 供写回执。"""
++    f = check_table_freshness(table, asof)
++    print("[freshness]", json.dumps(f, ensure_ascii=False))
++    if f["status"] != "ok" and not allow_stale:
++        raise SystemExit(f"STOP：{f['disclosure']}。如需照跑请加 --allow-stale（disclosure 会写入回执）。")
++    return f
++
++
++def sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
++    """申万一级成分按时点取（as-of）：变动在 available_at（in_date 18:00 上海）之后才可用，
++    所以交易日 d 只用 in_date < d 的成分；出表同理，out_date 当天收盘后才知道，d ≤ out_date 仍视为成员。"""
++    d = pd.Timestamp(d).normalize()
++    return sw[(sw.in_date < d) & (sw.out_date.isna() | (sw.out_date >= d))]
++
++
+ _POOL = None
++SW_FRESHNESS = None
+ 
+ 
+ def industry_stocks(top_n: int = 5) -> dict[str, list[dict]]:
+@@ -169,9 +237,14 @@
+     global _POOL
+     if _POOL is not None:
+         return _POOL
++    global SW_FRESHNESS
++    SW_FRESHNESS = check_table_freshness("sw_pit")   # 情报预警：stale 不停跑，带 disclosure
+     sw = pd.read_parquet(ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+                          columns=["instrument_id", "name", "l1_name", "in_date", "out_date"])
+-    sw = sw[sw.out_date.isna()].drop_duplicates("instrument_id", keep="last")
++    # 原为 out_date.isna()（表内最新成分）；改为按今天（上海日期）as-of，含当天 18:00 前不可用的变动不计
++    _sh = datetime.now(ZoneInfo("Asia/Shanghai"))
++    sw = sw_members_asof(sw, pd.Timestamp(_sh.date()) + pd.Timedelta(days=1 if _sh.hour >= 18 else 0))
++    sw = sw.drop_duplicates("instrument_id", keep="last")
+     import pyarrow.dataset as ds
+     mds = ds.dataset(ROOT / "data/v2/universe/mid_large_members_pit.parquet")
+     last = max(pd.read_parquet(ROOT / "data/v2/universe/mid_large_members_pit.parquet", columns=["session"],
+--- a/research/intel/intel_run.py
++++ b/research/intel/intel_run.py
+@@ -142,6 +142,9 @@
+     L += ["## 政策/贸易新闻命中", ""]
+     L += [f"- [{n['theme']}] {n['published_et']} ET {n['source']}：{n['title']}" for n in news] or ["- 无"]
+     L += ["", f"新闻源状态：{json.dumps(p['source_status']['news'], ensure_ascii=False)}"]
++    for t, f in (p["source_status"].get("tables") or {}).items():
++        if f:
++            L += [f"数据表新鲜度：{t} {f['status']}——{f['disclosure']}" + ("（行业归属可能未反映最新成分变动，结论照常输出）" if f["status"] != "ok" else "")]
+     return "\n".join(L) + "\n"
+ 
+ 
+@@ -234,7 +237,7 @@
+     shocks, rows, ps = build_alerts(snap, hits)
+     p = {"schema": "quantlab.intel.alerts.v1", "mode": a.mode, "generated_et": now.strftime("%Y-%m-%d %H:%M"),
+          "live": False, "promotion_approved": False, "pool_session": ps, "markets": snap, "shocks": shocks,
+-         "alerts": rows, "source_status": {"markets": mstat, "news": nstat}, "news_scanned": len(news)}
++         "alerts": rows, "source_status": {"markets": mstat, "news": nstat, "tables": {"sw_pit": C.SW_FRESHNESS}}, "news_scanned": len(news)}
+     if a.mode == "intraday":
+         prev = json.loads(STATE.read_text()) if STATE.exists() else {}
+         reasons = []
+--- a/research/intel/intel_event_study.py
++++ b/research/intel/intel_event_study.py
+@@ -4,7 +4,7 @@
+ 日经/KOSPI 与 A 股同时段交易，映射到 >T 的 A 股交易日（即「次日」），不是同日共振。
+ 研究级，live=false，不下单、不改权重、禁 GP。"""
+ from __future__ import annotations
+-import json, resource, sys
++import argparse, json, resource, sys
+ from pathlib import Path
+ import pandas as pd, numpy as np
+ sys.path.insert(0, str(Path(__file__).resolve().parent))
+@@ -49,7 +49,7 @@
+             d = pd.Timestamp(td)
+             ret = (hfq / prev_hfq.reindex(hfq.index) - 1).dropna().clip(-0.35, 0.35)
+             mem = ml_by_day.get(str(d.date()), set())
+-            s = sw[(sw.in_date <= d) & (sw.out_date.isna() | (sw.out_date > d)) & sw.instrument_id.isin(mem)].drop_duplicates("ts_code")
++            s = C.sw_members_asof(sw, d); s = s[s.instrument_id.isin(mem)].drop_duplicates("ts_code")
+             s = s.assign(r=s.ts_code.map(ret)).dropna(subset=["r"])
+             if len(s):
+                 rows[d] = s.groupby("l1_name").r.mean()
+@@ -73,6 +73,8 @@
+ 
+ 
+ def main():
++    ap = argparse.ArgumentParser(); ap.add_argument("--allow-stale", action="store_true", help="sw_pit 过期时仍照跑（disclosure 写入回执）")
++    fresh = C.require_fresh("sw_pit", allow_stale=ap.parse_args().allow_stale)
+     ind, mkt = a_share_industry_returns()
+     rel = ind.sub(mkt, axis=0)
+     sess = ind.index
+@@ -108,7 +110,7 @@
+     out = R / "output/intel"; out.mkdir(parents=True, exist_ok=True)
+     df.to_csv(out / "event_study_full.csv", index=False)
+     meta = {"window_a_share": f"{sess.min().date()}→{sess.max().date()}", "a_sessions": int(len(sess)),
+-            "by_rule": byrule, "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}
++            "by_rule": byrule, "sw_pit_freshness": fresh, "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}
+     (out / "event_study_hitrate.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1))
+     print(json.dumps({k: v for k, v in meta.items() if k != "by_rule"}, ensure_ascii=False))
+ 
+--- a/research/intel/intel_c1_gap_split.py
++++ b/research/intel/intel_c1_gap_split.py
+@@ -3,7 +3,7 @@
+ 成本口径取 quantlab/config.py：佣金 2.5bp/边、印花税 5bp(卖出)、滑点 30bp/边(保守)；另给 10bp/边敏感性。
+ 60万/100万两档：持仓 20–30 只、单票约 2–5 万，佣金按 max(2.5bp, 5元/笔) 计。"""
+ from __future__ import annotations
+-import json, resource, sys
++import argparse, json, resource, sys
+ from datetime import datetime
+ from zoneinfo import ZoneInfo
+ from pathlib import Path
+@@ -31,7 +31,7 @@
+         fa = fac.reindex(px.index); o, c = px.open * fa, px.close * fa
+         if prev_c is not None:
+             d = pd.Timestamp(f.stem); mem = ml_by.get(str(d.date()), set())
+-            s = sw[(sw.in_date <= d) & (sw.out_date.isna() | (sw.out_date > d)) & sw.instrument_id.isin(mem)].drop_duplicates("ts_code")
++            s = C.sw_members_asof(sw, d); s = s[s.instrument_id.isin(mem)].drop_duplicates("ts_code")
+             r_on = (o / prev_c.reindex(o.index) - 1).clip(-.35, .35); r_id = (c / o - 1).clip(-.35, .35)
+             r_cc = (c / prev_c.reindex(c.index) - 1).clip(-.35, .35)
+             s = s.assign(a=s.ts_code.map(r_on), b=s.ts_code.map(r_id), e=s.ts_code.map(r_cc)).dropna(subset=["a", "b", "e"])
+@@ -48,6 +48,8 @@
+     return 2 * comm + 5e-4 + 2 * slip_bp * 1e-4  # 卖开盘+买回收盘 一个来回
+ 
+ def main():
++    ap = argparse.ArgumentParser(); ap.add_argument("--allow-stale", action="store_true", help="sw_pit 过期时仍照跑（disclosure 写入回执）")
++    fresh = C.require_fresh("sw_pit", allow_stale=ap.parse_args().allow_stale)
+     on, idy = legs(); sess = on.index
+     ixic = C.yahoo_daily("^IXIC", "5y").pct_change().mul(100).dropna()
+     ev = sorted({sess[sess > d][0] for d in ixic.index[(ixic <= -2) & (ixic.index >= S.START_US)] if (sess > d).any()})
+@@ -80,7 +82,7 @@
+     ax[1].set_title("日内段可捕获收益 vs 一个来回成本"); ax[1].set_ylabel("%"); ax[1].legend(fontsize=8)
+     fig.suptitle("C1 纳指≤-2% 次日科技链：开盘跳空拆分与成本（2024-06→最新，研究级）", fontsize=11); fig.tight_layout()
+     png = OUT / f"c1_gap_split_{ts}.png"; fig.savefig(png, dpi=120)
+-    meta = {"written_et": ts, "png": str(png), "n_events": len(ev), "costs_roundtrip_pct": costs, "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)}
++    meta = {"written_et": ts, "png": str(png), "n_events": len(ev), "costs_roundtrip_pct": costs, "sw_pit_freshness": fresh, "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024)}
+     (OUT / "c1_gap_split_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1))
+     print(json.dumps(meta, ensure_ascii=False)); print(df.to_string())
+ 
+--- /dev/null
++++ b/research/intel/test_sw_freshness.py
+@@ -0,0 +1,28 @@
++"""sw_pit 过期检查 + as-of 成分自测（不联网、不写正式输出）。"""
++import sys, subprocess
++from pathlib import Path
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++import pandas as pd, intel_common as C
++ok, fails = 0, []
++def check(n, c):
++    global ok
++    (ok := ok + 1) if c else fails.append(n); print("PASS" if c else "FAIL", n)
++f = C.check_table_freshness("sw_pit", "2026-10-18")
++check("返回字段齐全", set(f) == {"table", "max_date", "built", "covered_through", "lag_days", "status", "disclosure"})
++check("max_date 取自 manifest in_date_range", f["max_date"] == "2026-09-24")
++check("10-18 判 stale（lag 3 ≥ 3）", f["status"] == "stale" and f["lag_days"] == 3)
++check("10-15 判 ok（lag 2）", C.check_table_freshness("sw_pit", "2026-10-15")["status"] == "ok")
++try:
++    C.require_fresh("sw_pit", "2026-10-18"); check("stale 默认停跑", False)
++except SystemExit as e:
++    check("stale 默认停跑", "STOP" in str(e))
++check("--allow-stale 放行并带 disclosure", "STALE" in C.require_fresh("sw_pit", "2026-10-18", allow_stale=True)["disclosure"])
++sw = pd.DataFrame({"instrument_id": ["a", "b", "c"], "in_date": pd.to_datetime(["2026-09-24", "2026-09-01", "2026-08-01"]),
++                   "out_date": pd.to_datetime([None, "2026-09-24", None])})
++m = set(C.sw_members_asof(sw, "2026-09-24").instrument_id)
++check("变动当天不可用（in_date 18:00 之后才知道）", m == {"b", "c"})
++check("次日生效", set(C.sw_members_asof(sw, "2026-09-25").instrument_id) == {"a", "c"})
++for script in (("intel_event_study.py", "intel_c1_gap_split.py") if C.check_table_freshness("sw_pit")["status"] == "stale" else ()):  # 只在当前 stale 时跑，避免误触发全窗计算
++    r = subprocess.run([sys.executable, str(Path(__file__).parent / script)], capture_output=True, text=True, timeout=60)
++    check(f"{script} 无 --allow-stale 时停跑", r.returncode != 0 and "STOP" in (r.stderr + r.stdout))
++print(f"\n{ok}/{ok+len(fails)} passed"); sys.exit(1 if fails else 0)

@@ -1,0 +1,62 @@
+"""第三档每日起存: 概念板块快照(东财 dc_index/dc_member, 同花顺 ths_index 目录) + 公告 anns_d + 新闻 news(多源) + 研报 research_report.
+只落当日(或 --date YYYYMMDD) 快照, 不回补历史. promotion_approved=false.
+用法: python3 scripts/acquire/tier3_daily_snapshot.py [--date 20261013] [--only concept,anns,news,report]
+"""
+import sys, json, time, argparse, pathlib, pandas as pd
+ROOT=pathlib.Path("/workspace/QuantLab"); sys.path.insert(0,str(ROOT))
+from quantlab.data_sources.tushare_proxy import relay,_to_df
+BASE=ROOT/"data/v2/tier3_daily"
+def call(api,lim=2000,maxpage=200,**kw):
+    out,off=[],0
+    for _ in range(maxpage):
+        for a in range(4):
+            try:
+                s,r=relay(api,limit=lim,offset=off,**kw)
+                if s==200 and isinstance(r,dict): break
+                raise RuntimeError(f"{s} {str(r)[:160]}")
+            except Exception as e:
+                err=e; time.sleep(4*2**a)
+        else: raise RuntimeError(f"{api} {kw} {err}")
+        if (r.get("meta") or {}).get("source_unavailable"): raise RuntimeError(f"{api} source_unavailable(relay meta) {kw}")
+        m=r.get("meta") or {}
+        if m.get("sample") or m.get("probe"): raise RuntimeError(f"{api} relay 只返回样例(meta={m}), 非真实数据 {kw}")
+        df=_to_df(r); out.append(df)
+        if len(df)<lim: break
+        off+=lim; time.sleep(0.2)
+    return pd.concat(out,ignore_index=True) if out else pd.DataFrame()
+def save(kind,d,df,meta):
+    p=BASE/kind/f"{d}.parquet"; p.parent.mkdir(parents=True,exist_ok=True)
+    df=df.copy(); df["snapshot_date"]=d; df["promotion_approved"]=False
+    df.to_parquet(p,index=False); meta[kind]=dict(path=str(p),rows=len(df),status="ok"); print(kind,len(df),flush=True)
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument("--date"); ap.add_argument("--only",default="concept,anns,news,report"); a=ap.parse_args()
+    d=a.date or pd.Timestamp.now(tz="Asia/Shanghai").strftime("%Y%m%d"); only=a.only.split(","); meta={}
+    avail=f"{d} 20:00 Asia/Shanghai (快照落盘时点; 盘后)"
+    jobs={}
+    if "concept" in only:
+        jobs["concept_dc_index"]=lambda: call("dc_index",trade_date=d)
+        jobs["concept_dc_member"]=lambda: call("dc_member",trade_date=d,lim=5000)
+        jobs["concept_ths_index"]=lambda: call("ths_index",lim=5000)
+    if "anns" in only: jobs["anns"]=lambda: call("anns_d",ann_date=d,lim=2000)
+    if "news" in only:
+        def news():
+            parts=[]; errs=[]
+            for src in ["sina","eastmoney","cls","10jqka","wallstreetcn","yicai"]:
+                try:
+                    x=call("news",lim=1500,src=src,start_date=f"{d[:4]}-{d[4:6]}-{d[6:]} 00:00:00",end_date=f"{d[:4]}-{d[4:6]}-{d[6:]} 23:59:59"); x["src"]=src; parts.append(x)
+                except Exception as e: errs.append(f"{src}:{str(e)[:80]}")
+            if not parts: raise RuntimeError("all news sources unavailable: "+"; ".join(errs))
+            return pd.concat(parts,ignore_index=True)
+        jobs["news"]=news
+    if "report" in only: jobs["research_report"]=lambda: call("research_report",trade_date=d,lim=1000)
+    for k,f in jobs.items():
+        try:
+            df=f()
+            if df.empty: meta[k]=dict(rows=0,status="empty")
+            else: save(k,d,df,meta)
+        except Exception as e:
+            meta[k]=dict(status="blocked",reason=str(e)[:300]); print("BLOCK",k,e,flush=True)
+    man=dict(snapshot_date=d,available_at=avail,source="tushare relay (dc_index/dc_member/ths_index/anns_d/news/research_report)",items=meta,promotion_approved=False,built=pd.Timestamp.now().isoformat())
+    (BASE/"manifests").mkdir(parents=True,exist_ok=True); json.dump(man,open(BASE/"manifests"/f"{d}.json","w"),ensure_ascii=False,indent=2)
+    print(json.dumps(man,ensure_ascii=False))
+if __name__=="__main__": main()

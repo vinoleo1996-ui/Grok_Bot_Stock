@@ -1,0 +1,14 @@
+# G1G5 叶8 权重回执：g1g5_ashare_unlock_rebound_v1（研究级，promotion=false，live=false，未跑 Book-Smoke）
+- 预注册（FROZEN 2026-10-13 19:31:43 ET；原写 19:48 有误）：docs/v2/AI_G1G5_UNLOCK_REBOUND_WHO_PAYS_PREREG_ZH.md；脚本 research/g1g5_unlock_rebound_weights.py
+- 权重：output/ai_factory/g1g5_unlock_rebound_daily_weights_20261014_073143.parquet（39412 行/668 日/59 名，与已有包计数不重复）；meta 同目录 run_meta_20261014_073143.json。文件名是 box 时钟，而盒子时钟是 CST（UTC+8）；实际 10-13 19:31:43 ET 开跑，19:32:22 ET 出结果。
+- 数据：share_float_pit.parquet（满窗权威表）；m30_p90 只是 2026-09→10 的滚动子集，不满窗，未用于 X2。
+- 合规：Σw≡1；最小权 0；无 stub；单名 max 4%；行业 max 12%；600519/002371 恒 0；mid_large PIT top300
+- 事件：73 条（2023Q4:9 / 2024:29 / 2025:21 / 2026:14），58 只事件股；日均 5.8 名；全压舱日 15 天
+- 压舱 510300：均值 76.7%（56%–100%）
+- 逐日 Jaccard vs 19 个前包：max 0.167（vs block_trade），无同构硬拒；G6 pass；peak RSS 872MB
+- 去β自检（无成本、未复权）：毛 CAGR 11.60%（510300 9.45%，capacity_adv 12.07%）；MDD −14.89%；β 0.97；残差 α +2.26%/年
+- 残差相关：vs capacity_adv 0.041；vs capacity_adv_negevent 0.037；vs industry_etf_rotation 未算成：那一包持有的是行业 ETF，本自检用的日线拼接取不到 ETF 价格；R4 已判同构 FAIL，这项只是备查。
+- 分年残差 α：2024 +8.89%｜2025 +2.32%｜2026 −7.41%
+- 换手：单边日均 0.74%
+- 失败条件逐条：①不同股票 59≥40，压舱 76.7%≤85% → 过；②Jaccard 过；③ρ 都 <0.5 → 过；④α>0 → 过；⑤只有 2026 一年为负 → 未触发。
+- 判定：按预注册过闸；Alpha 裁定 **WATCH**（docs/v2/AI_G1G5_UNLOCK_REBOUND_WEIGHT_ACCEPT_ZH.md）。软缺口：α 逐年衰减、2026 明显为负；压舱 77%；毛 CAGR 低于主干；事件少（年均约 25 条）；未复权；池锚定 2024-06-28 致 2024H1 轻微前视。

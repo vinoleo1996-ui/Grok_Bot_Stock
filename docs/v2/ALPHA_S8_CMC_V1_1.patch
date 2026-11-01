@@ -1,0 +1,907 @@
+--- a/research/alpha_hiliq_s8_paradigm.py
++++ b/research/alpha_hiliq_s8_paradigm_v1_1.py
+@@ -1,26 +1,123 @@
+-"""§8 paradigm material for HI_LIQ event legs (Alpha). Rules frozen first:
+-docs/v2/ALPHA_HILIQ_S8_PARADIGM_RULES_20261014_ZH.md. Research-grade; live=false; promotion=false; no GP; no Eng.
++"""§8 paradigm material for HI_LIQ legs/leaves (Alpha) — VERSION v1.1.
++Derived from research/alpha_hiliq_s8_paradigm.py (af48bc05fbcfb55e72336806c03455dbf4f0b52079c833aed9f141bece00966c, FROZEN:
++kept unchanged for the v4/v4.1 reproduction chain; do not edit it). Ruling: 主 Agent 2026-10-18 02:44 ET — leaf23/24 §8 and CMC use
++v1.1; new files only; THRESHOLDS UNCHANGED; old-tool results only as a disclosure comparison column; leaf25+ default v1.1.
++POST-HOC (Arch bd3abe5c P3-B; Alpha docs/v2/ALPHA_S8_LAG_SELFCHECK_ZH.md 238b2978): applies to later leaves only; v4/v4.1 verdicts stand.
++Rules frozen first: docs/v2/ALPHA_HILIQ_S8_PARADIGM_RULES_20261014_ZH.md (+ v1.1 anchor clarification appended 2026-10-18).
++
++v1.1 changes vs af48bc05 (nothing else):
++  1. Signal-side exposures (resid_multi: A, A', stacked IC/CMC, C rho) are strictly t−1 relative to the SIGNAL date d:
++       mc   = log float mcap at close d−1          (MC_sig = MC_wide.shift(1)); FMC read from START exactly like af48bc05 (L61), so
++              the START day has no d−1 value → mc NaN → START day dropped from signal residualisation (Arch r2 P1-1 option b)
++       beta = 120-session beta on returns d−120..d−1 (beta.shift(1))
++       mom  = C(d−21)/C(d−121) − 1 = returns d−120..d−21 (C.shift(21)/C.shift(121) − 1)
++       liq  = log ADV20 = mask adv20_yuan[d] = mean amount of the 20 sessions strictly before d (already t−1; unchanged —
++              writer research/strategy_hiliq_universe_v1.py L130–141: prior = sess[sess < S][-ADV_WIN:]; adv = mean)
++       SW L1 = members effective ON the snapshot date (in_date ≤ snap < out_date), snapshot = last month-end session ≤ d (a month-end
++              day uses its same-day members; SW changes are pre-announced); pool = mask in_universe[d] (ADV / previous bar from
++              sessions < d; ST / suspension = day-d status, known pre-open).
++  2. B (resid_ret: neutralised return on return day r) keeps the ORIGINAL exposure set X at r−1 (xmat(c, d0=r−1)) — unchanged.
++  3. Forward return F truncated at END: F[d] = C[d+20]/C[d] − 1 only if d+20 ≤ END (else NaN); checked (last H rows all NaN).
++  4. vol20 is NOT used (not part of the frozen style set).
++  5. SW L1 first-month fix (Arch 31b4b8ba P2-3; 主 Agent 2026-10-18 ruling = FIX), applies to BOTH X_sig and the B set X: af48bc05
++     took snapshots only from window month-ends, so 2024-06-03..2024-06-27 had NO industry (all '_UNK'). v1.1 adds exactly ONE
++     pre-window snapshot 2024-05-31 (combo_v1_1.sw_snapshot_dates asserts it is the only date < START; SW member table only, no
++     prices / returns for it); check_ind_coverage refuses any window day whose pool is entirely unclassified.
++     Pre-window market data (主 Agent 02:59 / 03:10; Arch 6ab489c8 P1-1): the ONLY pre-window market data read is the inherited price
++     look-back for beta / mom — same read range (PRICE_START = "2023-06-01" .. "2026-11-30", byte-identical to af48bc05 L36, asserted),
++     same window lengths (beta 120 min 60; mom span 100), same source (ADG.bench / ADG._close), same formulas; after the 02:44 t−1 shift
++     the earliest price touched is one session earlier (d−121), still inside the same read range. Float mcap is read from START (asserted).
++     Diff vs af48bc05 (disclosed): the START day 2024-06-03 has no mc_{t−1} and is dropped from A / A′ / C (signal side); B (X at r−1)
++     is unaffected.
++  6. Run gate (as __main__): ok_runner_pin.enforce (c7805d9a, itself a pinned dep) mode 'full' → research/alpha_v1_1_runguard (pinned)
++     ok_selfcheck (expires_et tz-aware & not expired, scope=full, no BOM, LF, every known allow_* explicit, only allow_full true; .ok
++     out_dir if present must equal --out-dir) → out_dir must be empty → RSS watchdog (0.5 s poll, 1,536,000 KB) + RLIMIT_AS backstop →
++     heavy imports. Import closure (docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest, pinned) verified after build and before writing; .ok
++     re-checked before writing. Outputs exclusive-create.
++  7. Leaves to evaluate are passed with --leaf NAME=PATH (repeatable; each pinned as dep_sha256_leaf_<NAME>); without --leaf the five
++     frozen HI_LIQ event legs are evaluated (comparison only).
+ Universe HI_LIQ_V1.1 mask; window X2 2024-06-03..2026-10-09; h=20; styles: SW L1 + log float mcap + beta120 + mom(t-120..t-20) + log ADV20.
++Research-grade; live=false; promotion=false; no GP; no Eng.
+ """
+ from __future__ import annotations
+-import sys, json, time
++import sys, json, time, argparse
+ from pathlib import Path
+-import numpy as np, pandas as pd
+ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT))
+-import research.alpha_decay_gate as ADG
+-from research.alpha_combo_marginal import ic_tstats, nw_se
+-OUT = ROOT / "output/alpha/hiliq_s8"; OUT.mkdir(parents=True, exist_ok=True)
++TOOL_VERSION = "v1.1"
++OUT_DEFAULT = ROOT / "output/alpha/hiliq_s8_v1_1"
+ MASK = ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
+ LEGD = ROOT / "output/strategy_hiliq/legs"
+ CAP = LEGD / "g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet"
++FMC = ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
+ LEGS = {"equity_incentive": "202436", "earnings_event": "202822", "insider_increase": "202928",
+         "insurer_surv": "203108", "report_rc_allup": "203201"}
+ TYPE_CAP = {"report_rc_allup": "report", "insurer_surv": "survey"}
+-START, END, H, COST, BAL = "2024-06-03", "2026-10-09", 20, ADG.COST, "510300.SH"
++START, END, H, BAL = "2024-06-03", "2026-10-09", 20, "510300.SH"
+ TIERS = {"60w": 6, "100w": 10}
++PRICE_START, PRICE_END = "2023-06-01", "2026-11-30"   # inherited from af48bc05 L36; asserted unchanged
++MANIFEST = ROOT / "docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest"   # sha256sum format; full static import closure (incl. quantlab/*)
++CODE_DEPS = {"adg": ROOT / "research/alpha_decay_gate.py", "combo_v1_1": ROOT / "research/alpha_combo_marginal_v1_1.py",
++             "adj_price": ROOT / "research/adj_price.py", "panel_stitch": ROOT / "research/g1g5_x2_panel_stitch.py",
++             "nontextbook": ROOT / "research/g1g5_nontextbook_weights.py", "hiliq_universe": ROOT / "research/hiliq_v1_universe.py",
++             "metrics": ROOT / "quantlab/metrics.py",
++             "selfcheck_v3": ROOT / "research/leaf_selfcheck_v3.py", "selfcheck_common": ROOT / "research/leaf_selfcheck_common.py",
++             "ai_debate_memory_runner": ROOT / "research/ai_debate_memory_runner.py", "g1g5_wiring": ROOT / "research/g1g5_wiring.py",
++             "g1g5_expand_g6": ROOT / "research/g1g5_expand_g6.py", "ok_runner_pin": ROOT / "scripts_eng/ok_runner_pin.py",
++             "runguard": ROOT / "research/alpha_v1_1_runguard.py", "closure_manifest": MANIFEST}
+ log = lambda *a: print(time.strftime("%H:%M:%S"), *a, flush=True)
+ 
+ 
++def _cli():
++    ap = argparse.ArgumentParser(description="Alpha §8 paradigm v1.1 (HI_LIQ). Requires an Arch .ok.")
++    ap.add_argument("--arch-ok", required=True, help="Arch run-auth .ok pinning runner_sha256_alpha_hiliq_s8_paradigm_v1_1 + deps")
++    ap.add_argument("--leaf", action="append", default=[], help="NAME=PATH of a daily target-weight parquet (repeatable)")
++    ap.add_argument("--out-dir", default=str(OUT_DEFAULT))
++    return ap.parse_args()
++
++
++def _leaves(a) -> dict:
++    out = {}
++    for s in a.leaf:
++        if "=" not in s: raise SystemExit(f"--leaf must be NAME=PATH, got {s!r}")
++        k, p = s.split("=", 1); k = k.strip()
++        if not k.replace("_", "").isalnum() or k in out: raise SystemExit(f"bad/duplicate leaf name {k!r}")
++        out[k] = (ROOT / p) if not Path(p).is_absolute() else Path(p)
++    return out
++
++
++def _deps(leaves: dict) -> dict:
++    d = {"mask": MASK, "float_mktcap": FMC, "capacity_adv_leg": CAP, **CODE_DEPS}
++    if leaves:
++        d.update({f"leaf_{k}": p for k, p in leaves.items()})
++    else:
++        d.update({f"leg_{k}": LEGD / f"g1g5_{k}_hiliq_v1_daily_weights_20261014_{st}.parquet" for k, st in LEGS.items()})
++    return d
++
++
++_GATE = _OKREC = _WD = None
++if __name__ == "__main__":   # gate BEFORE heavy imports (Arch selftest spec 1aa43bdd §4 pattern; runner gate c7805d9a)
++    _A = _cli(); _LV = _leaves(_A)
++    sys.path.insert(0, str(ROOT / "scripts_eng"))
++    from ok_runner_pin import enforce
++    _GATE = enforce(__file__, [_A.arch_ok], modes=["full"], deps=_deps(_LV))
++    import research.alpha_v1_1_runguard as RG   # pinned above (dep_sha256_runguard); stdlib only
++    _OUTD = RG.precheck_out_dir(_A.out_dir)
++    _OKREC = RG.ok_selfcheck([_A.arch_ok], _GATE, "full", out_target=_OUTD)
++    _MAN0 = RG.verify_manifest_shas(MANIFEST, "startup")
++    _WD = RG.start_watchdog(rlimit_as_kb=RG.rlimit_as_kb())
++
++import numpy as np, pandas as pd   # noqa: E402  (after the gate)
++import research.alpha_decay_gate as ADG   # noqa: E402
++from research.alpha_combo_marginal_v1_1 import ic_tstats, nw_se, sw_snapshot_dates, check_ind_coverage, check_f_truncated, check_fmc_lower_bound   # noqa: E402  (v1.1; no old-tool import)
++COST = ADG.COST
++OUT = OUT_DEFAULT
++
++
++def _rss_kb() -> int:
++    import resource
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++
++
+ def panel():
+     cp = OUT / "_panel_close.parquet"
+     mk = pd.read_parquet(MASK, columns=["date", "instrument", "in_universe", "adv20_yuan"],
+@@ -33,13 +130,15 @@
+     if cp.exists():
+         C = pd.read_parquet(cp)
+     else:
+-        b = ADG.bench(); days = b.index[(b.index >= "2023-06-01") & (b.index <= "2026-11-30")]
++        if (PRICE_START, PRICE_END) != ("2023-06-01", "2026-11-30"): raise RuntimeError("price read range must stay identical to af48bc05")
++        b = ADG.bench(); days = b.index[(b.index >= PRICE_START) & (b.index <= PRICE_END)]
+         cols = {}
+         for k, i in enumerate(U):
+             try: cols[i] = ADG._close(i).reindex(days)
+             except Exception: pass
+             if k % 200 == 0: log("close", k, len(U))
+-        C = pd.DataFrame(cols); C["__b"] = b.reindex(days); C.to_parquet(cp)
++        C = pd.DataFrame(cols); C["__b"] = b.reindex(days)
++        with open(cp, "xb") as f: C.to_parquet(f)
+     rb = C.pop("__b").pct_change()
+     C = C.reindex(columns=U)
+     return U, INU, ADV, C, rb
+@@ -49,45 +148,61 @@
+     U, INU, ADV, C, rb = panel()
+     R = C.pct_change(fill_method=None)
+     ev = INU.index[(INU.index >= START) & (INU.index <= END)]
+-    beta = R.rolling(120, min_periods=60).cov(rb).div(rb.rolling(120, min_periods=60).var(), axis=0)
+-    mom = C.shift(20) / C.shift(120) - 1
+-    F = C.shift(-H) / C - 1
++    beta = R.rolling(120, min_periods=60).cov(rb).div(rb.rolling(120, min_periods=60).var(), axis=0)   # info: returns d−119..d
++    mom = C.shift(20) / C.shift(120) - 1                                                                  # info: returns d−119..d−20
++    beta_sig = beta.shift(1)                                                                              # v1.1: returns d−120..d−1
++    mom_sig = C.shift(21) / C.shift(121) - 1                                                              # v1.1: returns d−120..d−21
++    Ce = C.loc[:END]                                                                                       # v1.1: F truncated at END
++    F = Ce.shift(-H) / Ce - 1                                                                              # NaN when d+H > END
+     from research.g1g5_x2_panel_stitch import to_panel_id
+     from research.g1g5_nontextbook_weights import _load_sw_members
+     from research.hiliq_v1_universe import industry_on_date
+     pids = {to_panel_id(i): i for i in U}
+-    fm = pd.read_parquet(ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet",
+-                         columns=["instrument_id", "trade_date", "float_mktcap"],
+-                         filters=[("trade_date", ">=", pd.Timestamp(START)), ("instrument_id", "in", list(pids))])
++    fm = pd.read_parquet(FMC, columns=["instrument_id", "trade_date", "float_mktcap"],
++                         filters=[("trade_date", ">=", pd.Timestamp(START)), ("instrument_id", "in", list(pids))])   # == af48bc05 L61
++    fmc_min = check_fmc_lower_bound(fm["trade_date"])
+     fm["i"] = fm.instrument_id.map(pids)
+-    MC = np.log(fm.pivot_table(index="trade_date", columns="i", values="float_mktcap").reindex(ev).ffill()).reindex(columns=U)
++    FMp = fm.pivot_table(index="trade_date", columns="i", values="float_mktcap"); del fm
++    MC = np.log(FMp.reindex(ev).ffill()).reindex(columns=U)                                               # B set: unchanged (close d)
++    cal = C.index[(C.index >= pd.Timestamp(START)) & (C.index <= pd.Timestamp(END))]
++    MC_sig = np.log(FMp.reindex(cal).ffill()).shift(1).reindex(ev).reindex(columns=U)                    # v1.1: close d−1; START NaN
++    if MC_sig.loc[pd.Timestamp(START)].notna().any(): raise RuntimeError("START-day mc_{t−1} must be NaN (no pre-window float mcap)")
++    del FMp
++    check_f_truncated(Ce, F, ev)
+     sw = _load_sw_members()
+-    me = pd.Series(ev, index=ev).groupby(ev.to_period("M")).max().values
++    me = sw_snapshot_dates(C.index[C.index <= pd.Timestamp(END)], ev)                                    # v1.1: + 2024-05-31 (SW table only)
+     IND = pd.DataFrame([industry_on_date(U, d, sw) for d in me], index=me).reindex(columns=U).reindex(ev, method="ffill")
+-    X = dict(mc=MC, beta=beta.reindex(ev), mom=mom.reindex(ev), liq=np.log(ADV.reindex(ev).clip(lower=1)))
+-    return dict(U=U, ev=ev, INU=INU.reindex(ev), R=R, F=F.reindex(ev), X=X, IND=IND)
++    INUe = INU.reindex(ev).fillna(False).astype(bool)
++    indcov = check_ind_coverage(IND, {d: list(INUe.columns[INUe.loc[d].values]) for d in ev})
++    liq = np.log(ADV.reindex(ev).clip(lower=1))                                                           # mask adv20[d] = d−20..d−1
++    X = dict(mc=MC, beta=beta.reindex(ev), mom=mom.reindex(ev), liq=liq)                                 # B (resid_ret at r−1): unchanged
++    X_sig = dict(mc=MC_sig, beta=beta_sig.reindex(ev), mom=mom_sig.reindex(ev), liq=liq)                 # signal residualisation: t−1
++    return dict(U=U, ev=ev, INU=INU.reindex(ev), R=R, F=F.reindex(ev), X=X, X_sig=X_sig, IND=IND, ind_coverage=indcov,
++                sw_snapshots=[str(pd.Timestamp(x).date()) for x in me],
++                reads=dict(price_start=str(C.index.min().date()), fmc_earliest_trade_date=fmc_min, start_day_skipped_signal_side=START))
+ 
+ 
+ _XC = {}
+ 
+ 
+-def xmat(c, d):
+-    """Cached (pool, Xm) for day d: intercept + styles + SW L1 dummies, rows with complete styles."""
+-    if d not in _XC:
++def xmat(c, d, key="X"):
++    """Cached (pool, Xm) for day d: intercept + styles (exposure set c[key]: 'X' = B set, 'X_sig' = signal set) + SW L1 dummies."""
++    ck = (d, key)
++    if ck not in _XC:
+         pool = c["INU"].columns[c["INU"].loc[d].values]
+-        Xd = pd.DataFrame({k: v.loc[d, pool] for k, v in c["X"].items()})
++        Xd = pd.DataFrame({k: v.loc[d, pool] for k, v in c[key].items()})
+         Xd = Xd.join(pd.get_dummies(c["IND"].loc[d, pool].fillna("_UNK"), dtype=float))
+         ok = Xd.notna().all(axis=1)
+         Xd = Xd[ok]
+-        _XC[d] = (Xd.index, np.c_[np.ones(len(Xd)), Xd.values.astype(float)])
+-    return _XC[d]
++        _XC[ck] = (Xd.index, np.c_[np.ones(len(Xd)), Xd.values.astype(float)])
++    return _XC[ck]
+ 
+ 
+ def resid_multi(c, Ss: dict, extra: pd.DataFrame | None = None) -> dict:
+-    """Residualize several signals at once; z-score per day. extra = one additional regressor panel."""
++    """Residualize several signals at once on the SIGNAL exposure set (t−1, v1.1); z-score per day."""
+     out = {k: pd.DataFrame(np.nan, index=c["ev"], columns=c["U"]) for k in Ss}
+     for d in c["ev"]:
+-        pool, Xm = xmat(c, d)
++        pool, Xm = xmat(c, d, "X_sig")
+         if len(pool) < 50: continue
+         if extra is not None: Xm = np.c_[Xm, extra.loc[d, pool].values]
+         Y = np.column_stack([Ss[k].loc[d, pool].values for k in Ss])
+@@ -99,11 +214,11 @@
+ 
+ 
+ def resid_ret(c):
+-    """Daily cross-sectional residual returns vs industry+style exposures at t-1 = return relative to neutralized HI_LIQ pool."""
++    """Daily cross-sectional residual returns vs industry+style exposures at t-1 (= return day r−1; ORIGINAL set X, unchanged)."""
+     E = pd.DataFrame(np.nan, index=c["ev"], columns=c["U"]); evs = list(c["ev"])
+     for k in range(1, len(evs)):
+         d0, d = evs[k - 1], evs[k]
+-        pool, Xm = xmat(c, d0)
++        pool, Xm = xmat(c, d0, "X")
+         y = c["R"].loc[d, pool].values; ok = ~np.isnan(y)
+         if ok.sum() < 50: continue
+         cf, *_ = np.linalg.lstsq(Xm[ok], y[ok], rcond=None)
+@@ -149,20 +264,23 @@
+                 t_hac5=float(n.mean() / se) if se > 0 else None, active_day_frac=float(act.mean()), series=n)
+ 
+ 
+-def run():
++def run(leaves: dict, gate: dict | None, hooks: dict | None = None):
++    """hooks (from __main__): after_build() / before_write() → receipts (closure manifest check, .ok re-check); recorded in meta."""
++    hooks = hooks or {}; rcpt = {}
+     t0 = time.time(); c = build(); log("ctx", round(time.time() - t0))
++    if "after_build" in hooks: rcpt["after_build"] = hooks["after_build"]()
+     E = resid_ret(c); log("resid_ret")
+     Scap = sig(c, CAP)
+-    SL = {leg: sig(c, LEGD / f"g1g5_{leg}_hiliq_v1_daily_weights_20261014_{st}.parquet") for leg, st in LEGS.items()}
++    paths = leaves if leaves else {leg: LEGD / f"g1g5_{leg}_hiliq_v1_daily_weights_20261014_{st}.parquet" for leg, st in LEGS.items()}
++    SL = {k: sig(c, p) for k, p in paths.items()}
+     ZA = resid_multi(c, {"cap": Scap, **SL}); log("resid A")
+     ZI = resid_multi(c, SL, extra=Scap); log("resid A_prime")
+     Zcap = ZA["cap"]; ICcap = ic_series(c, Zcap)
+     cap_to = float(Scap.diff().abs().sum(axis=1).mean())
+     cb = neut_net(E, topn(Scap, 25)); capB = {t: cb for t in TIERS}  # capacity_adv own sleeve (≤25 names) as fast/slow reference
+     res = dict(cap=dict(ic=icpack(ICcap), to_daily=cap_to, neut_net=capB["60w"] | {"series": None}))
+-    for leg, st in LEGS.items():
++    for leg, p in paths.items():
+         log("leg", leg)
+-        p = LEGD / f"g1g5_{leg}_hiliq_v1_daily_weights_20261014_{st}.parquet"
+         S = SL[leg]; Za = ZA[leg]; A = icpack(ic_series(c, Za))
+         Zi = ZI[leg]; Ap = icpack(ic_series(c, Zi))
+         combo = (0.8 * Zcap + 0.2 * Zi.fillna(0)).where(Zcap.notna()); ICc = ic_series(c, combo)
+@@ -189,6 +307,7 @@
+                   beta_on_cap=float(cf[1]), corr_neut_ret_vs_cap=float(np.corrcoef(x, y)[0, 1]))
+         cmc = dict(d_ic=float(dIC.mean()), d_icir_full=ccomb["icir_full"] - ccap["icir_full"], d_icir_roll252_median=d_icir_roll,
+                    d_ic_tstats=ic_tstats(dIC, H))
++        # thresholds UNCHANGED vs af48bc05
+         vA = A["rank_ic"] > 0 and A["icir_full"] > 0 and (A["icir_roll252_median"] or -1) > 0
+         vAp = Ap["rank_ic"] > 0 and cmc["d_ic"] >= 0.003 and cmc["d_icir_full"] >= 0.05 and (d_icir_roll is not None and d_icir_roll >= 0.05)
+         vB = all(B[t]["ann_net_excess"] > 0 for t in TIERS)
+@@ -196,15 +315,39 @@
+         allp = vA and vAp and vB and vC
+         status = "RESEARCH_ACCEPT" if allp else "WATCH"
+         if leg in TYPE_CAP and allp: status = "WATCH"
+-        res[leg] = dict(stamp=st, file=str(p.relative_to(ROOT)), A=A, A_prime=Ap, cmc=cmc, B=B, C=Cc,
++        res[leg] = dict(file=str(Path(p).resolve().relative_to(ROOT)) if str(Path(p).resolve()).startswith(str(ROOT)) else str(p),
++                        A=A, A_prime=Ap, cmc=cmc, B=B, C=Cc,
+                         verdict=dict(A=vA, A_prime=vAp, B=vB, C=vC, all_pass=allp, type_cap=TYPE_CAP.get(leg), status=status))
+         log(leg, res[leg]["verdict"])
+-    res["meta"] = dict(rules="docs/v2/ALPHA_HILIQ_S8_PARADIGM_RULES_20261014_ZH.md", universe="HI_LIQ_V1.1", window=[START, END], h=H,
++    res["meta"] = dict(tool_version=TOOL_VERSION, ruling="主 Agent 2026-10-18 02:44 ET", thresholds="unchanged vs af48bc05",
++                       post_hoc="applies to later leaves only (leaf23/24 onward); v4/v4.1 verdicts stand",
++                       frozen_predecessor="research/alpha_hiliq_s8_paradigm.py af48bc05 (not imported)",
++                       rules="docs/v2/ALPHA_HILIQ_S8_PARADIGM_RULES_20261014_ZH.md", universe="HI_LIQ_V1.1", window=[START, END], h=H,
++                       exposure_anchor=dict(signal="t−1 vs signal date d (mc close d−1; beta ret d−120..d−1; mom ret d−120..d−21; liq amt d−20..d−1)",
++                                            B="r−1 vs return day r (original set X, unchanged)", F="truncated at END",
++                                            ind="SW L1 members effective on the last month-end session ≤ d (same-day members on that date); "
++                                                "2024-06-03..06-27 use the 2024-05-31 snapshot (only pre-window snapshot)",
++                                            pool="mask in_universe[d] (ADV/prev bar from sessions < d; ST/suspension = day-d status, known pre-open)"),
++                       ind_coverage=c["ind_coverage"], sw_snapshot_dates_head=c["sw_snapshots"][:3], reads=c["reads"],
++                       diff_vs_af48bc05=["signal mc/beta/mom at t−1", "SW L1 2024-06-03..06-27 from the 2024-05-31 snapshot (was all _UNK; X_sig and B)",
++                                         "START day 2024-06-03 dropped from signal residualisation (no mc_{t−1}; float mcap read from START as before)"],
++                       vol20_used=False, gate=gate, peak_rss_kb=_rss_kb(),
+                        live=False, promotion_approved=False, gp=False, eng_dispatched=False,
+                        caveat="B uses capacity_adv top-25 sleeve as fast/slow reference; T+1 approximated by 2-day lag on close-to-close residual returns; not Eng X2.")
+-    (OUT / "ALPHA_HILIQ_S8_20261014.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=lambda o: None))
+-    log("done", round(time.time() - t0))
++    if "before_write" in hooks: rcpt["before_write"] = hooks["before_write"]()
++    res["meta"]["run_guard"] = rcpt; res["meta"]["peak_rss_kb"] = _rss_kb()
++    with open(OUT / "ALPHA_HILIQ_S8_v1_1.json", "x", encoding="utf-8") as f:
++        f.write(json.dumps(res, ensure_ascii=False, indent=2, default=lambda o: None))
++    log("done", round(time.time() - t0), "peak_rss_kb", _rss_kb())
++
++
++def _before_write():
++    cl = RG.verify_closure(MANIFEST, "before write"); RG.recheck_expiry(_OKREC, "before write")
++    return dict(closure=dict(startup=_MAN0, before_write=cl), ok_selfcheck=_OKREC, watchdog=_WD, env=RG.env_snapshot(), vm_peak_kb=RG.vm_peak_kb())
+ 
+ 
+ if __name__ == "__main__":
+-    run()
++    OUT = _OUTD
++    OUT.mkdir(parents=True, exist_ok=True)
++    RG.precheck_out_dir(OUT)
++    run(_LV, _GATE, hooks=dict(after_build=lambda: RG.verify_closure(MANIFEST, "after build"), before_write=_before_write))
+--- a/research/alpha_combo_marginal.py
++++ b/research/alpha_combo_marginal_v1_1.py
+@@ -1,34 +1,127 @@
+-"""CMC per docs/v2/ALPHA_LEAF_ACCEPT_V2_PREREG_ZH.md §1 (Alpha-owned thresholds; AI produces data, no verdict).
++"""CMC per docs/v2/ALPHA_LEAF_ACCEPT_V2_PREREG_ZH.md §1 (Alpha-owned thresholds; AI produces data, no verdict) — VERSION v1.1.
++Derived from research/alpha_combo_marginal.py (bee230199ac27bf9730aa77c63b104a67bb104229622c57524867a9b54a5c51c, FROZEN: not edited,
++not imported). Ruling: 主 Agent 2026-10-18 02:44 ET — leaf23/24 §8 and CMC use v1.1; THRESHOLDS UNCHANGED; legacy-tool results only as a
++disclosure comparison column (read from an existing legacy JSON output, --legacy-json); leaf25+ default v1.1. POST-HOC (Arch bd3abe5c P3-B;
++Alpha docs/v2/ALPHA_S8_LAG_SELFCHECK_ZH.md): applies to later leaves only.
++v1.1 changes vs bee23019 (nothing else in the CMC arithmetic):
++  1. Signal residualisation exposures (resid_z) strictly t−1 vs the signal date d:
++       mc   = log float mcap at close d−1   (was close d)          — ctx(): MC_sig = MC_cal.shift(1); FMC read from START exactly
++              like bee23019 (L95), so the START day has no d−1 value → mc NaN → START day skipped in resid_z (Arch r2 P1-1 option b)
++       beta = 120-session beta on returns d−120..d−1 (was ..d)      — ctx(): beta.shift(1)
++     SW L1 = members effective ON the snapshot date (in_date ≤ snap < out_date), snapshot = last month-end session ≤ d (a month-end
++     day d itself uses its same-day members; SW changes are pre-announced); pool = mask in_universe[d] (ADV / previous bar from
++     sessions < d; ST / suspension = day-d status, known pre-open). CMC uses no mom / liq / vol20 regressors (unchanged).
++  2. SW L1 first-month fix (Arch 31b4b8ba P2-3; 主 Agent 2026-10-18 ruling = FIX): bee23019 took snapshots only from window month-ends,
++     so 2024-06-03..2024-06-27 had NO industry (all '_UNK'). v1.1 adds exactly ONE pre-window snapshot, SW_PRE_SNAPSHOT = 2024-05-31
++     (= last session before START), used for the SW membership lookup only. sw_snapshot_dates() asserts that it is the only snapshot
++     date < START; the lookup reads the SW member table only (no prices / returns / mcap for it). check_ind_coverage() refuses any window
++     day whose pool is entirely unclassified.
++     Pre-window market data (主 Agent 02:59 / 03:10; Arch 6ab489c8 P1-1): the ONLY pre-window market data read is the inherited price
++     look-back for beta — same read range (PRICE_START = "2023-09-01", byte-identical to bee23019 L82, asserted), same window length (120,
++     min 60), same source (ADG.bench / ADG._close), same formula; after the 02:44 t−1 shift the earliest price touched is one session
++     earlier (d−121 instead of d−120), still inside the same read range. Float mcap is read from START (not earlier; asserted).
++     Diff vs bee23019 (disclosed): the START day 2024-06-03 has no mc_{t−1} and is skipped (window shorter by 1 day).
++  3. F (20d fwd adj return) truncated at END (P reindexed to days ≤ END → F[d] NaN when d+20 > END; same as bee23019). Checked by
++     check_f_truncated(): P ends ≤ END and the last H rows of F are all NaN (bee23019-v1.1 draft had a tautological assert).
++  4. Output adds tool_version='v1.1', exposure_anchor, ind_coverage, peak_rss_kb, gate receipt, ok self-check receipt, closure receipt,
++     env QL_X2_EXTEND_END; optional legacy comparison column (disclosure_only).
++  5. Run gate (as __main__): scripts_eng/ok_runner_pin.enforce (c7805d9a, itself a pinned dep) mode 'full' → research/alpha_v1_1_runguard
++     (pinned) ok_selfcheck (expires_et tz-aware and not expired, scope=full, no BOM, LF, every known allow_* explicit, only allow_full
++     true) → --out pre-check → RSS watchdog + RLIMIT_AS backstop → heavy imports. Import closure (docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest,
++     pinned) verified after computing and before writing; .ok re-checked (unchanged, not expired) before writing. --out exclusive create.
+ B0 = B4 paper book for IC combo; tier nav baseline under hiliq = capacity_adv HI_LIQ book-smoke (主 Agent 2026-10-18 00:54 ET), b4 = diagnostic (capacity_adv/earnings_event/insider_increase 50/25/25, current paper weights);
+ B1 = 0.8*B0 + 0.2*leaf (leaf top-N 6/10, merged single name <=6%, overflow 510300).
+-Signals: leg/leaf weight per stock-day (event-holding signal); cross-sectional OLS residual vs SW L1 dummies, log float mcap,
+-rolling-120d beta (and, for candidate, the three B0 leg signals); z-scored per day on the PIT pool
++Signals: leg/leaf weight per stock-day (event-holding signal); cross-sectional OLS residual vs SW L1 dummies, log float mcap_{t−1},
++rolling-120d beta_{t−1} (and, for candidate, the three B0 leg signals); z-scored per day on the PIT pool
+ (universe mask in_universe that day: --universe hiliq [default, gate] = HI_LIQ_V1.1; fulla = FULLA_V1 [diagnostic]).
+-Arch P1 2026-10-14: top300/mid_large default removed (2026-10-17: hiliq also swaps B0 legs/B4 tracks to HI_LIQ_V1.1 artefacts). Significance disclosure (thresholds unchanged): ic_t_naive, ic_t_neff (n/h), ic_t_hac (Newey-West Bartlett, lag=h-1). Combo z: B0 = .5 z_cap + .25 z_ee + .25 z_ins; B1 = .8*B0 + .2*z_leaf.
++Significance disclosure (thresholds unchanged): ic_t_naive, ic_t_neff (n/h), ic_t_hac (Newey-West Bartlett, lag=h-1). Combo z: B0 = .5 z_cap + .25 z_ee + .25 z_ins; B1 = .8*B0 + .2*z_leaf.
+ Metrics: RankIC vs 20d fwd adj return (daily), ICIR full + rolling-252 median, net ΔCAGR/ΔMDD (17.5bp/unit TO) per tier,
+ yearly ΔCAGR, rho(leaf resid, B0 combo). Window = Eng X2 smoke 2024-06-03..2026-10-09. promotion=false; live=false."""
+ from __future__ import annotations
+-import sys, json, os, argparse
++import sys, json, os, argparse, glob, hashlib
+ from pathlib import Path
+-import numpy as np, pandas as pd
+ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT))
+-import research.alpha_decay_gate as ADG
+-import research.leaf_selfcheck_v3 as V3
++TOOL_VERSION = "v1.1"
++LEGACY_SHA = "bee230199ac27bf9730aa77c63b104a67bb104229622c57524867a9b54a5c51c"
+ AF = ROOT / "output/ai_factory"
+ LEGS = {"capacity_adv": AF / "g1g5_capacity_adv_daily_weights_paper_20261013_r2.parquet",
+         "earnings_event": AF / "g1g5_earnings_event_daily_weights_20261014_111825.parquet",
+         "insider_increase": AF / "g1g5_insider_increase_daily_weights_20261014_111825.parquet"}
+ HL = ROOT / "output/strategy_hiliq/legs"
+-# 2026-10-17 Alpha: hiliq (gate) uses HI_LIQ_V1.1 legs + HI_LIQ B4 tracks (no top300/mid_large artefacts); fulla keeps the ai_factory legs (diagnostic).
+ LEGS_BY_UNIVERSE = {"hiliq": {"capacity_adv": HL / "g1g5_capacity_adv_hiliq_v1_1_daily_weights_20261014_195620.parquet",
+                               "earnings_event": HL / "g1g5_earnings_event_hiliq_v1_daily_weights_20261014_202822.parquet",
+                               "insider_increase": HL / "g1g5_insider_increase_hiliq_v1_daily_weights_20261014_202928.parquet"},
+                     "fulla": LEGS}
+-# 主 Agent ruling 2026-10-18 00:54 ET: HI_LIQ leaf CMC/GATE_V3 baseline = capacity_adv HI_LIQ standalone, book-smoke basis
+-# (Strategy X2 target weights; -0.6%/-29.9% @60w, 1.7%/-33.0% @100w). B4 is diagnostic only. Mandatory parallel disclosure: excess vs HI_LIQ pool-EW.
+ CAPADV_BOOK_TRACKS = {"60w": ROOT / "output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK/target_weights.parquet",
+                       "100w": ROOT / "output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK/target_weights.parquet"}
++B4_TRACKS = {"hiliq": {"60w": ROOT / "output/strategy_hiliq/b4/B4_50_25_25_topN_60w.parquet",
++                       "100w": ROOT / "output/strategy_hiliq/b4/B4_50_25_25_topN_100w.parquet"},
++             "fulla": {"60w": ROOT / "output/small_aum_concentration/v2/B_B4_50_25_25_topN_60w_20261013_r2.parquet",     # = leaf_selfcheck_v3.TRACKS["B4"]
++                       "100w": ROOT / "output/small_aum_concentration/v2/B_B4_50_25_25_topN_100w_20261013_r2.parquet"}}
++UNIVERSE_MASKS = {"hiliq": ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet",
++                  "fulla": ROOT / "output/strategy_fulla/universe_mask_fulla_v1.parquet"}
++FMC = ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
++PRICE_START = "2023-09-01"       # inherited from bee23019 L82 (`b.index >= "2023-09-01"`); asserted unchanged
++SW_PRE_SNAPSHOT = "2024-05-31"   # the ONLY SW snapshot date < START (主 Agent 2026-10-18 P2-3 ruling)
++MANIFEST = ROOT / "docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest"   # sha256sum format; full static import closure (incl. quantlab/*)
++CODE_DEPS = {"adg": ROOT / "research/alpha_decay_gate.py", "selfcheck_v3": ROOT / "research/leaf_selfcheck_v3.py",
++             "selfcheck_common": ROOT / "research/leaf_selfcheck_common.py",
++             "nontextbook": ROOT / "research/g1g5_nontextbook_weights.py", "panel_stitch": ROOT / "research/g1g5_x2_panel_stitch.py",
++             "adj_price": ROOT / "research/adj_price.py", "metrics": ROOT / "quantlab/metrics.py",
++             "ai_debate_memory_runner": ROOT / "research/ai_debate_memory_runner.py", "g1g5_wiring": ROOT / "research/g1g5_wiring.py",
++             "g1g5_expand_g6": ROOT / "research/g1g5_expand_g6.py", "ok_runner_pin": ROOT / "scripts_eng/ok_runner_pin.py",
++             "runguard": ROOT / "research/alpha_v1_1_runguard.py", "closure_manifest": MANIFEST}
+ BASE = os.environ.get("ALPHA_CMC_BASE", "capadv")  # capadv (gate default under hiliq) | b4 (diagnostic)
++UNIVERSE = os.environ.get("ALPHA_CMC_UNIVERSE", "hiliq")  # hiliq = gate; fulla = diagnostic only
++
++
++def leaf_path(leaf: str) -> Path:
++    """leaf name (ai_factory, same glob as leaf_selfcheck_v3.wfile) or explicit parquet path."""
++    if str(leaf).endswith(".parquet"): return Path(leaf)
++    fs = sorted(glob.glob(str(AF / f"g1g5_{leaf}_daily_weights_2*.parquet")))
++    if not fs: raise SystemExit(f"no weights file for leaf {leaf!r}")
++    return Path(fs[-1])
++
++
++def gate_deps(leaf: str, universe: str, base: str) -> dict:
++    d = {"mask": UNIVERSE_MASKS[universe], "float_mktcap": FMC, "leaf": leaf_path(leaf), **CODE_DEPS}
++    d.update({f"leg_{k}": p for k, p in LEGS_BY_UNIVERSE[universe].items()})
++    trk = CAPADV_BOOK_TRACKS if (universe == "hiliq" and base == "capadv") else B4_TRACKS[universe]
++    d.update({f"base_{t}": p for t, p in trk.items()})
++    return d
++
++
++def _cli():
++    ap = argparse.ArgumentParser(description="CMC v1.1 (Alpha). hiliq=gate (default), fulla=diagnostic. Requires an Arch .ok.")
++    ap.add_argument("leaf"); ap.add_argument("--universe", choices=list(UNIVERSE_MASKS), default="hiliq")
++    ap.add_argument("--base", choices=["capadv", "b4"], default="capadv", help="hiliq tier baseline: capadv book-smoke (gate, 主 Agent 10-18 00:54) | b4 (diag)")
++    ap.add_argument("--out", default=None)
++    ap.add_argument("--arch-ok", required=True, help="Arch .ok pinning runner_sha256_alpha_combo_marginal_v1_1 + dep_sha256_<key>")
++    ap.add_argument("--legacy-json", default=None, help="existing JSON written by the legacy tool bee23019 for the SAME leaf/universe/base; "
++                                                        "read only (legacy tool is not imported or run); emitted as a disclosure-only comparison column")
++    return ap.parse_args()
++
++
++_GATE = _OKREC = _WD = None
++if __name__ == "__main__":   # gate BEFORE heavy imports (Arch selftest spec 1aa43bdd §4 pattern; runner gate c7805d9a)
++    _A = _cli()
++    sys.path.insert(0, str(ROOT / "scripts_eng"))
++    from ok_runner_pin import enforce
++    _deps = gate_deps(_A.leaf, _A.universe, _A.base)
++    if _A.legacy_json: _deps["legacy_json"] = Path(_A.legacy_json)
++    _GATE = enforce(__file__, [_A.arch_ok], modes=["full"], deps=_deps)
++    import research.alpha_v1_1_runguard as RG   # pinned above (dep_sha256_runguard); stdlib only
++    _OUTP = RG.precheck_out_file(_A.out) if _A.out else None
++    _OKREC = RG.ok_selfcheck([_A.arch_ok], _GATE, "full", out_target=_OUTP.parent if _OUTP else None)
++    _MAN0 = RG.verify_manifest_shas(MANIFEST, "startup")
++    _WD = RG.start_watchdog(rlimit_as_kb=RG.rlimit_as_kb())
++
++import numpy as np, pandas as pd   # noqa: E402  (after the gate)
++import research.alpha_decay_gate as ADG   # noqa: E402
++import research.leaf_selfcheck_v3 as V3   # noqa: E402
++B0W = {"capacity_adv": .5, "earnings_event": .25, "insider_increase": .25}
++START, END = "2024-06-03", "2026-10-09"; COST = ADG.COST; H = 20
++_CTX = {}
+ 
+ 
+ def _load_track(path) -> pd.DataFrame:
+@@ -44,8 +137,8 @@
+     """HI_LIQ (or FULLA) pool equal-weight daily return (close-to-close, clipped ±20%, no cost) — disclosure benchmark."""
+     c = ctx(); R = c["R"]; out = {}
+     for d in R.index:
+-        m = c["mem"].get(d.strftime("%Y-%m-%d"))
+-        if m: out[d] = R.loc[d, [i for i in c["U"] if i in m]].clip(-.2, .2).mean()
++        mm = c["mem"].get(d.strftime("%Y-%m-%d"))
++        if mm: out[d] = R.loc[d, [i for i in c["U"] if i in mm]].clip(-.2, .2).mean()
+     return pd.Series(out).dropna()
+ 
+ 
+@@ -56,17 +149,6 @@
+                 beta_vs_poolEW=be, resid_alpha_vs_poolEW_244=float(res.mean() * 244), t_hac5=float(res.mean() / se) if se > 0 else None)
+ 
+ 
+-B4_TRACKS = {"hiliq": {"60w": ROOT / "output/strategy_hiliq/b4/B4_50_25_25_topN_60w.parquet",
+-                       "100w": ROOT / "output/strategy_hiliq/b4/B4_50_25_25_topN_100w.parquet"},
+-             "fulla": None}  # None -> V3.TRACKS["B4"] (legacy paper B4; diagnostic only)
+-B0W = {"capacity_adv": .5, "earnings_event": .25, "insider_increase": .25}
+-START, END = "2024-06-03", "2026-10-09"; COST = ADG.COST; H = 20
+-_CTX = {}
+-UNIVERSE_MASKS = {"hiliq": ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet",
+-                  "fulla": ROOT / "output/strategy_fulla/universe_mask_fulla_v1.parquet"}
+-UNIVERSE = os.environ.get("ALPHA_CMC_UNIVERSE", "hiliq")  # hiliq = gate; fulla = diagnostic only
+-
+-
+ def set_universe(u: str):
+     global UNIVERSE
+     if u not in UNIVERSE_MASKS: raise ValueError(f"universe must be one of {list(UNIVERSE_MASKS)}")
+@@ -74,31 +156,84 @@
+     UNIVERSE = u
+ 
+ 
++def sw_snapshot_dates(cal: pd.DatetimeIndex, ev: pd.DatetimeIndex) -> pd.DatetimeIndex:
++    """SW L1 snapshot dates = SW_PRE_SNAPSHOT + last session of each window month. Asserts SW_PRE_SNAPSHOT is the last session before
++    START in the calendar and the ONLY snapshot date < START (主 Agent 2026-10-18 P2-3 ruling)."""
++    s0, st = pd.Timestamp(SW_PRE_SNAPSHOT), pd.Timestamp(START)
++    pre = cal[cal < st]
++    if len(pre) == 0 or pre.max() != s0: raise RuntimeError(f"SW pre-window snapshot {SW_PRE_SNAPSHOT} is not the last session before {START}")
++    me = pd.DatetimeIndex([s0]).append(pd.DatetimeIndex(pd.Series(ev, index=ev).groupby(ev.to_period("M")).max().values))
++    if list(me[me < st]) != [s0] or not me.is_monotonic_increasing or me.has_duplicates:
++        raise RuntimeError(f"SW snapshot dates before START must be exactly [{SW_PRE_SNAPSHOT}]: {list(me[me < st])}")
++    return me
++
++
++def check_ind_coverage(IND: pd.DataFrame, pools: dict) -> dict:
++    """Refuse if any window day's pool is entirely unclassified (all '_UNK'); report coverage."""
++    cov = {}
++    for d, pool in pools.items():
++        if len(pool) == 0: continue
++        cov[d] = float(IND.loc[d, pool].notna().mean())
++    bad = [str(pd.Timestamp(d).date()) for d, v in cov.items() if v == 0.0]
++    if bad: raise RuntimeError(f"all-_UNK industry days in window: {bad[:5]} (n={len(bad)})")
++    s = pd.Series(cov)
++    return dict(n_days=int(len(s)), n_all_unk_days=0, min_coverage=float(s.min()), first_day=str(pd.Timestamp(s.index.min()).date()),
++                first_day_coverage=float(s.iloc[0]), mean_coverage=float(s.mean()))
++
++
++def check_f_truncated(P: pd.DataFrame, F: pd.DataFrame, ev: pd.DatetimeIndex):
++    """Replaces the tautological draft assert (Arch 31b4b8ba P3-1): prices end ≤ END and the last H window rows of F are all NaN."""
++    if P.index.max() > pd.Timestamp(END): raise RuntimeError("P extends beyond END")
++    if not F.reindex(ev).iloc[-H:].isna().all().all(): raise RuntimeError("F has values in the last H sessions before END")
++
++
++def check_fmc_lower_bound(trade_dates) -> str | None:
++    """Arch 6ab489c8 P1-1: float mcap rows actually read must all be ≥ START (no pre-window float mcap)."""
++    if len(trade_dates) == 0: return None
++    m = pd.Timestamp(pd.to_datetime(trade_dates).min())
++    if m < pd.Timestamp(START): raise RuntimeError(f"float mcap read before START: {m.date()}")
++    return str(m.date())
++
++
++def _rel(p) -> str:
++    try: return str(Path(p).resolve().relative_to(ROOT))
++    except ValueError: return str(p)
++
++
+ def ctx():
+     if _CTX: return _CTX
+-    import research.g1g5_moneyflow_resid_weights as mf
+     from research.g1g5_nontextbook_weights import _load_sw_members, sw_code_on
+     from research.g1g5_x2_panel_stitch import to_panel_id
+-    b = ADG.bench(); days = b.index[(b.index >= "2023-09-01") & (b.index <= END)]
+-    ev0 = days[(days >= START)]
++    if PRICE_START != "2023-09-01": raise RuntimeError("price read start must stay byte-identical to bee23019 (2023-09-01)")
++    b = ADG.bench(); days = b.index[(b.index >= PRICE_START) & (b.index <= END)]
+     mk = pd.read_parquet(UNIVERSE_MASKS[UNIVERSE], columns=["date", "instrument", "in_universe"],
+                          filters=[("date", ">=", pd.Timestamp(START)), ("date", "<=", pd.Timestamp(END)), ("in_universe", "==", True)])
+     mk["d"] = pd.to_datetime(mk["date"]).dt.strftime("%Y-%m-%d"); mk["instrument"] = mk["instrument"].astype(str)
+     U = sorted(set(mk["instrument"]))
+-    P = pd.DataFrame({i: ADG._close(i) for i in U}).reindex(days)
++    P = pd.DataFrame({i: ADG._close(i) for i in U}).reindex(days)          # days ≤ END → F truncated at END
+     R = P.pct_change(fill_method=None); rb = b.reindex(days).pct_change()
+     beta = R.rolling(120, min_periods=60).cov(rb).div(rb.rolling(120, min_periods=60).var(), axis=0)
++    beta_sig = beta.shift(1)                                                # v1.1: returns d−120..d−1
+     ev = days[(days >= START)]
+     mem = {d: set(g) for d, g in mk.groupby("d")["instrument"]}
+     pids = {to_panel_id(i): i for i in U}
+-    fm = pd.read_parquet(ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet", columns=["instrument_id", "trade_date", "float_mktcap"],
+-                         filters=[("trade_date", ">=", pd.Timestamp(START)), ("instrument_id", "in", list(pids))])
++    fm = pd.read_parquet(FMC, columns=["instrument_id", "trade_date", "float_mktcap"],
++                         filters=[("trade_date", ">=", pd.Timestamp(START)), ("instrument_id", "in", list(pids))])   # == bee23019 L95
++    fmc_min = check_fmc_lower_bound(fm["trade_date"])
+     fm["i"] = fm.instrument_id.map(pids)
+-    MC = np.log(fm.pivot_table(index="trade_date", columns="i", values="float_mktcap").reindex(ev).ffill()).reindex(columns=U)
+-    sw = _load_sw_members(); me = pd.Series(ev, index=ev).groupby(ev.to_period("M")).max().values
++    FMp = fm.pivot_table(index="trade_date", columns="i", values="float_mktcap"); del fm
++    cal = days[days >= pd.Timestamp(START)]
++    MC_sig = np.log(FMp.reindex(cal).ffill()).shift(1).reindex(ev).reindex(columns=U)   # v1.1: close d−1; START row NaN (skipped)
++    if MC_sig.loc[pd.Timestamp(START)].notna().any(): raise RuntimeError("START-day mc_{t−1} must be NaN (no pre-window float mcap)")
++    del FMp
++    sw = _load_sw_members(); me = sw_snapshot_dates(days, ev)                  # v1.1: + 2024-05-31 (SW table only)
+     IND = pd.DataFrame({i: [sw_code_on(i, d, sw) for d in me] for i in U}, index=me).reindex(ev, method="ffill")
++    indcov = check_ind_coverage(IND, {d: [i for i in U if i in mem.get(d.strftime("%Y-%m-%d"), set())] for d in ev})
+     F = P.shift(-H) / P - 1
+-    _CTX.update(R=R.reindex(ev), universe=UNIVERSE, mask=str(UNIVERSE_MASKS[UNIVERSE].relative_to(ROOT)), U=U, ev=ev, mem=mem, beta=beta.reindex(ev), MC=MC, IND=IND, F=F.reindex(ev))
++    check_f_truncated(P, F, ev)
++    _CTX.update(R=R.reindex(ev), universe=UNIVERSE, mask=_rel(UNIVERSE_MASKS[UNIVERSE]), U=U, ev=ev, mem=mem,
++                beta=beta_sig.reindex(ev), MC=MC_sig, IND=IND, F=F.reindex(ev), ind_coverage=indcov, sw_snapshots=[str(x.date()) for x in me],
++                reads=dict(price_start=str(days.min().date()), fmc_earliest_trade_date=fmc_min, start_day_skipped=START))
+     return _CTX
+ 
+ 
+@@ -109,6 +244,7 @@
+ 
+ 
+ def resid_z(S: pd.DataFrame, extra: list[pd.DataFrame] | None = None) -> pd.DataFrame:
++    """Residualise on SW L1 + mc_{t−1} + beta_{t−1} (v1.1) [+ extra signals at d]; z-score per day."""
+     c = ctx(); out = pd.DataFrame(np.nan, index=S.index, columns=S.columns)
+     for d in S.index:
+         pool = [i for i in c["U"] if i in c["mem"].get(d.strftime("%Y-%m-%d"), set())]
+@@ -160,7 +296,7 @@
+ 
+ 
+ def m(r):
+-    nav = (1 + r).cumprod(); return dict(cagr=float(nav.iloc[-1] ** (244 / len(r)) - 1), mdd=float((nav / nav.cummax() - 1).min()))  # AI 2026-10-14: CAGR 年化 244 主报（quantlab/metrics.PERIODS）
++    nav = (1 + r).cumprod(); return dict(cagr=float(nav.iloc[-1] ** (244 / len(r)) - 1), mdd=float((nav / nav.cummax() - 1).min()))
+ 
+ 
+ _B0 = {}
+@@ -188,25 +324,33 @@
+ 
+ 
+ def cmc(leaf: str) -> dict:
+-    B = b0(); wf = Path(leaf) if str(leaf).endswith(".parquet") else V3.wfile(leaf)  # leaf name (ai_factory) or explicit parquet path
++    B = b0(); wf = leaf_path(leaf)
+     zl = resid_z(sig(wf), extra=list(B["S"].values()))
+     c1 = (0.8 * B["combo"] + 0.2 * zl.fillna(0)).where(B["combo"].notna())
+     ic1 = ic_stats(c1)
+-    zs = resid_z(sig(wf))  # style-only residual (ind/mcap/beta), for rho reference
++    zs = resid_z(sig(wf))  # style-only residual (ind/mcap/beta at t−1), for rho reference
+     rho = [zs.loc[d].corr(B["combo"].loc[d]) for d in zs.index]
+     rho_post = [zl.loc[d].corr(B["combo"].loc[d]) for d in zl.index]
+-    out = dict(B0_ic=B["ic"], B1_ic=ic1, d_ic=ic1["rank_ic"] - B["ic"]["rank_ic"],
++    out = dict(tool_version=TOOL_VERSION, B0_ic=B["ic"], B1_ic=ic1, d_ic=ic1["rank_ic"] - B["ic"]["rank_ic"],
+                d_icir_full=ic1["icir_full"] - B["ic"]["icir_full"],
+                leaf_file=str(wf), b0_legs={k: str(v) for k, v in LEGS_BY_UNIVERSE[UNIVERSE].items()},
+                universe=UNIVERSE, universe_mask=ctx()["mask"], universe_role="gate" if UNIVERSE == "hiliq" else "diagnostic_only",
+                d_ic_tstats=ic_tstats(_d_ic_series(B["combo"], c1)),
+                d_icir_roll252_median=(ic1["icir_roll252_median"] - B["ic"]["icir_roll252_median"]) if ic1["icir_roll252_median"] is not None and B["ic"]["icir_roll252_median"] is not None else None,
+                rho_leaf_resid_vs_B0=float(np.nanmean(rho)), rho_after_leg_resid=float(np.nanmean(rho_post)),
+-               rho_note="rho 用叶对行业/市值/β 残差化后的信号 vs B0 组合信号（日均截面相关）；再对 B0 腿信号残差化后 ρ≈0（构造使然），另列 rho_after_leg_resid", tiers={})
++               rho_note="rho 用叶对行业/市值/β（t−1）残差化后的信号 vs B0 组合信号（日均截面相关）；再对 B0 腿信号残差化后 ρ≈0（构造使然），另列 rho_after_leg_resid",
++               exposure_anchor=dict(mc="log float mcap at close d−1", beta="returns d−120..d−1 vs 510300",
++                                    ind="SW L1 members effective on the last month-end session ≤ d (same-day members on that date); "
++                                        "2024-06-03..06-27 use the 2024-05-31 snapshot",
++                                    pool="mask in_universe[d] (ADV/prev bar from sessions < d; ST/suspension = day-d status, known pre-open)",
++                                    F="close d → close d+20, NaN if d+20 > END", vol20_used=False, mom_used=False, liq_used=False),
++               ind_coverage=ctx()["ind_coverage"], sw_snapshot_dates_head=ctx()["sw_snapshots"][:3], reads=ctx()["reads"],
++               diff_vs_bee23019=["signal mc/beta at t−1", "SW L1 2024-06-03..06-27 from the 2024-05-31 snapshot (was all _UNK)",
++                                 "START day 2024-06-03 skipped in residualisation (no mc_{t−1}; float mcap read from START as before)"],
++               tiers={})
+     L = V3.LC._w(wf); EW = pool_ew()
+     for tier, N in V3.NT.items():
+-        if UNIVERSE == "hiliq" and BASE == "capadv": trk = CAPADV_BOOK_TRACKS[tier]
+-        else: trk = (B4_TRACKS[UNIVERSE] or V3.TRACKS["B4"])[tier]
++        trk = CAPADV_BOOK_TRACKS[tier] if (UNIVERSE == "hiliq" and BASE == "capadv") else B4_TRACKS[UNIVERSE][tier]
+         b = _load_track(trk)
+         b1 = V3.stack(b, V3.leaf_topn(L, N))
+         r0, r1 = nav_stats(b), nav_stats(b1); ix = r0.index.intersection(r1.index); r0, r1 = r0[ix], r1[ix]
+@@ -221,13 +365,44 @@
+     return out
+ 
+ 
++def legacy_column(path: str, new: dict, pinned_sha256: str) -> dict:
++    """Disclosure-only comparison with an EXISTING legacy (bee23019) JSON output; the legacy tool is not imported or run.
++    Refuses (Arch 31b4b8ba P3-3): bytes read now != the sha pinned by the gate (dep_sha256_legacy_json); a v1.1 output; universe mismatch;
++    leaf file name mismatch; any tier whose base (capadv_hiliq_book_smoke / b4_diag) is missing or differs."""
++    p = Path(path); raw = p.read_bytes(); got = hashlib.sha256(raw).hexdigest()
++    if got != pinned_sha256: raise SystemExit(f"--legacy-json sha {got} != gate-pinned {pinned_sha256} (changed after enforce)")
++    L = json.loads(raw.decode("utf-8"))
++    if L.get("tool_version") == TOOL_VERSION: raise SystemExit("--legacy-json is a v1.1 output, not a legacy one")
++    if str(L.get("universe")) != str(new["universe"]): raise SystemExit(f"--legacy-json universe {L.get('universe')!r} != current {new['universe']!r}")
++    if Path(str(L.get("leaf_file", ""))).name != Path(str(new["leaf_file"])).name:
++        raise SystemExit(f"--legacy-json leaf_file {L.get('leaf_file')!r} != current {new['leaf_file']!r}")
++    for t, nt in new.get("tiers", {}).items():
++        lb = ((L.get("tiers") or {}).get(t) or {}).get("base")
++        if lb != nt.get("base"): raise SystemExit(f"--legacy-json tier {t} base {lb!r} != current {nt.get('base')!r}")
++    keys = ("d_ic", "d_icir_full", "d_icir_roll252_median", "rho_leaf_resid_vs_B0")
++    col = dict(role="disclosure_only (主 Agent 2026-10-18 02:44 ET; verdict uses v1.1)", legacy_tool_sha256=LEGACY_SHA,
++               legacy_leaf_file=L.get("leaf_file"), legacy_json=str(p), legacy_json_sha256=got,
++               legacy={k: L.get(k) for k in keys}, v1_1={k: new.get(k) for k in keys},
++               diff_v1_1_minus_legacy={k: (new[k] - L[k]) if isinstance(new.get(k), (int, float)) and isinstance(L.get(k), (int, float)) else None for k in keys},
++               tiers={})
++    for t, nt in new.get("tiers", {}).items():
++        lt = (L.get("tiers") or {}).get(t, {})
++        col["tiers"][t] = dict(legacy_d_cagr_net=lt.get("d_cagr_net"), v1_1_d_cagr_net=nt.get("d_cagr_net"),
++                               legacy_report_to_leo_eligible=lt.get("report_to_leo_eligible"), v1_1_report_to_leo_eligible=nt.get("report_to_leo_eligible"),
++                               base=nt.get("base"))
++    return col
++
++
+ if __name__ == "__main__":
+-    ap = argparse.ArgumentParser(description="CMC (Alpha). hiliq=gate (default), fulla=diagnostic.")
+-    ap.add_argument("leaf"); ap.add_argument("--universe", choices=list(UNIVERSE_MASKS), default="hiliq")
+-    ap.add_argument("--base", choices=["capadv", "b4"], default="capadv", help="hiliq tier baseline: capadv book-smoke (gate, 主 Agent 10-18 00:54) | b4 (diag)")
+-    ap.add_argument("--out", default=None)
+-    a = ap.parse_args(); set_universe(a.universe); BASE = a.base
+-    r = cmc(a.leaf); r.pop("definition_notes", None); r.update(live=False, promotion_approved=False)
++    set_universe(_A.universe); BASE = _A.base
++    r = cmc(_A.leaf); r.pop("definition_notes", None)
++    if _A.legacy_json: r["legacy_comparison"] = legacy_column(_A.legacy_json, r, _GATE["deps"]["legacy_json"])
++    _CL = RG.verify_closure(MANIFEST, "after compute")
++    RG.recheck_expiry(_OKREC, "before write")
++    r.update(live=False, promotion_approved=False, gate=_GATE, ok_selfcheck=_OKREC, closure=dict(startup=_MAN0, after_compute=_CL),
++             watchdog=_WD, env=RG.env_snapshot(), peak_rss_kb=RG.rss_kb(), vm_peak_kb=RG.vm_peak_kb())
+     txt = json.dumps(r, ensure_ascii=False, indent=2, default=str)
+-    if a.out: Path(a.out).parent.mkdir(parents=True, exist_ok=True); Path(a.out).write_text(txt)
++    if _A.out:
++        _OUTP.parent.mkdir(parents=True, exist_ok=True)
++        with open(_OUTP, "x", encoding="utf-8") as f: f.write(txt)   # exclusive create (pre-checked before computing)
+     print(txt)
+--- /dev/null
++++ b/research/alpha_v1_1_runguard.py
+@@ -0,0 +1,204 @@
++"""Run guard shared by research/alpha_combo_marginal_v1_1.py and research/alpha_hiliq_s8_paradigm_v1_1.py (Alpha, v1.1).
++STDLIB ONLY: it is imported right after scripts_eng/ok_runner_pin.enforce (c7805d9a) has pinned it (dep_sha256_runguard) and BEFORE
++numpy/pandas/project imports. Implements the .ok self-checks c7805d9a does not do (Arch 31b4b8ba P2-2; spec 1aa43bdd §2–§4, §9; same
++pattern as research/g1g5_sue_desens_cs_alpha.py read_ok/not_expired and tests/test_sd1_suspend_delist.py _selftest_selfcheck),
++the import-closure manifest check (Arch 31b4b8ba P2-1), output pre-checks (P3-2) and the RSS watchdog + RLIMIT_AS backstop (P3-4).
++Research-grade; live=false; promotion=false."""
++from __future__ import annotations
++import datetime as _dt, hashlib, os, re, resource, sys, threading, time
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++KNOWN_ALLOW = ("selftest", "real_data", "dryrun", "full", "execute", "smoke", "diagnostic", "disclosure_only")
++ISO_TZ = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2})$")
++KEY = re.compile(r"^[A-Za-z0-9_\[\]./-]+$")
++HEX64 = re.compile(r"^[0-9a-f]{64}$")
++RSS_LIMIT_KB = 1536000                       # Arch: single process ≤ 1.5 GB (= 1500 MiB)
++RLIMIT_AS_KB_DEFAULT = 6291456              # 6 GiB virtual backstop (not RSS; see docstring of start_watchdog)
++RLIMIT_ENV = "ALPHA_V11_RLIMIT_AS_KB"
++
++
++def refuse(msg: str):
++    raise SystemExit(f"REFUSED (alpha_v1_1_runguard): {msg}")
++
++
++def sha256_file(p) -> str:
++    h = hashlib.sha256()
++    with open(p, "rb") as f:
++        for b in iter(lambda: f.read(1 << 20), b""): h.update(b)
++    return h.hexdigest()
++
++
++def read_ok_strict(path) -> dict:
++    """quantlab_run_auth_v1 strict parse: no BOM anywhere, LF only (no CR), whole-line '#' comments and blank lines allowed,
++    every other line ^key=\\S+$ (no spaces, no inline comment), no duplicate key (even with the same value), no empty value."""
++    p = Path(path); raw = p.read_bytes()
++    if b"\xef\xbb\xbf" in raw: refuse(f"{p}: contains a UTF-8 BOM")
++    if b"\r" in raw: refuse(f"{p}: CR line ending (LF only)")
++    kv = {}
++    for n, line in enumerate(raw.decode("utf-8").split("\n"), 1):
++        if line == "" or line.startswith("#"): continue
++        if "=" not in line: refuse(f"{p}: line {n} has no '=': {line[:60]!r}")
++        k, v = line.split("=", 1)
++        if not KEY.fullmatch(k): refuse(f"{p}: line {n} bad key {k[:40]!r}")
++        if v == "" or re.search(r"\s", v) or "#" in v: refuse(f"{p}: line {n} value empty / has whitespace / inline comment: {line[:60]!r}")
++        if k in kv: refuse(f"{p}: key {k!r} duplicated (line {n})")
++        kv[k] = v
++    return kv
++
++
++def tz_iso(v) -> bool:
++    if not isinstance(v, str) or not ISO_TZ.match(v): return False
++    try: d = _dt.datetime.fromisoformat(v)
++    except ValueError: return False
++    return d.tzinfo is not None and d.utcoffset() is not None
++
++
++def not_expired(v) -> bool:
++    return tz_iso(v) and _dt.datetime.fromisoformat(v) > _dt.datetime.now().astimezone()
++
++
++def ok_selfcheck(ok_paths, gate: dict, mode: str, out_target: Path | None = None) -> dict:
++    """After enforce(): every .ok that pins the runner (gate['pins']) must have format/signer, tz-aware signed_et (not in the future)
++    and expires_et (not expired, after signed_et), scope == mode, every KNOWN_ALLOW key explicit true|false, allow_<mode>=true and all
++    other allow_* false (allow_real_data: selftest → false; full → explicit, either value), live/promotion false; optional out_dir must
++    match the actual output location (full) or be mkdtemp / /tmp/<tag> outside the repo (selftest)."""
++    if mode not in ("full", "selftest"): refuse(f"unknown mode {mode!r}")
++    pinning = [Path(o) for o in (gate or {}).get("pins", {})] or [Path(o) for o in ok_paths]
++    now = _dt.datetime.now().astimezone(); rec = {}
++    for o in pinning:
++        kv = read_ok_strict(o)
++        for k, want in (("format", "quantlab_run_auth_v1"), ("signed_by", "arch"), ("scope", mode), ("live", "false"), ("promotion", "false")):
++            if kv.get(k) != want: refuse(f"{o}: {k} must be {want!r} (got {kv.get(k)!r})")
++        for k in ("signed_et", "expires_et"):
++            if not tz_iso(kv.get(k)): refuse(f"{o}: {k}={kv.get(k)!r} is not ISO8601 with a UTC offset")
++        se, ex = _dt.datetime.fromisoformat(kv["signed_et"]), _dt.datetime.fromisoformat(kv["expires_et"])
++        if ex <= now: refuse(f"{o}: expired at {kv['expires_et']}")
++        if ex <= se: refuse(f"{o}: expires_et not after signed_et")
++        if se > now + _dt.timedelta(minutes=5): refuse(f"{o}: signed_et in the future")
++        for m in KNOWN_ALLOW:
++            v = kv.get(f"allow_{m}")
++            if v not in ("true", "false"): refuse(f"{o}: allow_{m} must be written explicitly as true|false (got {v!r})")
++        if kv[f"allow_{mode}"] != "true": refuse(f"{o}: allow_{mode} must be true")
++        for k, v in kv.items():
++            if k.startswith("allow_") and k not in (f"allow_{mode}", "allow_real_data") and v != "false":
++                refuse(f"{o}: {k}={v}; every allow_* other than allow_{mode}/allow_real_data must be false")
++        if mode == "selftest" and kv["allow_real_data"] != "false": refuse(f"{o}: synthetic selftest requires allow_real_data=false")
++        od = kv.get("out_dir")
++        if mode == "selftest":
++            if od != "mkdtemp" and not (od and re.fullmatch(r"/tmp/[A-Za-z0-9._-]+", od)): refuse(f"{o}: out_dir must be mkdtemp or /tmp/<tag> (got {od!r})")
++        elif od is not None and out_target is not None and Path(od if Path(od).is_absolute() else ROOT / od).resolve() != Path(out_target).resolve():
++            refuse(f"{o}: out_dir {od} != actual output location {out_target}")
++        rec[str(o)] = dict(sha256=sha256_file(o), scope=kv["scope"], signed_et=kv["signed_et"], expires_et=kv["expires_et"],
++                           allow_real_data=kv["allow_real_data"], out_dir=od)
++    return rec
++
++
++def recheck_expiry(rec: dict, stage: str):
++    """Re-check before each stage / before writing outputs: same bytes as at start, and not expired."""
++    for o, r in rec.items():
++        if sha256_file(o) != r["sha256"]: refuse(f"{o}: .ok changed since start ({stage})")
++        if not not_expired(r["expires_et"]): refuse(f"{o}: expired at {r['expires_et']} ({stage})")
++
++
++def rlimit_as_kb() -> int:
++    """RLIMIT_AS value: default 6 GiB; env ALPHA_V11_RLIMIT_AS_KB may override but must be an integer > RSS_LIMIT_KB (0 / negative /
++    non-integer / ≤ RSS limit would disable or defeat the backstop → refused, Arch 6ab489c8 P3-1). Recorded in env_snapshot()."""
++    v = os.environ.get(RLIMIT_ENV)
++    if v is None: return RLIMIT_AS_KB_DEFAULT
++    if not re.fullmatch(r"[0-9]+", v.strip()) or int(v) <= RSS_LIMIT_KB:
++        refuse(f"{RLIMIT_ENV}={v!r} must be an integer KB > {RSS_LIMIT_KB} (cannot disable the RLIMIT_AS backstop)")
++    return int(v)
++
++
++def vm_peak_kb() -> int | None:
++    """VmPeak (peak virtual size, KB) from /proc/self/status, for the receipt (Arch 6ab489c8 P3-3)."""
++    try:
++        with open("/proc/self/status") as f:
++            for line in f:
++                if line.startswith("VmPeak:"): return int(line.split()[1])
++    except OSError:
++        return None
++    return None
++
++
++def load_manifest(path) -> dict:
++    """sha256sum-format manifest '<64hex>  <repo-relative path>' (one per line)."""
++    out = {}
++    for n, line in enumerate(Path(path).read_text(encoding="utf-8").split("\n"), 1):
++        if not line or line.startswith("#"): continue
++        m = re.fullmatch(r"([0-9a-f]{64})  (\S+)", line)
++        if not m or m.group(2) in out: refuse(f"{path}: bad/duplicate manifest line {n}: {line[:80]!r}")
++        out[m.group(2)] = m.group(1)
++    return out
++
++
++def verify_closure(manifest_path, stage: str) -> dict:
++    """Arch 31b4b8ba P2-1: every manifest file still has its recorded sha, and every project module loaded in this process (any
++    sys.modules entry whose file lies under the repo) is listed in the manifest. Fail closed."""
++    man = load_manifest(manifest_path)
++    verify_manifest_shas(manifest_path, stage)
++    loaded = set()
++    for mod in list(sys.modules.values()):
++        f = getattr(mod, "__file__", None)
++        if not f: continue
++        try: rel = str(Path(f).resolve().relative_to(ROOT))
++        except ValueError: continue
++        if rel.endswith(".py"): loaded.add(rel)
++    extra = sorted(loaded - set(man))
++    if extra: refuse(f"closure manifest: loaded project modules not in manifest ({stage}): {extra}")
++    return dict(manifest=str(Path(manifest_path).resolve().relative_to(ROOT)), n_listed=len(man), n_loaded=len(loaded), stage=stage)
++
++
++def verify_manifest_shas(manifest_path, stage: str) -> dict:
++    """Every manifest file still has its recorded sha (run at startup too, before heavy imports — Arch 6ab489c8 P3-2)."""
++    man = load_manifest(manifest_path)
++    for rel, h in man.items():
++        if sha256_file(ROOT / rel) != h: refuse(f"closure manifest: {rel} sha changed ({stage})")
++    return dict(n_listed=len(man), stage=stage, all_sha_match=True)
++
++
++def precheck_out_file(p) -> Path:
++    p = Path(p).resolve()
++    if p.exists(): refuse(f"--out {p} already exists (no overwrite; Arch decides cleanup)")
++    return p
++
++
++def precheck_out_dir(p) -> Path:
++    p = Path(p).resolve()
++    if p.exists() and (not p.is_dir() or any(p.iterdir())): refuse(f"out_dir {p} not empty (no overwrite; Arch decides cleanup)")
++    return p
++
++
++def rss_kb() -> int:
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss   # Linux: KB, peak
++
++
++def set_rlimit_as(kb: int):
++    """Hard backstop on VIRTUAL address space (Linux ignores RLIMIT_RSS). Allocation beyond it raises MemoryError instead of growing."""
++    b = int(kb) * 1024
++    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
++    if hard != resource.RLIM_INFINITY: b = min(b, hard)
++    resource.setrlimit(resource.RLIMIT_AS, (b, hard))
++    return b
++
++
++def start_watchdog(limit_kb: int | None = None, poll_s: float = 0.5, rlimit_as_kb: int | None = None, exit_code: int = 3):
++    """Primary: poll peak RSS every poll_s; above limit_kb → print STOP and os._exit(exit_code). Backstop: RLIMIT_AS (virtual, so set
++    well above the RSS limit; pandas/pyarrow reserve virtual memory they never touch). Disclosed: polling can overshoot within poll_s."""
++    lim = RSS_LIMIT_KB if limit_kb is None else int(limit_kb)
++    applied = set_rlimit_as(rlimit_as_kb) if rlimit_as_kb else None
++    def loop():
++        while True:
++            if rss_kb() > lim:
++                print(f"STOP: peak RSS {rss_kb()} KB > {lim} KB", flush=True); os._exit(exit_code)
++            time.sleep(poll_s)
++    threading.Thread(target=loop, daemon=True, name="alpha_v11_rss_watchdog").start()
++    return dict(rss_limit_kb=lim, poll_s=poll_s, rlimit_as_bytes=applied)
++
++
++def env_snapshot() -> dict:
++    """Arch 31b4b8ba P3-9: research/g1g5_x2_panel_stitch.py lets QL_X2_EXTEND_END override X2_END; v1.1 truncates P/F at END so it
++    cannot change results, but its value is recorded in every output."""
++    return {"QL_X2_EXTEND_END": os.environ.get("QL_X2_EXTEND_END"), RLIMIT_ENV: os.environ.get(RLIMIT_ENV),
++            "rlimit_as_kb_effective": rlimit_as_kb()}

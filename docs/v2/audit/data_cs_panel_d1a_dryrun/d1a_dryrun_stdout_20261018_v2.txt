@@ -1,0 +1,12 @@
+GATE_PASS step=D1a_fixesnone_check mode=dryrun ok_sha256=cc04d83d9889f8f4a3ead8a82bce0aa98d23ad94978635d12f1feb068c3ecfae
+2018 {"rows_v1": 783166, "rows": 783166, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 704}
+2019 {"rows_v1": 846470, "rows": 846470, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 908}
+2020 {"rows_v1": 880720, "rows": 880720, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 957}
+2021 {"rows_v1": 983990, "rows": 983990, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1026}
+2022 {"rows_v1": 1087168, "rows": 1087168, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1070}
+2023 {"rows_v1": 1163879, "rows": 1163879, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1119}
+2024 {"rows_v1": 1198136, "rows": 1198136, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1260}
+2025 {"rows_v1": 1204295, "rows": 1204295, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1270}
+2026 {"rows_v1": 924485, "rows": 924485, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1270}
+DRY-RUN PASS: nothing written
+WRAPPER_EXIT 0 PEAK_RSS_KB 1300980

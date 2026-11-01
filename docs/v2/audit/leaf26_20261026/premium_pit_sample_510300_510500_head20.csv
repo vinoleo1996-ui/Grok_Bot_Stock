@@ -1,0 +1,21 @@
+ts_code,trade_date,close,amount,unit_nav,premium,px_available_at,nav_at_use,decision_available_at,premium_pit_rule,promotion_approved
+510300.SH,20180102,4.136,695160.731,4.1346,0.00033860591109191596,2018-01-02 15:00:00,2018-01-03 23:59:00,2018-01-03 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180103,4.158,527466.33,4.1588,-0.00019236318168702748,2018-01-03 15:00:00,2018-01-04 23:59:00,2018-01-04 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180104,4.171,384082.441,4.1765,-0.0013168921345623197,2018-01-04 15:00:00,2018-01-05 23:59:00,2018-01-05 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180105,4.187,531271.769,4.1865,0.00011943150603133112,2018-01-05 15:00:00,2018-01-06 23:59:00,2018-01-06 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180108,4.204,443371.348,4.208,-0.0009505703422054701,2018-01-08 15:00:00,2018-01-09 23:59:00,2018-01-09 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180109,4.238,455234.072,4.2377,7.079311890878515e-05,2018-01-09 15:00:00,2018-01-10 23:59:00,2018-01-10 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180110,4.256,614504.154,4.2564,-9.397613006290051e-05,2018-01-10 15:00:00,2018-01-11 23:59:00,2018-01-11 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180111,4.25,417892.59,4.2542,-0.0009872596492878083,2018-01-11 15:00:00,2018-01-12 23:59:00,2018-01-12 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180112,4.273,441244.227,4.2737,-0.00016379249830356102,2018-01-12 15:00:00,2018-01-13 23:59:00,2018-01-13 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180115,4.265,674167.931,4.2741,-0.002129103203013516,2018-01-15 15:00:00,2018-01-16 23:59:00,2018-01-16 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180116,4.308,528244.298,4.3077,6.964273278087241e-05,2018-01-16 15:00:00,2018-01-17 23:59:00,2018-01-17 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180117,4.295,684342.13,4.297,-0.0004654410053525071,2018-01-17 15:00:00,2018-01-18 23:59:00,2018-01-18 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180118,4.323,540068.089,4.3206,0.0005554784057770767,2018-01-18 15:00:00,2018-01-19 23:59:00,2018-01-19 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180119,4.335,948695.895,4.3345,0.00011535355865732733,2018-01-19 15:00:00,2018-01-20 23:59:00,2018-01-20 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180122,4.39,609570.931,4.386,0.0009119927040581732,2018-01-22 15:00:00,2018-01-23 23:59:00,2018-01-23 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180123,4.388,692085.166,4.3858,0.0005016188608693017,2018-01-23 15:00:00,2018-01-24 23:59:00,2018-01-24 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180124,4.391,707011.909,4.3929,-0.00043251610553396436,2018-01-24 15:00:00,2018-01-25 23:59:00,2018-01-25 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180125,4.363,675877.088,4.3681,-0.0011675556878275595,2018-01-25 15:00:00,2018-01-26 23:59:00,2018-01-26 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180126,4.385,431465.307,4.3851,-2.2804497046946537e-05,2018-01-26 15:00:00,2018-01-27 23:59:00,2018-01-27 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False
+510300.SH,20180129,4.302,928592.912,4.3053,-0.0007664971082155247,2018-01-29 15:00:00,2018-01-30 23:59:00,2018-01-30 23:59:00,"asof=max(etf_daily_adj.available_at, nav_available_at_or_share.available_at)",False

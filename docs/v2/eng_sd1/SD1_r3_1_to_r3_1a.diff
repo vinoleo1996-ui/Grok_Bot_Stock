@@ -1,0 +1,22 @@
+--- a/tests/test_sd1_suspend_delist.py(r3.1 70ddd427)
++++ b/tests/test_sd1_suspend_delist.py(r3.1a)
+@@ -581,7 +581,9 @@
+         for fake in FAKE_CALLERS:
+             with pytest.raises(PermissionError) as ei:
+                 exec(compile(PLANTED, str(ROOT / fake), "exec"), {})
+-            self.assertIs(type(ei.value), PermissionError)
++            self.assertIs(type(ei.value), DA.StrategyLayerDelistAccess)  # r3.1a: Arch 03:07 ruling (a)
++            self.assertTrue(issubclass(DA.StrategyLayerDelistAccess, PermissionError))
++            self.assertFalse(issubclass(DA.StrategyLayerDelistAccess, TypeError))
+ 
+     def test_no_source_is_type_error(self):
+         # r3: a call without source fails at argument binding -> exactly TypeError (for strategy and allowed callers)
+@@ -678,7 +680,7 @@
+                              env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1")).stdout
+         self.assertIn("debug False", out)
+         lines = out.splitlines()
+-        self.assertIn("GUARD_EXC PermissionError", lines)     # exact type names (Arch ruling 2)
++        self.assertIn("GUARD_EXC StrategyLayerDelistAccess", lines)     # exact type names (Arch ruling 2)
+         self.assertIn("NOSRC_EXC TypeError", lines)
+         for k in ("CFG_RAISED", "DL_RAISED"):
+             self.assertIn(k, lines)

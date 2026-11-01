@@ -1,0 +1,25 @@
+{<class 'NoneType'>: 5914, <class 'str'>: 2006} ['20210729', '20110107', '20210729'] ['19931008', '20080602', '20110110']
+                     pf    l1_code   in_date  out_date is_new
+10  801230.SI_Y.parquet  801230.SI  20260701      None      Y
+10  801110.SI_N.parquet  801110.SI  20210730  20260630      N
+                      pf    l1_code   in_date  out_date is_new
+31   801120.SI_N.parquet  801120.SI  20180212  20210729      N
+398  801030.SI_Y.parquet  801030.SI  20210730      None      Y
+                      pf    l1_code   in_date  out_date is_new
+396  801080.SI_Y.parquet  801080.SI  20260821      None      Y
+26   801740.SI_N.parquet  801740.SI  20190626  20260820      N
+         l1_code    l2_code    in_date   out_date is_new
+647    801110.SI  801112.SI 2010-06-01        NaT      Y
+4155   801230.SI  801231.SI 2026-07-01        NaT      Y
+6428   801110.SI  801116.SI 2021-07-30 2026-06-30      N
+10418  801110.SI  801116.SI 2021-07-30 2026-06-30      Y
+         l1_code    l2_code    in_date   out_date is_new
+1985   801120.SI  801124.SI 2018-03-08        NaT      Y
+2402   801030.SI  801034.SI 2018-03-08        NaT      Y
+5108   801030.SI  801034.SI 2021-07-30        NaT      Y
+7083   801120.SI  801124.SI 2018-02-12 2021-07-29      N
+10856  801120.SI  801124.SI 2018-02-12 2021-07-29      Y
+cur max in_date 2026-09-24 00:00:00 raw max 2026-09-24 00:00:00 perL1 max 20260924
+perL1-only codes 318 their max in_date 20260123 is_new {'Y': 318} by pf 11
+[1792300123.028684]
+['VmHWM:\t  223092 kB']

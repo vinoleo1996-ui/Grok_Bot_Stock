@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""Light event PIT windows for Beta: forecast/express 1y, holdertrade 1y, pledge latest.
+Hard constraints: no uvicorn; no heavy full-market long pulls; promotion_approved=false.
+"""
+from __future__ import annotations
+import os, sys, time, json, calendar
+from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+import requests
+
+ROOT = Path("/workspace/QuantLab")
+sys.path.insert(0, str(ROOT))
+for l in (ROOT / ".env.datasources").read_text().splitlines():
+    if "=" in l and not l.startswith("#"):
+        k, v = l.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+OUT_W = ROOT / "output/data_v2_bundle/windows"
+OUT_E = ROOT / "data/v2/events"
+RAW = ROOT / "data/v2/tushare_raw"
+for p in (OUT_W, OUT_E, RAW):
+    p.mkdir(parents=True, exist_ok=True)
+
+SH = ZoneInfo("Asia/Shanghai")
+TODAY = date(2026, 10, 13)
+START_1Y = (TODAY - timedelta(days=365)).strftime("%Y%m%d")  # 20251013
+END_1Y = TODAY.strftime("%Y%m%d")
+RL = "https://pcd.mobcvb.cn/tushare/pro"
+DH = "https://datahubco.com/app-api/openapi/v1/tushare"
+RK = os.environ["TSPRO_PROXY_KEY"]
+DK = os.environ["DATAHUB_API_KEY"]
+PROXY = (os.environ.get("DATAHUB_HTTP_PROXY") or "").strip()
+PROXIES = {"http": PROXY, "https": PROXY} if PROXY else None
+
+FAILS: list[str] = []
+
+
+def _parse(r: requests.Response):
+    try:
+        d = r.json()
+    except Exception:
+        return None, r.status_code, None
+    if not isinstance(d, dict):
+        return None, r.status_code, None
+    data = d.get("data") or {}
+    if isinstance(data, dict) and "fields" in data:
+        df = pd.DataFrame(data.get("items") or [], columns=data["fields"])
+    else:
+        df = pd.DataFrame()
+    return df, r.status_code, d.get("code")
+
+
+def call(api: str, source: str, timeout: int = 45, retries: int = 4, **params) -> pd.DataFrame:
+    """source: relay|datahub"""
+    last = None
+    for a in range(retries):
+        try:
+            if source == "relay":
+                r = requests.get(
+                    f"{RL}/{api}",
+                    params=params,
+                    headers={"X-API-Key": RK},
+                    timeout=timeout,
+                )
+            else:
+                # prefer direct; fall back to Mac Clash proxy
+                try:
+                    r = requests.get(
+                        f"{DH}/{api}",
+                        params=params,
+                        headers={"X-API-Key": DK},
+                        timeout=timeout,
+                    )
+                    df, st, code = _parse(r)
+                    if st == 200 and code in (0, None):
+                        return df
+                except Exception as e:
+                    last = e
+                if not PROXIES:
+                    raise last or RuntimeError("datahub failed")
+                r = requests.get(
+                    f"{DH}/{api}",
+                    params=params,
+                    headers={"X-API-Key": DK},
+                    timeout=timeout,
+                    proxies=PROXIES,
+                )
+            df, st, code = _parse(r)
+            if st == 200 and code in (0, None):
+                return df
+            last = (st, code, (r.text or "")[:120])
+            if code == 50101:
+                return pd.DataFrame()  # param error — don't retry
+        except Exception as e:
+            last = e
+            time.sleep(1.5 * (a + 1))
+    FAILS.append(f"{api}/{source}/{params}: {last}")
+    return pd.DataFrame()
+
+
+def months(a: str, b: str):
+    """Yield (start, end, key) month windows inclusive YYYYMMDD."""
+    y, m = int(a[:4]), int(a[4:6])
+    ye, me = int(b[:4]), int(b[4:6])
+    out = []
+    while (y, m) <= (ye, me):
+        last = calendar.monthrange(y, m)[1]
+        s = f"{y}{m:02d}01"
+        e = f"{y}{m:02d}{last:02d}"
+        if s < a:
+            s = a
+        if e > b:
+            e = b
+        out.append((s, e, f"{y}{m:02d}"))
+        if m == 12:
+            y, m = y + 1, 1
+        else:
+            m += 1
+    return out
+
+
+def add_pit(df: pd.DataFrame, ann_col: str = "ann_date") -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    def _avail(x):
+        s = str(x) if x is not None else ""
+        if len(s) >= 8 and s[:8].isdigit():
+            d0 = date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+            return datetime(d0.year, d0.month, d0.day, 18, 0, tzinfo=SH)
+        return pd.NaT
+    df["available_at"] = df[ann_col].map(_avail)
+    df["availability_basis"] = f"{ann_col}_1800_Asia/Shanghai"
+    df["source"] = "tushare"
+    df["quality_status"] = "research_grade"
+    df["promotion_approved"] = False
+    return df
+
+
+def write_out(name: str, df: pd.DataFrame, meta: dict):
+    meta = dict(meta)
+    meta["created_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    meta["promotion_approved"] = False
+    meta["quality_status"] = "research_grade"
+    if df is None or df.empty:
+        meta["rows"] = 0
+        meta["parquet_written"] = False
+        for d in (OUT_W, OUT_E):
+            (d / f"{name}_MISSING.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        print("MISSING", name, meta.get("reason"))
+        return meta
+    # drop empty cols noise
+    for c in df.columns:
+        if df[c].dtype == object:
+            df[c] = df[c].replace("", None)
+    meta["rows"] = int(len(df))
+    meta["columns"] = list(df.columns)
+    meta["parquet_written"] = True
+    for d in (OUT_W, OUT_E):
+        path = d / f"{name}.parquet"
+        tmp = path.with_suffix(".tmp.parquet")
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, path)
+        meta["bytes"] = path.stat().st_size
+        (d / f"{name}_manifest.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        # remove old MISSING marker if any
+        miss = d / f"{name}_MISSING.json"
+        if miss.exists():
+            miss.unlink()
+    print("OK", name, "rows", meta["rows"], meta.get("ann_date_min"), "→", meta.get("ann_date_max") or meta.get("end_date"))
+    return meta
+
+
+def pull_pledge_latest():
+    # Prefer known recent Fridays, then short walk-back
+    hit = None
+    df = pd.DataFrame()
+    candidates = ["20261009", "20261002", "20260926", "20260919", "20260912"]
+    for ed in candidates:
+        print("pledge try", ed, flush=True)
+        df = call("pledge_stat", "relay", timeout=35, retries=2, end_date=ed)
+        if df is not None and len(df) > 0:
+            hit = ed
+            break
+        time.sleep(0.15)
+    if hit is None:
+        for i in range(0, 21):
+            ed = (TODAY - timedelta(days=i)).strftime("%Y%m%d")
+            if ed in candidates:
+                continue
+            print("pledge walk", ed, flush=True)
+            df = call("pledge_stat", "relay", timeout=35, retries=2, end_date=ed)
+            if df is not None and len(df) > 0:
+                hit = ed
+                break
+            time.sleep(0.15)
+    if hit is None:
+        return write_out(
+            "pledge_latest",
+            pd.DataFrame(),
+            {"table": "pledge_latest", "label": "股权质押最近一期", "status": "missing_source", "reason": "no pledge_stat end_date hit"},
+        )
+    df = add_pit(df, "end_date")  # snapshot date as availability anchor (stat day)
+    # Prefer T+0 18:00 on end_date for research window; note in basis
+    df["availability_basis"] = "end_date_1800_Asia/Shanghai_pledge_stat_snapshot"
+    raw = RAW / "pledge_stat" / f"end_{hit}.parquet"
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(raw, index=False)
+    return write_out(
+        "pledge_latest",
+        df,
+        {
+            "table": "pledge_latest",
+            "label": "股权质押最近一期",
+            "status": "ok",
+            "api": "pledge_stat",
+            "pull": "new_light_pull",
+            "source_channel": "relay",
+            "end_date": hit,
+            "end_date_min": hit,
+            "end_date_max": hit,
+            "n_ts_code": int(df["ts_code"].nunique()) if "ts_code" in df.columns else None,
+            "window": "latest_snapshot_only",
+        },
+    )
+
+
+def pull_holder_1y():
+    parts = []
+    for s, e, k in months(START_1Y, END_1Y):
+        df = call("stk_holdertrade", "datahub", start_date=s, end_date=e, limit=5000)
+        print(" holder month", k, "n", len(df))
+        if len(df):
+            # paginate if needed
+            off = 5000
+            while len(df) >= off:
+                more = call("stk_holdertrade", "datahub", start_date=s, end_date=e, limit=5000, offset=off)
+                if more is None or more.empty:
+                    break
+                df = pd.concat([df, more], ignore_index=True)
+                if len(more) < 5000:
+                    break
+                off += 5000
+            parts.append(df)
+            (RAW / "stk_holdertrade").mkdir(parents=True, exist_ok=True)
+            df.to_parquet(RAW / "stk_holdertrade" / f"{k}.parquet", index=False)
+        time.sleep(0.25)
+    if not parts:
+        return write_out(
+            "holder_trade_1y",
+            pd.DataFrame(),
+            {"table": "holder_trade_1y", "label": "股东增减持近一年", "status": "missing_source", "reason": "empty after month pulls", "pull": "attempted"},
+        )
+    df = pd.concat(parts, ignore_index=True)
+    if "ann_date" in df.columns:
+        df = df[(df["ann_date"].astype(str) >= START_1Y) & (df["ann_date"].astype(str) <= END_1Y)]
+    df = df.drop_duplicates()
+    df = add_pit(df, "ann_date")
+    return write_out(
+        "holder_trade_1y",
+        df,
+        {
+            "table": "holder_trade_1y",
+            "label": "股东增减持近一年",
+            "status": "ok",
+            "api": "stk_holdertrade",
+            "pull": "new_light_pull",
+            "source_channel": "datahub",
+            "window_start": START_1Y,
+            "window_end": END_1Y,
+            "ann_date_min": str(df["ann_date"].min()) if len(df) else None,
+            "ann_date_max": str(df["ann_date"].max()) if len(df) else None,
+            "n_ts_code": int(df["ts_code"].nunique()) if len(df) else 0,
+        },
+    )
+
+
+def _trade_days(a: str, b: str) -> list[str]:
+    cal = ROOT / "data/v2/tushare_raw/trade_cal.parquet"
+    if cal.exists():
+        c = pd.read_parquet(cal)
+        c = c[c["is_open"].astype(int) == 1]
+        return sorted(d for d in c["cal_date"].astype(str) if a <= d <= b)
+    # fallback: all calendar days
+    out = []
+    d0 = date(int(a[:4]), int(a[4:6]), int(a[6:8]))
+    d1 = date(int(b[:4]), int(b[4:6]), int(b[6:8]))
+    while d0 <= d1:
+        out.append(d0.strftime("%Y%m%d"))
+        d0 += timedelta(days=1)
+    return out
+
+
+
+def pull_forecast_1y_by_period():
+    """Light: pull forecast by report period, filter ann_date to 1y window."""
+    periods = [
+        "20240930", "20241231", "20250331", "20250630", "20250930",
+        "20260331", "20260630", "20260930",
+    ]
+    parts = []
+    raw_dir = RAW / "forecast_by_period"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for per in periods:
+        print("forecast period", per, flush=True)
+        df = call("forecast", "datahub", timeout=40, retries=3, period=per, limit=5000)
+        if df is None or df.empty:
+            # try relay with period
+            df = call("forecast", "relay", timeout=40, retries=2, period=per, limit=5000)
+        n = 0 if df is None else len(df)
+        print("  n", n, flush=True)
+        if df is not None and len(df):
+            off = 5000
+            while len(df) >= off:
+                more = call("forecast", "datahub", timeout=40, retries=2, period=per, limit=5000, offset=off)
+                if more is None or more.empty:
+                    break
+                df = pd.concat([df, more], ignore_index=True)
+                if len(more) < 5000:
+                    break
+                off += 5000
+            parts.append(df)
+            df.to_parquet(raw_dir / f"{per}.parquet", index=False)
+        time.sleep(0.3)
+    if not parts:
+        print("forecast period empty -> daily fallback", flush=True)
+        return pull_by_ann_dates("forecast", "forecast_1y", "业绩预告近一年", "datahub")
+    df = pd.concat(parts, ignore_index=True)
+    if "ann_date" in df.columns:
+        before = len(df)
+        df = df[(df["ann_date"].astype(str) >= START_1Y) & (df["ann_date"].astype(str) <= END_1Y)]
+        print("forecast filter", before, "->", len(df), flush=True)
+    df = df.drop_duplicates()
+    if df.empty:
+        print("forecast after filter empty -> daily fallback", flush=True)
+        return pull_by_ann_dates("forecast", "forecast_1y", "业绩预告近一年", "datahub")
+    df = add_pit(df, "ann_date")
+    return write_out(
+        "forecast_1y",
+        df,
+        {
+            "table": "forecast_1y",
+            "label": "业绩预告近一年",
+            "status": "ok",
+            "api": "forecast",
+            "pull": "new_light_pull",
+            "source_channel": "datahub_period_then_filter_ann",
+            "periods": periods,
+            "window_start": START_1Y,
+            "window_end": END_1Y,
+            "ann_date_min": str(df["ann_date"].min()),
+            "ann_date_max": str(df["ann_date"].max()),
+            "n_ts_code": int(df["ts_code"].nunique()),
+        },
+    )
+
+
+def pull_by_ann_dates(api: str, name: str, label: str, channel: str = "datahub"):
+    days = _trade_days(START_1Y, END_1Y)
+    print(f"START {api} days={len(days)} channel={channel}")
+    parts = []
+    raw_dir = RAW / api
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    done = fail = empty = 0
+    for i, d in enumerate(days, 1):
+        cache = raw_dir / f"ann_{d}.parquet"
+        if cache.exists() and cache.stat().st_size > 0:
+            x = pd.read_parquet(cache)
+            done += 1
+            if len(x):
+                parts.append(x)
+            else:
+                empty += 1
+        else:
+            df = call(api, channel, ann_date=d, limit=5000)
+            if df is None:
+                fail += 1
+                df = pd.DataFrame()
+            elif df.empty:
+                empty += 1
+            else:
+                # paginate rare overflow
+                off = 5000
+                while True:
+                    more = call(api, channel, ann_date=d, limit=5000, offset=off)
+                    if more is None or more.empty:
+                        break
+                    df = pd.concat([df, more], ignore_index=True)
+                    if len(more) < 5000:
+                        break
+                    off += 5000
+                parts.append(df)
+            df.to_parquet(cache, index=False)
+            done += 1
+            time.sleep(0.2)
+        if i % 25 == 0 or i == len(days):
+            print(time.strftime("%H:%M:%S"), api, i, "/", len(days), "parts", len(parts), "empty", empty, "fail", fail, flush=True)
+    if not parts:
+        return write_out(
+            name,
+            pd.DataFrame(),
+            {
+                "table": name,
+                "label": label,
+                "status": "missing_source" if fail else "empty",
+                "reason": f"no rows; fail={fail} empty={empty}",
+                "pull": "attempted_daily_ann_date",
+                "api": api,
+                "source_channel": channel,
+                "window_start": START_1Y,
+                "window_end": END_1Y,
+            },
+        )
+    df = pd.concat(parts, ignore_index=True)
+    if "ann_date" in df.columns:
+        df = df[(df["ann_date"].astype(str) >= START_1Y) & (df["ann_date"].astype(str) <= END_1Y)]
+    df = df.drop_duplicates()
+    df = add_pit(df, "ann_date")
+    return write_out(
+        name,
+        df,
+        {
+            "table": name,
+            "label": label,
+            "status": "ok",
+            "api": api,
+            "pull": "new_light_pull",
+            "source_channel": channel,
+            "window_start": START_1Y,
+            "window_end": END_1Y,
+            "ann_date_min": str(df["ann_date"].min()) if len(df) else None,
+            "ann_date_max": str(df["ann_date"].max()) if len(df) else None,
+            "n_ts_code": int(df["ts_code"].nunique()) if len(df) else 0,
+            "trade_days_queried": len(days),
+            "empty_days": empty,
+            "fail_days": fail,
+        },
+    )
+
+
+def pull_express_1y():
+    # Prefer monthly start/end on relay (worked for mid-Oct); fallback datahub monthly; then daily ann.
+    parts = []
+    for s, e, k in months(START_1Y, END_1Y):
+        df = call("express", "relay", start_date=s, end_date=e, limit=5000)
+        if df is None or df.empty:
+            df = call("express", "datahub", start_date=s, end_date=e, limit=5000)
+        print(" express month", k, "n", 0 if df is None else len(df))
+        if df is not None and len(df):
+            parts.append(df)
+            (RAW / "express").mkdir(parents=True, exist_ok=True)
+            df.to_parquet(RAW / "express" / f"{k}.parquet", index=False)
+        time.sleep(0.25)
+    if not parts:
+        # fallback daily ann via datahub
+        return pull_by_ann_dates("express", "express_1y", "业绩快报近一年", "datahub")
+    df = pd.concat(parts, ignore_index=True)
+    if "ann_date" in df.columns:
+        df = df[(df["ann_date"].astype(str) >= START_1Y) & (df["ann_date"].astype(str) <= END_1Y)]
+    df = df.drop_duplicates()
+    df = add_pit(df, "ann_date")
+    return write_out(
+        "express_1y",
+        df,
+        {
+            "table": "express_1y",
+            "label": "业绩快报近一年",
+            "status": "ok",
+            "api": "express",
+            "pull": "new_light_pull",
+            "source_channel": "relay_then_datahub_monthly",
+            "window_start": START_1Y,
+            "window_end": END_1Y,
+            "ann_date_min": str(df["ann_date"].min()) if len(df) else None,
+            "ann_date_max": str(df["ann_date"].max()) if len(df) else None,
+            "n_ts_code": int(df["ts_code"].nunique()) if len(df) else 0,
+        },
+    )
+
+
+def main():
+    print("TODAY", TODAY, "window", START_1Y, END_1Y, flush=True)
+    results = {}
+    results["pledge_latest"] = pull_pledge_latest()
+    results["holder_trade_1y"] = pull_holder_1y()
+    results["express_1y"] = pull_express_1y()
+    results["forecast_1y"] = pull_forecast_1y_by_period()
+    summary = {
+        "task": "light_event_pit_windows",
+        "today": TODAY.isoformat(),
+        "share_float": "refreshed_separately",
+        "results": {k: {kk: vv for kk, vv in (v or {}).items() if kk in ("table", "status", "rows", "ann_date_min", "ann_date_max", "end_date", "pull", "parquet_written", "n_ts_code")} for k, v in results.items()},
+        "fails_sample": FAILS[:20],
+        "n_fails": len(FAILS),
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    for d in (OUT_W, OUT_E):
+        (d / "light_event_windows_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
+    print("SUMMARY", json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

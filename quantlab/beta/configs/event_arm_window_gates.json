@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "updated_at": "2026-10-12",
+  "strategy_promotion_approved": false,
+  "doc": "docs/v2/EVENT_ARM_WINDOW_GATES_ZH.md",
+  "gate_mode_default": "dual_track",
+  "gate_modes": {
+    "dual_track": "coverage_native + book_window primary; x1_full optional control only",
+    "x1_full_hard": "LEGACY/diagnostic only — do not use to kill 2018+ mechanisms"
+  },
+  "windows": {
+    "x1_full": {
+      "start": "2015-06-01",
+      "end": "2017-12-29",
+      "role": "optional_control",
+      "kill_on_zero_events": false
+    },
+    "book_window_explore": {
+      "start": "2024-06-03",
+      "end": null,
+      "role": "book_primary_explore",
+      "note": "end=null means latest available session"
+    },
+    "book_window_dev_sealed": {
+      "start": "2018-01-02",
+      "end": "2024-05-31",
+      "role": "sealed_dev_describe_only",
+      "rerun_requires_leo_auth": true
+    },
+    "coverage_native": {
+      "start": "from_table_pit_min_available_at",
+      "end": "sample_end_or_today",
+      "role": "mechanism_test"
+    }
+  },
+  "labels": {
+    "coverage_ok": "x1_full and native both have events",
+    "coverage_shifted": "native has events; x1_full==0 — NOT a kill",
+    "coverage_blocked": "native events==0 — true no data",
+    "coverage_too_sparse": "native denseness below arm-specific floor"
+  },
+  "fail_precheck_rules": {
+    "sharpe_le_0": true,
+    "avg_names_eq_0": true,
+    "x1_full_zero_alone": false,
+    "self_reject_no_incremental_vs_coarse": true
+  },
+  "aum_stress_cny": [600000, 1000000],
+  "notes": [
+    "Do not backdate available_at to fill x1_full.",
+    "coverage_shifted observations are research_observe only.",
+    "Factory GP remain stopped per Leo; this config only rewrites gate semantics."
+  ]
+}

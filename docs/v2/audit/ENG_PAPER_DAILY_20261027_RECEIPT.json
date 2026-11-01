@@ -1,0 +1,232 @@
+{
+  "schema": "quantlab.eng.paper_daily_receipt.v1",
+  "D": "20261027",
+  "written_at_et": "2026-10-27T18:33:03-04:00",
+  "status": "OK",
+  "paper_daily_bus_exit": 0,
+  "paper_daily_bus": {
+    "exits": [
+      0,
+      0,
+      0
+    ],
+    "nav": true,
+    "holdings": true,
+    "gate": true,
+    "receipt": true,
+    "flagged": {
+      "b4_600000": 0,
+      "b4_1000000": 0,
+      "capacity_adv": 0
+    }
+  },
+  "rehash": {
+    "capacity_adv_content_gate": "APPLIED_NATURAL",
+    "b4": "APPLIED",
+    "s6": "APPLIED",
+    "b4_receipt": "docs/v2/B4_PAPER_REHASH_20261027_182823_ZH.md",
+    "s6_receipt": "docs/v2/S6_PAPER_REHASH_20261027_182952_ZH.md",
+    "exits": {
+      "b4": 0,
+      "s6": 0,
+      "capacity_adv_extend": 0,
+      "weight_gate": 0
+    }
+  },
+  "forced": false,
+  "force_flag_used": false,
+  "live": false,
+  "promotion_approved": false,
+  "mode": "EOD_only",
+  "weights_modified": false,
+  "leo_notify": false,
+  "command": "PYTHONPATH=. /workspace/qlvenv/bin/python -m quantlab.cli paper-daily --run-nav",
+  "cwd": "/workspace/QuantLab",
+  "log": "/tmp/paper_daily_20261027_20261028T061905_715617.log",
+  "out_dir": "output/loop/paper_daily_20261027/",
+  "elapsed_ms": 700021,
+  "started_at_et": "2026-10-27T18:19:05-04:00",
+  "ended_at_et": "2026-10-27T18:30:45-04:00",
+  "pins": {
+    "DONE": {
+      "path": "output/nightly_markers/nightly_20261027.DONE.json",
+      "sha8": "5914e03b",
+      "match": true
+    },
+    "execution.py": {
+      "path": "quantlab/platform/execution.py",
+      "sha8": "373fed30",
+      "match": true
+    },
+    "trade_cal": {
+      "path": "data/v2/tushare_raw/trade_cal.parquet",
+      "sha8": "141078fa",
+      "match": true
+    },
+    "RESEARCH_QUIET": "ABSENT",
+    "pgrep_Data_Web_paper": "empty_at_precheck"
+  },
+  "prior_abort_superseded": {
+    "path": "output/loop/paper_daily_20261027/READINESS_ABORT_20261027.md",
+    "sha8": "e8b72bf3",
+    "note": "DONE 5914e03b MATCH后解除；本跑未再写新ABORT"
+  },
+  "tips": {
+    "capacity_adv": {
+      "path": "output/ai_factory/g1g5_capacity_adv_daily_weights_paper_20261027_r2.parquet",
+      "sha8": "82f557c6",
+      "sha256": "82f557c6f2339a9082448559588093a954ca2a29898017699a24189c71ca8f32",
+      "last_session": "2026-10-27",
+      "held_from": "2026-10-27",
+      "next_scheduled_rebalance": "2026-10-30"
+    },
+    "b4_60w": {
+      "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_60w_20261027_r2.parquet",
+      "sha8": "d5f480da"
+    },
+    "b4_100w": {
+      "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_100w_20261027_r2.parquet",
+      "sha8": "42b01c56"
+    },
+    "s6_60w": {
+      "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_60w_20261027.parquet",
+      "sha8": "fadd5c44"
+    },
+    "s6_100w": {
+      "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_100w_20261027.parquet",
+      "sha8": "d5843e20"
+    }
+  },
+  "track_status": {
+    "capacity_adv": "OK_HOLD_EXTEND",
+    "b4": "OK",
+    "s6": "OK"
+  },
+  "nav_table": [
+    {
+      "track": "capacity_adv",
+      "track_label": "capacity_adv [PAPER]",
+      "aum": 600000,
+      "last_nav": 807275.3462805422,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.1382463352,
+      "mdd": -0.1007402256,
+      "calmar": 1.3723051973,
+      "win_monthly": 0.5,
+      "win_daily": 0.5272407733,
+      "track_status": "OK_HOLD_EXTEND",
+      "x2_end": "2026-10-09"
+    },
+    {
+      "track": "capacity_adv",
+      "track_label": "capacity_adv [PAPER]",
+      "aum": 1000000,
+      "last_nav": 1304771.2007807656,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.1223377608,
+      "mdd": -0.1162408466,
+      "calmar": 1.0524507037,
+      "win_monthly": 0.5714285714,
+      "win_daily": 0.5360281195,
+      "track_status": "OK_HOLD_EXTEND",
+      "x2_end": "2026-10-09"
+    },
+    {
+      "track": "b4",
+      "track_label": "B4 conc 50/25/25 [PAPER]",
+      "aum": 600000,
+      "last_nav": 811444.5713825136,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.151074087,
+      "mdd": -0.1384535055,
+      "calmar": 1.0911539325,
+      "win_monthly": 0.6428571429,
+      "win_daily": 0.525483304,
+      "track_status": "OK",
+      "x2_end": "2026-10-09"
+    },
+    {
+      "track": "b4",
+      "track_label": "B4 conc 50/25/25 [PAPER]",
+      "aum": 1000000,
+      "last_nav": 1320592.541826452,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.1423532931,
+      "mdd": -0.1317137586,
+      "calmar": 1.0807777003,
+      "win_monthly": 0.5714285714,
+      "win_daily": 0.5289982425,
+      "track_status": "OK",
+      "x2_end": "2026-10-09"
+    },
+    {
+      "track": "s6",
+      "track_label": "S6 shadow 50/25/25 [SHADOW]",
+      "aum": 600000,
+      "last_nav": 843407.5478032705,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.1714513292,
+      "mdd": -0.1194934042,
+      "calmar": 1.434818351,
+      "win_monthly": 0.6428571429,
+      "win_daily": 0.5202108963,
+      "track_status": "OK",
+      "x2_end": "2026-10-09"
+    },
+    {
+      "track": "s6",
+      "track_label": "S6 shadow 50/25/25 [SHADOW]",
+      "aum": 1000000,
+      "last_nav": 1377153.5657640093,
+      "bridge_end": "2026-10-27",
+      "cagr": 0.1637447276,
+      "mdd": -0.1266122444,
+      "calmar": 1.29327719,
+      "win_monthly": 0.6071428571,
+      "win_daily": 0.5237258348,
+      "track_status": "OK",
+      "x2_end": "2026-10-09"
+    }
+  ],
+  "artifacts_sha8": {
+    "scorecard_json": "cabf70d9",
+    "scorecard_md": "1f260a56",
+    "recon": "30f94ac2",
+    "readiness_abort_superseded": "e8b72bf3",
+    "done": "5914e03b",
+    "exec": "373fed30",
+    "trade_cal": "141078fa",
+    "cap_tip_pq": "82f557c6",
+    "b4_60_pq": "d5f480da",
+    "b4_100_pq": "42b01c56",
+    "s6_60_pq": "fadd5c44",
+    "s6_100_pq": "d5843e20",
+    "frozen_config": "9f5abfb6",
+    "receipt_md": "47df3c3e"
+  },
+  "pending": [
+    {
+      "item": "FWD",
+      "pending_reason": "WAITING（official forward starts 2026-11-02；weights tip 2026-10-27）"
+    },
+    {
+      "item": "freshness_calendar_mismatch",
+      "pending_reason": "INFO only: Data expected_trade_date 2026-10-26 (20:00 Asia/Shanghai cutoff) != Eng processed session 2026-10-27; Eng rule used"
+    }
+  ],
+  "anomalies": [
+    "log pipe-buffered: /tmp log mainly captures late X2H NAV lines; full step exits in recon.steps + terminal bus JSON",
+    "READINESS_ABORT_20261027.md e8b72bf3 remains on disk (superseded, not deleted)",
+    "freshness_calendar_mismatch info-only (see pending)"
+  ],
+  "hard_bans_observed": [
+    "no --force",
+    "weights_modified=false",
+    "no leaf37 touch",
+    "RESEARCH_QUIET never present",
+    "live=false",
+    "leo_notify=false",
+    "FROZEN tip re-pin only via natural content-gate rehash (B4/S6/cap)"
+  ],
+  "receipt_md_sha8": "47df3c3e"
+}

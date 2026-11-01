@@ -1,0 +1,17 @@
+# 草稿，未应用。应用前须先把 r5 原件存档到 _recovery/data/，应用后重算 common sha、同步三个脚本、请 Arch 重签 .ok。
+--- a/scripts/fix_sd1/sd1_common.py
++++ b/scripts/fix_sd1/sd1_common.py
+@@ -137 +137,3 @@
+-FORBID_PATTERNS = ("research/", "daily_pull", "tier1_pull", "tier1_materialize", "adj_factor", "bars_materialize")
++# r6 草稿：nightly_update.py 的任何步骤（包括 94403 拉起的 --steps tier3/hsgt/sw/cyq 补跑）都会阻塞门禁；
++#          relay_outage_backfill 也列入，防止它在运行中途拉起 nightly
++FORBID_PATTERNS = ("research/", "daily_pull", "tier1_pull", "tier1_materialize", "adj_factor", "bars_materialize", "nightly_update", "relay_outage_backfill")
+# 配套：.ok 里的 run_forbid_concurrent 建议改为
+#   nightly_daily_pull,tier1_pull,adj_factor,bars_materialize,nightly_update,relay_outage_backfill
+# 如果解析器 FIXED 写死了旧值（第 43 行），需要同步修改。
+# 注意：一旦把 relay_outage_backfill 列入禁止名单，execute 前就必须先暂停 94403，否则门禁必然拒绝。
+#
+# 可选（Eng 负责的脚本，Data 不改）：在 scripts/acquire/relay_outage_backfill.py 第 12 行的 HEAVY 元组里加入 "fix_sd1"，
+# 让 watcher 在 SD1 运行时避让、不拉起 nightly：
+# -HEAVY = ("queue_chain_20261014", "stk_surv_after_report_rc", "tier1_materialize", "nightly_update", "remaining_after_stk_surv")
+# +HEAVY = ("queue_chain_20261014", "stk_surv_after_report_rc", "tier1_materialize", "nightly_update", "remaining_after_stk_surv", "fix_sd1")

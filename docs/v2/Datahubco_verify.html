@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Datahubco 客户 API 全量验证报告</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2128;--bd:#30363d;--tx:#e6edf3;--mu:#8b949e;
+--ok:#3fb950;--warn:#d29922;--bad:#f85149;--ac:#58a6ff;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 80px}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.4px}
+.sub{color:var(--mu);font-size:13px;margin-bottom:28px}
+.sub code{background:var(--panel2);padding:1px 6px;border-radius:4px;color:var(--ac);font-size:12px}
+h2{font-size:17px;margin:44px 0 14px;padding-left:11px;border-left:3px solid var(--ac)}
+h3{font-size:14px;margin:22px 0 8px;color:var(--tx)}
+p{margin:8px 0}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0 8px}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px 18px}
+.card .n{font-size:28px;font-weight:650;line-height:1.15;letter-spacing:-.5px}
+.card .l{color:var(--mu);font-size:12px;margin-top:5px}
+.card.ok .n{color:var(--ok)} .card.warn .n{color:var(--warn)} .card.bad .n{color:var(--bad)}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--bd);
+border-radius:10px;overflow:hidden;font-size:13px}
+th{background:var(--panel2);text-align:left;padding:10px 12px;font-weight:600;color:var(--mu);
+font-size:12px;border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #21262d;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#1a2029}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+td.api code{color:var(--ac);font-weight:500}
+.idx{color:#484f58;width:34px} .grp{color:var(--mu);white-space:nowrap;width:74px}
+.off{color:var(--mu);font-size:12px;width:126px}
+.ev{color:#a8b3bd;font-size:12.5px} .src{color:#6e7681;font-size:12px;white-space:nowrap;width:112px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.bad-row td{background:rgba(248,81,73,.055)}
+.warn-row td{background:rgba(210,153,34,.05)}
+.box{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:18px 20px;margin:14px 0}
+.box.p0{border-left:3px solid var(--bad)} .box.p1{border-left:3px solid var(--warn)}
+.box.p2{border-left:3px solid var(--ac)}
+.box h3{margin:0 0 8px;font-size:14.5px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;margin-right:8px;vertical-align:1.5px}
+.tag.p0{background:rgba(248,81,73,.16);color:var(--bad)}
+.tag.p1{background:rgba(210,153,34,.16);color:var(--warn)}
+.tag.p2{background:rgba(88,166,255,.14);color:var(--ac)}
+pre{background:#0b0f14;border:1px solid var(--bd);border-radius:8px;padding:12px 14px;overflow:auto;
+font-size:12.5px;line-height:1.55;color:#c9d1d9}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:13px;margin:10px 0}
+.kv b{color:var(--mu);font-weight:500}
+ul{margin:8px 0;padding-left:22px} li{margin:5px 0}
+.g{color:var(--ok)} .y{color:var(--warn)} .r{color:var(--bad)}
+.foot{color:#484f58;font-size:12px;margin-top:46px;border-top:1px solid var(--bd);padding-top:16px}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>Datahubco 客户 API 全量验证报告</h1>
+<div class="sub">手册 <code>Stock.txt</code>（2026-08-27 版，80 接口）+ <code>stock_basic</code> ·
+入口 <code>http://datahubco.com/app-api/openapi/v1/tushare/&lt;api&gt;</code> ·
+验证时间 2026-10-11 · 基准交易日 <code>20260930</code></div>
+
+<div class="cards">
+  <div class="card"><div class="n">81</div><div class="l">实测接口总数</div></div>
+  <div class="card ok"><div class="n">60</div><div class="l">可用（含需修正参数）</div></div>
+  <div class="card warn"><div class="n">10</div><div class="l">受限 / 需注意</div></div>
+  <div class="card bad"><div class="n">11</div><div class="l">不可用</div></div>
+</div>
+
+<h2>一、结论</h2>
+<p><b>手册里的数据大部分能用，但不是"都可以"。</b>实测 81 个接口中 <span class="g">60 个正常返回数据</span>，
+<span class="y">10 个需要改参数或只能在特定条件下使用</span>，<span class="r">11 个完全不可用</span>。</p>
+<ul>
+<li><b>8 个"行业特色"接口全部不可用</b>（tmt_twincome / tmt_twincomedetail / bo_monthly / bo_weekly / bo_daily / bo_cinema / film_record / teleplay_record），网关转发后上游统一返回"请指定正确的接口名"。且官方 2026-10-10 新版指引已把这 8 个标注为"先确认，勿探测"。</li>
+<li><b>pro_bar 确认不支持</b>——网关直接拒绝，与手册说明一致。</li>
+<li><b>stk_factor_pro 当前不可用</b>——上游 8 秒超时，连续 4 次 HTTP 502。</li>
+<li><b>11 个接口手册给的示例参数是错的</b>，照抄会拿到空结果（详见第四节）。</li>
+<li><b>发现一个静默数据缺失缺陷</b>：<code>margin_detail</code> 的本地缓存快照只含上交所，深交所和北交所数据整体丢失（详见第三节 P0）。</li>
+</ul>
+
+<h2>二、逐接口实测结果</h2>
+<table>
+<thead><tr><th>#</th><th>接口</th><th>分类</th><th>官方状态标注</th><th>结论</th><th>实测证据</th><th>数据来源</th></tr></thead>
+<tbody>
+<tr>
+<td class="idx">1</td>
+<td class="api"><code>stock_basic</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">2</td>
+<td class="api"><code>daily</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">3</td>
+<td class="api"><code>weekly</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">4</td>
+<td class="api"><code>monthly</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">5</td>
+<td class="api"><code>pro_bar</code></td>
+<td class="grp">股票</td>
+<td class="off">暂停/不支持</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400：api_name is not supported over HTTP: pro_bar。官方标注「暂停/不支持」，HTTP目录接纳=False。</td>
+<td class="src">—</td>
+</tr><tr>
+<td class="idx">6</td>
+<td class="api"><code>daily_basic</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">7</td>
+<td class="api"><code>new_share</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">8</td>
+<td class="api"><code>top_list</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">9</td>
+<td class="api"><code>top_inst</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">10</td>
+<td class="api"><code>pledge_detail</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：start_date=20250101&amp;end_date=20260930；实测 1500 条。传 ts_code 会返回空，必须用日期区间</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">11</td>
+<td class="api"><code>pledge_stat</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">12</td>
+<td class="api"><code>margin</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 3 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">13</td>
+<td class="api"><code>margin_detail</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">默认查询命中残缺本地快照，只返回上交所 2001 条；显式传 fields 强制回源可得完整 4454 条（SH 2001 + SZ 2108 + BJ 345）。详见第三节 P0。</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">14</td>
+<td class="api"><code>repurchase</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">15</td>
+<td class="api"><code>share_float</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：ts_code=600000.SH&amp;start_date=20200101&amp;end_date=20260930；实测 4 条。平安银行无解禁记录，换标的才有</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">16</td>
+<td class="api"><code>block_trade</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">17</td>
+<td class="api"><code>stk_holdernumber</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">18</td>
+<td class="api"><code>moneyflow</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">19</td>
+<td class="api"><code>stk_holdertrade</code></td>
+<td class="grp">股票</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：ts_code=000001.SZ&amp;start_date=20200101&amp;end_date=20260930；实测 9 条。需放宽到多年区间</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">20</td>
+<td class="api"><code>stk_limit</code></td>
+<td class="grp">股票</td>
+<td class="off">历史查询为主</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">21</td>
+<td class="api"><code>hk_hold</code></td>
+<td class="grp">股票</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">22</td>
+<td class="api"><code>income</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">23</td>
+<td class="api"><code>balancesheet</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 2 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">24</td>
+<td class="api"><code>cashflow</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">25</td>
+<td class="api"><code>forecast</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">26</td>
+<td class="api"><code>express</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：ts_code=000001.SZ（不带 period）；实测 4 条。带 period=20251231 无数据</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">27</td>
+<td class="api"><code>dividend</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">28</td>
+<td class="api"><code>fina_indicator</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">29</td>
+<td class="api"><code>fina_audit</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">30</td>
+<td class="api"><code>fina_mainbz</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">31</td>
+<td class="api"><code>disclosure_date</code></td>
+<td class="grp">财务</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">32</td>
+<td class="api"><code>fund_basic</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">33</td>
+<td class="api"><code>fund_company</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">34</td>
+<td class="api"><code>fund_nav</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">35</td>
+<td class="api"><code>fund_daily</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">36</td>
+<td class="api"><code>fund_div</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">37</td>
+<td class="api"><code>fund_portfolio</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：ts_code=110011.OF（不带 period）；实测 1000 条。带 period 会返回空</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">38</td>
+<td class="api"><code>fund_adj</code></td>
+<td class="grp">基金</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">39</td>
+<td class="api"><code>fut_basic</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">40</td>
+<td class="api"><code>trade_cal</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">41</td>
+<td class="api"><code>fut_daily</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">42</td>
+<td class="api"><code>fut_holding</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 2 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">43</td>
+<td class="api"><code>fut_wsr</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">44</td>
+<td class="api"><code>fut_settle</code></td>
+<td class="grp">期货</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回正常数据（首轮为脚本解析误报）</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">45</td>
+<td class="api"><code>index_daily</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">46</td>
+<td class="api"><code>index_basic</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">47</td>
+<td class="api"><code>index_weekly</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">48</td>
+<td class="api"><code>index_monthly</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">49</td>
+<td class="api"><code>index_weight</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">50</td>
+<td class="api"><code>index_dailybasic</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">51</td>
+<td class="api"><code>index_classify</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">52</td>
+<td class="api"><code>index_member_all</code></td>
+<td class="grp">指数</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：l1_code=801010.SI；实测 126 条。手册示例的 110000 是错的，要用申万旧式代码</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">53</td>
+<td class="api"><code>opt_basic</code></td>
+<td class="grp">期权</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">54</td>
+<td class="api"><code>opt_daily</code></td>
+<td class="grp">期权</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回正常数据（首轮为脚本解析误报）</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">55</td>
+<td class="api"><code>cb_basic</code></td>
+<td class="grp">债券</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">56</td>
+<td class="api"><code>cb_issue</code></td>
+<td class="grp">债券</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">57</td>
+<td class="api"><code>cb_daily</code></td>
+<td class="grp">债券</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">58</td>
+<td class="api"><code>fx_obasic</code></td>
+<td class="grp">外汇</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">59</td>
+<td class="api"><code>fx_daily</code></td>
+<td class="grp">外汇</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：ts_code=USDCNH.FXCM；实测 540 条。手册示例缺 .FXCM 后缀，不带后缀返回空</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">60</td>
+<td class="api"><code>hk_basic</code></td>
+<td class="grp">港股</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">61</td>
+<td class="api"><code>shibor</code></td>
+<td class="grp">宏观</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">62</td>
+<td class="api"><code>shibor_quote</code></td>
+<td class="grp">宏观</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">63</td>
+<td class="api"><code>shibor_lpr</code></td>
+<td class="grp">宏观</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">正确写法：start_date=20260101&amp;end_date=20260930；实测 8 条。LPR 每月 20 日发布，单日多数为空</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">64</td>
+<td class="api"><code>libor</code></td>
+<td class="grp">宏观</td>
+<td class="off">历史查询为主</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">LIBOR 已于 2023 年停发。不传参数返回 4000 条历史数据，2026 年日期查询为空。</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">65</td>
+<td class="api"><code>hibor</code></td>
+<td class="grp">宏观</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">66</td>
+<td class="api"><code>wz_index</code></td>
+<td class="grp">宏观</td>
+<td class="off">历史查询为主</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">67</td>
+<td class="api"><code>gz_index</code></td>
+<td class="grp">宏观</td>
+<td class="off">历史查询为主</td>
+<td><span class="dot" style="background:#d29922"></span>受限</td>
+<td class="ev">广州民间借贷利率已停更。不传参数返回 1181 条历史数据，2026 年日期查询为空。</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">68</td>
+<td class="api"><code>tmt_twincome</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">69</td>
+<td class="api"><code>tmt_twincomedetail</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">70</td>
+<td class="api"><code>bo_monthly</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">71</td>
+<td class="api"><code>bo_weekly</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">72</td>
+<td class="api"><code>bo_daily</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">73</td>
+<td class="api"><code>bo_cinema</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">74</td>
+<td class="api"><code>film_record</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">75</td>
+<td class="api"><code>teleplay_record</code></td>
+<td class="grp">行业特色</td>
+<td class="off">先确认，勿探测</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">HTTP 400 / code 40101：上游「请指定正确的接口名」</td>
+<td class="src">upstream/ERROR</td>
+</tr><tr>
+<td class="idx">76</td>
+<td class="api"><code>report_rc</code></td>
+<td class="grp">特色</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">77</td>
+<td class="api"><code>cyq_perf</code></td>
+<td class="grp">特色</td>
+<td class="off">历史查询为主</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 1 条（limit=5 探测）</td>
+<td class="src">sqlite/LOCAL</td>
+</tr><tr>
+<td class="idx">78</td>
+<td class="api"><code>cyq_chips</code></td>
+<td class="grp">特色</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">79</td>
+<td class="api"><code>stk_rewards</code></td>
+<td class="grp">特色</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr><tr>
+<td class="idx">80</td>
+<td class="api"><code>stk_factor_pro</code></td>
+<td class="grp">特色</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#f85149"></span>不可用</td>
+<td class="ev">连续 4 次 HTTP 502：Tushare request failed: Operation timed out after 8000 milliseconds。上游 8 秒超时，当前不可用。</td>
+<td class="src">upstream</td>
+</tr><tr>
+<td class="idx">81</td>
+<td class="api"><code>stk_nineturn</code></td>
+<td class="grp">特色</td>
+<td class="off">目录接受，有条件可用</td>
+<td><span class="dot" style="background:#3fb950"></span>可用</td>
+<td class="ev">HTTP 200 / code 0，返回 5 条（limit=5 探测）</td>
+<td class="src">upstream/MISS</td>
+</tr>
+</tbody>
+</table>
+<p style="color:var(--mu);font-size:12.5px;margin-top:10px">
+「官方状态标注」取自线上 2026-10-10 版客户指引；「数据来源」中 sqlite/redis 表示命中网关本地缓存，upstream 表示回源上游。
+</p>
+
+<h2>三、发现的问题（按严重度）</h2>
+
+<div class="box p0">
+<h3><span class="tag p0">P0</span>margin_detail 本地缓存缺深交所、北交所数据——静默少给数据</h3>
+<p>同一个请求，命中本地缓存和强制回源拿到的是<b>两套数据</b>，而且网关不会报任何错：</p>
+<pre>GET margin_detail?trade_date=20260930&limit=5000
+  → n=2001  src=sqlite/LOCAL   市场分布 {'SH': 2001}          # 只有上交所
+
+GET margin_detail?trade_date=20260930&limit=5000&fields=...（显式 fields 改变缓存键）
+  → n=4454  src=upstream/MISS  市场分布 {'SH':2001,'SZ':2108,'BJ':345}   # 完整</pre>
+<p>连续 4 次相同请求稳定返回 2001 条，不是偶发。缺的是 <b>2108 只深市标的 + 345 只北交所标的</b>，
+平安银行（000001.SZ）就查不到。对照组 <code>daily</code>、<code>daily_basic</code> 的本地快照是完整的（SH 2102 + SZ 2898），
+说明这是 margin_detail 这一条快照的构建缺陷，不是整体缓存策略问题。</p>
+<p><b>影响</b>：任何按 <code>trade_date</code> 拉全市场融资融券明细的客户，会静默丢掉 55% 的数据。
+这比直接报错危险——程序不会失败，只是结果错了。</p>
+<p><b>规避</b>：显式传 <code>fields</code> 强制回源；或按 <code>ts_code</code>+日期区间查询。同时建议向服务方反馈。</p>
+</div>
+
+<div class="box p1">
+<h3><span class="tag p1">P1</span>8 个行业特色接口上游不可用，且官方标注"勿探测"</h3>
+<p>8 个接口返回 <code>HTTP 400 / code 40101 / msg=请指定正确的接口名</code>，<code>help.reason=upstream_parameter</code>，
+<code>retry_same_request=false</code>——是<b>上游 Tushare 拒绝</b>，不是网关白名单问题。</p>
+<p>对照组说明这不是接口名拼错：换名字试（<code>bo_monthly_amount</code>、<code>movie</code> 等）会返回完全不同的错误
+<code>code=400 unknown api_name</code>。说明网关认得这些名字、确实转发了，是上游没有。</p>
+<p><b>注意</b>：线上新版指引已把这 8 个标注为「先确认，勿探测」，示例代码带
+<code>service_confirmed=False</code> 守卫，并注明"该接口权限或业务状态未证实当前可用；本示例不能作为自动探测指令"。
+本次验证按桌面手册做了一次性最小请求，结论与官方标注一致，<b>后续不应再重复探测</b>，需要用时先向服务方确认。</p>
+</div>
+
+<div class="box p1">
+<h3><span class="tag p1">P1</span>stk_factor_pro 上游超时</h3>
+<p>连续 4 次（单日、区间、两个交易日）均返回 <code>HTTP 502 / code -1 / Operation timed out after 8000 milliseconds</code>。
+官方标注为「目录接受，有条件可用」，但当前实测不可用。若业务依赖前复权技术因子，需准备替代方案。</p>
+</div>
+
+<div class="box p2">
+<h3><span class="tag p2">P2</span>手册示例参数错误——照抄会拿到空结果</h3>
+<table style="font-size:12.5px">
+<thead><tr><th>接口</th><th>手册写法</th><th>实际可用写法</th></tr></thead>
+<tbody>
+<tr><td><code>index_member_all</code></td><td><code>l1_code=110000</code></td><td><code>l1_code=801010.SI</code>（申万旧式代码）</td></tr>
+<tr><td><code>fx_daily</code></td><td><code>ts_code=USDCNH</code></td><td><code>ts_code=USDCNH.FXCM</code>（必须带交易商后缀）</td></tr>
+<tr><td><code>pledge_detail</code></td><td>只传 <code>ts_code</code></td><td>必须用 <code>start_date</code>+<code>end_date</code> 区间</td></tr>
+<tr><td><code>margin_detail</code></td><td><code>trade_date</code>+<code>ts_code</code></td><td>只传 <code>trade_date</code>（带 ts_code 命中残缺本地快照）</td></tr>
+<tr><td><code>fund_portfolio</code></td><td>带 <code>period=20251231</code></td><td>不传 <code>period</code>，否则返回空</td></tr>
+<tr><td><code>express</code></td><td><code>period=20251231</code></td><td>不传 <code>period</code></td></tr>
+<tr><td><code>shibor_lpr</code></td><td>单日 <code>date</code></td><td>用区间（LPR 每月 20 日才发布）</td></tr>
+<tr><td><code>share_float</code></td><td>只给 <code>ts_code</code></td><td>需放宽到多年区间，且换有解禁记录的标的</td></tr>
+<tr><td><code>stk_holdertrade</code></td><td>区间过窄</td><td>放宽到多年区间才有数据</td></tr>
+<tr><td><code>libor</code></td><td>2026 年日期</td><td>LIBOR 已停发，只能用历史日期</td></tr>
+<tr><td><code>gz_index</code></td><td>2026 年日期</td><td>已停更，只能用历史日期</td></tr>
+</tbody></table>
+</div>
+
+<div class="box p2">
+<h3><span class="tag p2">P2</span>桌面手册已过期，线上有更新版本</h3>
+<p>桌面 <code>Stock.txt</code> 是 2026-08-27 版（80 接口）。线上 <code>https://datahubco.com/customer_sdk_calling_guide.md</code>
+已是 <b>2026-10-10 版，共 181 个接口名</b>（原 98 项 + 新增 83 项），且给每个接口加了状态分级
+（目录接受有条件可用 / 先确认勿探测 / 历史查询为主 / 暂停不支持）。<b>建议以线上版为准</b>，并注意新版规则：
+"不能批量试探未开放接口、自动遍历所有日期或轮换卡号突破限制"。</p>
+</div>
+
+<h2>四、其他实测结论</h2>
+<div class="box">
+<div class="kv">
+<b>本地缓存生效</b><span>14 个接口命中本地 SQLite / Redis 快路径，其余回源上游</span>
+<b>分页上限</b><span>网关强制单页上限 5000 行（<code>limit=6000</code> 返回 400 <code>query limit is too large</code>），手册说法一致</span>
+<b>鉴权</b><span><code>X-API-Key</code> 请求头有效，无 401</span>
+<b>空结果 vs 报错</b><span>区分清晰：<code>code=0</code> 且 <code>items=[]</code> 表示无匹配数据，与 HTTP 4xx/5xx 完全分离</span>
+<b>stock_basic</b><span>不在手册 80 清单内，但线上目录已收录（第 84 项，状态「目录接受，有条件可用」），实测可用</span>
+</div>
+</div>
+
+<h2>五、建议</h2>
+<ol>
+<li><b>先修 margin_detail 的取数逻辑</b>，这是唯一会造成"数据错了但没人知道"的问题。别信本地缓存，显式传 <code>fields</code> 或改用 ts_code+区间，同时报给服务方。</li>
+<li><b>别把 8 个行业特色接口排进开发计划</b>，需要电影票房/台系营收/剧本备案数据时先找服务方确认，并准备替代数据源。</li>
+<li><b>把手册示例全部按第四节表改一遍</b>，别直接复制示例代码。</li>
+<li><b>改用线上版指引</b>，注意新版对探测行为的限制。</li>
+<li><b>生产环境把 API Key 移到环境变量</b>，别硬编码——当前密钥已出现在桌面文本和多个脚本里。</li>
+</ol>
+
+<div class="foot">
+验证方法：按手册第 5 节逐接口构造最小可用请求（<code>limit=5</code>），记录 HTTP 状态码、业务 code、返回条数、
+<code>X-Data-Source</code>/<code>X-Cache</code> 响应头；失败项按「参数错误 / 无权限 / 无数据 / 网关不支持」四类做二次归因并换参重试。
+原始结果见 <code>results.json</code>、<code>results_pass2.json</code>。
+</div>
+
+</div></body></html>

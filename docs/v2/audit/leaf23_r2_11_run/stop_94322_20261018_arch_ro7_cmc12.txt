@@ -1,0 +1,12 @@
+STOP 94322 per 主 Agent 09:35 (Arch 7-item RO check + CMC v1.2 selftest/memtest window)
+before: 2026-10-18 09:36:37.044030042 EDT
+    PID    PPID STAT     ELAPSED   RSS CMD
+  94322   94319 Ssl     08:12:56 128328 python3 scripts/acquire/remaining_after_stk_surv.py
+total 392
+drwxr-xr-x 2 box box 12288 2026-10-18 09:36:32.259931890 -0400 20241231
+drwxr-xr-x 2 box box  4096 2026-10-18 06:56:55.585122197 -0400 20240930
+drwxr-xr-x 2 box box 32768 2026-10-18 06:50:26.277122197 -0400 20240630
+after: 2026-10-18 09:36:39.068973208 EDT
+    PID    PPID STAT     ELAPSED   RSS CMD
+  94322   94319 Tsl     08:12:58 128328 python3 scripts/acquire/remaining_after_stk_surv.py
+94322 (python3) T

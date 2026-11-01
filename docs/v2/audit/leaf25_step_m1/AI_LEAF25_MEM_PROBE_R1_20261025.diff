@@ -1,0 +1,833 @@
+# AI_LEAF25_MEM_PROBE_R1_20261025.diff — unified DIFF for Arch review (no git commit)
+# generated 2026-10-25T11:57:59-0400 America/New_York
+# live=false; NEED_MEM_PROBE impl package; ban apply X2.ok
+
+--- /dev/null	2026-10-20 00:34:32.181793385 -0400
++++ research/leaf25_full_factor_chunk_plan_r1.py	2026-10-25 11:55:41.053938077 -0400
+@@ -0,0 +1,224 @@
++#!/usr/bin/env python3
++"""Leaf25 full-factor chunk_plan r1 — rebalance-day / month chunk boundaries → JSON.
++
++NEED_MEM_PROBE impl package (Arch f389c394… NEED_MEM_PROBE). live=false.
++Generates chunk boundary JSON from the SSE trade calendar (small table only).
++Does NOT read financials / prices / returns panels. No densify path.
++
++Default granularity: ~20 rebalance days OR ~1 calendar month of open sessions
++(whichever bound the CLI selects; default mode=rebal_days with max_rebaldays=20).
++
++Usage (examples):
++  PYTHONDONTWRITEBYTECODE=1 python research/leaf25_full_factor_chunk_plan_r1.py \\
++    --start 2024-06-03 --end 2026-10-09 --out /tmp/quantlab_leaf25_chunks.json
++  # month mode:
++  ... --mode month --out /tmp/quantlab_leaf25_chunks.json
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import sys
++from datetime import datetime
++from pathlib import Path
++from zoneinfo import ZoneInfo
++
++import pandas as pd
++import pyarrow.parquet as pq
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_REL = "data/v2/calendar/trade_cal_sse_pit.parquet"
++CAL_SHA_PIN = "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41"
++ET = ZoneInfo("America/New_York")
++
++# Defaults aligned with leaf25 X2 window / MEM P0
++DEFAULT_START = "2024-06-03"
++DEFAULT_END = "2026-10-09"
++DEFAULT_MAX_REBALDAYS = 20
++
++
++def sha256_file(p: Path) -> str:
++    h = hashlib.sha256()
++    with open(p, "rb") as f:
++        for b in iter(lambda: f.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
++def load_open_sessions(cal_path: Path, start: str, end: str, pin_sha: bool) -> list[pd.Timestamp]:
++    if pin_sha:
++        actual = sha256_file(cal_path)
++        if actual != CAL_SHA_PIN:
++            raise SystemExit(
++                f"STOP: calendar sha mismatch actual={actual} pinned={CAL_SHA_PIN}"
++            )
++    tab = pq.read_table(cal_path, columns=["cal_date", "is_open"]).to_pandas()
++    tab["d"] = pd.to_datetime(tab["cal_date"].astype(str).str.replace("-", "").str[:8], format="%Y%m%d")
++    opens = tab.loc[tab["is_open"].astype(int) == 1, "d"].sort_values()
++    lo = pd.Timestamp(start)
++    hi = pd.Timestamp(end)
++    sess = [pd.Timestamp(x) for x in opens[(opens >= lo) & (opens <= hi)]]
++    if not sess:
++        raise SystemExit(f"STOP: no open sessions in [{start}, {end}]")
++    return sess
++
++
++def synthetic_sessions(start: str, end: str) -> list[pd.Timestamp]:
++    """Weekday-only synthetic calendar (no parquet). For dry / offline unit paths only."""
++    days = pd.bdate_range(start=start, end=end, freq="C")
++    if len(days) == 0:
++        raise SystemExit(f"STOP: synthetic empty range [{start}, {end}]")
++    return [pd.Timestamp(x) for x in days]
++
++
++def month_end_rebals(sess: list[pd.Timestamp]) -> list[pd.Timestamp]:
++    """Month-end rebalance = last open session in each calendar month; keep window ends."""
++    if not sess:
++        return []
++    by_ym: dict[tuple[int, int], pd.Timestamp] = {}
++    for d in sess:
++        by_ym[(d.year, d.month)] = d  # last write wins → month end open
++    me = sorted(by_ym.values())
++    out = sorted(set([sess[0]] + me + [sess[-1]]))
++    return out
++
++
++def chunk_by_rebal(rebals: list[pd.Timestamp], max_n: int) -> list[dict]:
++    chunks = []
++    i = 0
++    cid = 0
++    while i < len(rebals):
++        j = min(i + max_n, len(rebals))
++        part = rebals[i:j]
++        chunks.append(
++            {
++                "chunk_id": cid,
++                "mode": "rebal_days",
++                "n_rebaldays": len(part),
++                "start": part[0].strftime("%Y-%m-%d"),
++                "end": part[-1].strftime("%Y-%m-%d"),
++                "rebal_dates": [d.strftime("%Y-%m-%d") for d in part],
++            }
++        )
++        cid += 1
++        i = j
++    return chunks
++
++
++def chunk_by_month(sess: list[pd.Timestamp]) -> list[dict]:
++    """One chunk per calendar month of open sessions (≈1 natural month)."""
++    groups: dict[tuple[int, int], list[pd.Timestamp]] = {}
++    for d in sess:
++        groups.setdefault((d.year, d.month), []).append(d)
++    chunks = []
++    for cid, key in enumerate(sorted(groups)):
++        part = groups[key]
++        chunks.append(
++            {
++                "chunk_id": cid,
++                "mode": "month",
++                "year_month": f"{key[0]:04d}-{key[1]:02d}",
++                "n_open_days": len(part),
++                "start": part[0].strftime("%Y-%m-%d"),
++                "end": part[-1].strftime("%Y-%m-%d"),
++                "open_dates_head_tail": [
++                    part[0].strftime("%Y-%m-%d"),
++                    part[-1].strftime("%Y-%m-%d"),
++                ],
++            }
++        )
++    return chunks
++
++
++def build_plan(
++    start: str,
++    end: str,
++    mode: str,
++    max_rebaldays: int,
++    cal_path: Path | None,
++    synthetic: bool,
++    pin_sha: bool,
++) -> dict:
++    if synthetic:
++        sess = synthetic_sessions(start, end)
++        cal_meta = {"source": "synthetic_bdate", "sha256": None}
++    else:
++        path = cal_path or (ROOT / CAL_REL)
++        sess = load_open_sessions(path, start, end, pin_sha=pin_sha)
++        cal_meta = {
++            "source": str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path),
++            "sha256": sha256_file(path),
++            "sha_pin": CAL_SHA_PIN,
++            "pin_checked": pin_sha,
++        }
++    rebals = month_end_rebals(sess)
++    if mode == "rebal_days":
++        chunks = chunk_by_rebal(rebals, max_rebaldays)
++    elif mode == "month":
++        chunks = chunk_by_month(sess)
++    else:
++        raise SystemExit(f"STOP: unknown mode={mode}")
++    now = datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z")
++    return {
++        "schema": "leaf25_full_factor_chunk_plan_r1",
++        "live": False,
++        "promotion_approved": False,
++        "created_et": now,
++        "window": {"start": start, "end": end},
++        "mode": mode,
++        "max_rebaldays": max_rebaldays if mode == "rebal_days" else None,
++        "calendar": cal_meta,
++        "n_open_sessions": len(sess),
++        "n_rebaldays": len(rebals),
++        "n_chunks": len(chunks),
++        "chunks": chunks,
++        "notes": [
++            "P0 MEM granularity example: ~20 rebal days or ~1 natural month",
++            "No financials/prices read; calendar-only (or synthetic)",
++            "Ban whole-window densify; each chunk is an independent peak budget unit",
++        ],
++    }
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description="Leaf25 full-factor chunk plan r1")
++    ap.add_argument("--start", default=DEFAULT_START)
++    ap.add_argument("--end", default=DEFAULT_END)
++    ap.add_argument("--mode", choices=("rebal_days", "month"), default="rebal_days")
++    ap.add_argument("--max-rebaldays", type=int, default=DEFAULT_MAX_REBALDAYS)
++    ap.add_argument("--calendar", type=Path, default=None, help="Override calendar parquet path")
++    ap.add_argument("--synthetic", action="store_true", help="No parquet; weekday synthetic calendar")
++    ap.add_argument("--no-pin-sha", action="store_true", help="Skip calendar sha pin check")
++    ap.add_argument("--out", type=Path, required=True, help="Write chunk plan JSON here")
++    args = ap.parse_args(argv)
++
++    if args.max_rebaldays < 1:
++        print("STOP: --max-rebaldays must be >= 1", file=sys.stderr)
++        return 2
++
++    plan = build_plan(
++        start=args.start,
++        end=args.end,
++        mode=args.mode,
++        max_rebaldays=args.max_rebaldays,
++        cal_path=args.calendar,
++        synthetic=args.synthetic,
++        pin_sha=not args.no_pin_sha,
++    )
++    out = args.out
++    out.parent.mkdir(parents=True, exist_ok=True)
++    tmp = out.with_suffix(out.suffix + ".tmp")
++    text = json.dumps(plan, indent=2, ensure_ascii=False) + "\n"
++    tmp.write_text(text, encoding="utf-8")
++    tmp.replace(out)
++    print(
++        f"OK wrote {out} n_chunks={plan['n_chunks']} mode={plan['mode']} "
++        f"n_open={plan['n_open_sessions']} n_rebal={plan['n_rebaldays']}",
++        flush=True,
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+--- /dev/null	2026-10-20 00:34:32.181793385 -0400
++++ research/leaf25_full_factor_mem_probe_r1.py	2026-10-25 11:55:47.809972530 -0400
+@@ -0,0 +1,334 @@
++#!/usr/bin/env python3
++"""Leaf25 full-factor mem_probe r1 — single-chunk HI_LIQ peak-path skeleton.
++
++Arch NEED_MEM_PROBE (ARCH_LEAF25_MEM_CHUNK_REVIEW sha f389c394…):
++  implement probe + minimal chunk_plan; static only this turn; DO NOT apply for X2 .ok.
++
++HARD RULES (this file):
++  - Default is --dry-run. Real PIT/parquet path requires explicit --allow-real-data.
++  - THIS TASK / default invocation MUST NOT read financial or market big tables.
++  - Formal peak-path run is ONLY after Arch signs an independent probe .ok and Main
++    schedules the short window. Comment below marks the gate.
++  - RSS self-check: exit non-zero if observed peak >= 0.85*C4 (1131520 kB) OR >= hard.
++  - C4/stop/hard defaults: 1331200 / 1484800 / 1536000 kB. Ban raise RSS cap.
++  - Sampler / intermediate sample dirs: /tmp/quantlab_* only.
++  - Ban reuse of step_m1 .ok 1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0.
++
++Peak path structure (dry simulates; real gated):
++  read PIT → cross-section alpha → write part parquet → del+gc
++"""
++from __future__ import annotations
++
++import argparse
++import gc
++import hashlib
++import json
++import resource
++import sys
++from datetime import datetime
++from pathlib import Path
++from zoneinfo import ZoneInfo
++
++# Optional import of sibling chunk_plan (same research/)
++_HERE = Path(__file__).resolve().parent
++if str(_HERE) not in sys.path:
++    sys.path.insert(0, str(_HERE))
++
++try:
++    import leaf25_full_factor_chunk_plan_r1 as chunk_plan_mod
++except ImportError:  # pragma: no cover - allow --help without sibling
++    chunk_plan_mod = None  # type: ignore
++
++ET = ZoneInfo("America/New_York")
++ROOT = Path(__file__).resolve().parents[1]
++
++C4_KB = 1331200
++STOP_KB = 1484800
++HARD_KB = 1536000
++SPLIT_THRESH_KB = int(0.85 * C4_KB)  # 1131520
++BANNED_OK_SHA = "1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0"
++
++# ---------------------------------------------------------------------------
++# FORMAL PEAK PATH GATE (do not remove):
++#   Production / calibrated mem_probe that reads real PIT + HI_LIQ cross-section
++#   MUST be launched only after:
++#     (1) Arch signs an independent probe .ok (NOT X2, NOT step_m1 1c32ab1e…),
++#     (2) Main schedules the short probe window,
++#     (3) CLI passes --allow-real-data AND --arch-ok-path pointing at that .ok.
++#   Until then: --dry-run only (default). live=false. promotion_approved=false.
++# ---------------------------------------------------------------------------
++
++
++def stage(name: str) -> None:
++    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    print(f"STAGE {name} ru_maxrss={rss}", file=sys.stderr, flush=True)
++
++
++def vmhwm_kb() -> int | None:
++    try:
++        with open("/proc/self/status") as f:
++            for line in f:
++                if line.startswith("VmHWM:"):
++                    return int(line.split()[1])
++    except OSError:
++        return None
++    return None
++
++
++def peak_kb() -> int:
++    """Linux getrusage.ru_maxrss is kB; take max with VmHWM if present."""
++    ru = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    hw = vmhwm_kb()
++    return max(ru, hw) if hw is not None else ru
++
++
++def check_rss(label: str, c4_kb: int, hard_kb: int, split_kb: int) -> int:
++    pk = peak_kb()
++    print(f"RSS_CHECK {label} peak_kb={pk} split={split_kb} c4={c4_kb} hard={hard_kb}", flush=True)
++    if pk >= hard_kb:
++        print(f"STOP: RSS hard breached peak_kb={pk} >= hard={hard_kb}", file=sys.stderr)
++        raise SystemExit(95)
++    if pk >= split_kb:
++        print(
++            f"STOP: RSS >= 0.85*C4 peak_kb={pk} >= split={split_kb}; "
++            f"split further — ban raise cap",
++            file=sys.stderr,
++        )
++        raise SystemExit(94)
++    return pk
++
++
++def assert_tmp_quantlab(path: Path, what: str) -> None:
++    resolved = path.resolve()
++    s = str(resolved)
++    if not (s.startswith("/tmp/quantlab_") or s.startswith("/tmp/quantlab/")):
++        # allow /tmp/quantlab_xxx or nested under a quantlab_* dir
++        ok = False
++        parts = resolved.parts
++        if len(parts) >= 3 and parts[1] == "tmp":
++            # /tmp/<name>/...
++            name = parts[2]
++            if name.startswith("quantlab"):
++                ok = True
++        if not ok:
++            raise SystemExit(
++                f"STOP: {what} must be under /tmp/quantlab_* got={resolved}"
++            )
++
++
++def sha256_file(p: Path) -> str:
++    h = hashlib.sha256()
++    with open(p, "rb") as f:
++        for b in iter(lambda: f.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
++def pick_chunk(plan: dict, chunk_id: int | None) -> dict:
++    chunks = plan["chunks"]
++    if not chunks:
++        raise SystemExit("STOP: empty chunk plan")
++    if chunk_id is None:
++        return chunks[0]
++    for c in chunks:
++        if c["chunk_id"] == chunk_id:
++            return c
++    raise SystemExit(f"STOP: chunk_id={chunk_id} not in plan")
++
++
++def dry_peak_path(chunk: dict, out_part: Path, universe: str) -> dict:
++    """Simulate read PIT → CS alpha → write part → gc without touching big tables."""
++    stage("dry_begin")
++    # Tiny synthetic cross-section (NOT real data)
++    n_names = 32
++    rows = [
++        {
++            "trade_date": chunk["start"].replace("-", ""),
++            "ts_code": f"{i:06d}.SZ",
++            "universe": universe,
++            "alpha": float(i % 7) * 0.01,
++            "chunk_id": chunk["chunk_id"],
++        }
++        for i in range(n_names)
++    ]
++    stage("dry_cs_alpha")
++    out_part.parent.mkdir(parents=True, exist_ok=True)
++    # Write a tiny JSON "part" (avoid pyarrow dependency on dry path for parquet)
++    part_meta = {
++        "format": "dry_json_part",
++        "not_real_data": True,
++        "n_names": n_names,
++        "chunk": chunk,
++        "rows_sample": rows[:3],
++    }
++    tmp = out_part.with_suffix(out_part.suffix + ".tmp")
++    tmp.write_text(json.dumps(part_meta, indent=2) + "\n", encoding="utf-8")
++    tmp.replace(out_part)
++    del rows
++    gc.collect()
++    stage("dry_after_gc")
++    return {
++        "path": "dry",
++        "n_names": n_names,
++        "n_days": chunk.get("n_rebaldays") or chunk.get("n_open_days") or 1,
++        "densify": False,
++        "part_path": str(out_part),
++    }
++
++
++def real_peak_path_gated(*_a, **_k) -> dict:
++    """Real PIT→α→part path.
++
++    Intentionally not implemented for unattended runs. When Arch probe .ok lands,
++    fill this with column-projected PIT reads + HI_LIQ CS + float32 part parquet.
++    Until then calling this is a hard error even with --allow-real-data, so that
++    this package cannot silently densify a full window.
++    """
++    raise SystemExit(
++        "STOP: real peak path not enabled in mem_probe_r1 skeleton; "
++        "await Arch probe .ok + implementation fill-in (ban densify)"
++    )
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description="Leaf25 full-factor mem_probe r1")
++    ap.add_argument("--dry-run", action="store_true", default=True,
++                    help="Default: synthetic peak-path structure only (no big tables)")
++    ap.add_argument("--allow-real-data", action="store_true", default=False,
++                    help="Required to attempt real PIT path (still gated / unimplemented)")
++    ap.add_argument("--no-dry-run", action="store_true",
++                    help="Disable dry-run (still needs --allow-real-data)")
++    ap.add_argument("--universe", default="HI_LIQ", choices=("HI_LIQ", "FULLA"))
++    ap.add_argument("--start", default="2024-06-03")
++    ap.add_argument("--end", default="2026-10-09")
++    ap.add_argument("--mode", choices=("rebal_days", "month"), default="month",
++                    help="Default month ≈ 1 natural month (Arch probe suggestion)")
++    ap.add_argument("--max-rebaldays", type=int, default=20)
++    ap.add_argument("--chunk-id", type=int, default=None, help="Which chunk to probe (default first)")
++    ap.add_argument("--chunk-plan-json", type=Path, default=None,
++                    help="Existing plan JSON; else build via chunk_plan module")
++    ap.add_argument("--synthetic-calendar", action="store_true",
++                    help="Pass through to chunk_plan (no calendar parquet)")
++    ap.add_argument("--out", type=Path, required=True, help="Probe out dir (meta + part)")
++    ap.add_argument("--sample-dir", type=Path, default=None,
++                    help="Optional RSS sample dir; must be /tmp/quantlab_*")
++    ap.add_argument("--c4-kb", type=int, default=C4_KB)
++    ap.add_argument("--stop-kb", type=int, default=STOP_KB)
++    ap.add_argument("--hard-kb", type=int, default=HARD_KB)
++    ap.add_argument("--arch-ok-path", type=Path, default=None,
++                    help="Path to Arch probe .ok (required with --allow-real-data)")
++    args = ap.parse_args(argv)
++
++    # Default ALWAYS dry unless explicit --allow-real-data (formal path gated).
++    if args.allow_real_data:
++        dry = False
++    elif args.no_dry_run:
++        print("STOP: --no-dry-run requires --allow-real-data", file=sys.stderr)
++        return 2
++    else:
++        dry = True
++
++    if args.c4_kb != C4_KB or args.stop_kb != STOP_KB or args.hard_kb != HARD_KB:
++        # Allow override only downward; ban raise
++        if args.c4_kb > C4_KB or args.stop_kb > STOP_KB or args.hard_kb > HARD_KB:
++            print("STOP: ban raise RSS cap above 1331200/1484800/1536000", file=sys.stderr)
++            return 2
++
++    split_kb = int(0.85 * args.c4_kb)
++
++    if args.sample_dir is not None:
++        assert_tmp_quantlab(args.sample_dir, "sample-dir")
++        args.sample_dir.mkdir(parents=True, exist_ok=True)
++
++    if not dry:
++        if args.arch_ok_path is None or not args.arch_ok_path.is_file():
++            print("STOP: --allow-real-data requires existing --arch-ok-path", file=sys.stderr)
++            return 2
++        ok_sha = sha256_file(args.arch_ok_path)
++        if ok_sha == BANNED_OK_SHA:
++            print(f"STOP: ban reuse step_m1 .ok {BANNED_OK_SHA}", file=sys.stderr)
++            return 2
++
++    stage("start")
++    check_rss("start", args.c4_kb, args.hard_kb, split_kb)
++
++    # Chunk plan
++    if args.chunk_plan_json is not None:
++        plan = json.loads(args.chunk_plan_json.read_text(encoding="utf-8"))
++    else:
++        if chunk_plan_mod is None:
++            print("STOP: chunk_plan module missing", file=sys.stderr)
++            return 2
++        plan = chunk_plan_mod.build_plan(
++            start=args.start,
++            end=args.end,
++            mode=args.mode,
++            max_rebaldays=args.max_rebaldays,
++            cal_path=None,
++            synthetic=args.synthetic_calendar or dry,  # dry defaults synthetic cal
++            pin_sha=not (args.synthetic_calendar or dry),
++        )
++
++    chunk = pick_chunk(plan, args.chunk_id)
++    if args.universe == "FULLA" and dry:
++        print("NOTE: dry-run FULLA allowed for structure; probe priority remains HI_LIQ", flush=True)
++
++    out = args.out
++    out.mkdir(parents=True, exist_ok=True)
++    part_path = out / f"alpha_parts/{args.universe}/part_{chunk['start'].replace('-', '')}_{chunk['end'].replace('-', '')}.json"
++
++    if dry:
++        path_meta = dry_peak_path(chunk, part_path, args.universe)
++    else:
++        path_meta = real_peak_path_gated(chunk, part_path, args.universe)
++
++    pk = check_rss("after_chunk", args.c4_kb, args.hard_kb, split_kb)
++
++    meta = {
++        "schema": "leaf25_full_factor_mem_probe_r1",
++        "live": False,
++        "promotion_approved": False,
++        "dry_run": dry,
++        "allow_real_data": bool(args.allow_real_data),
++        "universe": args.universe,
++        "chunk": chunk,
++        "n_chunks_in_plan": plan.get("n_chunks"),
++        "path": path_meta,
++        "rss": {
++            "peak_kb": pk,
++            "c4_kb": args.c4_kb,
++            "stop_kb": args.stop_kb,
++            "hard_kb": args.hard_kb,
++            "split_threshold_kb": split_kb,
++            "vmhwm_kb": vmhwm_kb(),
++            "ru_maxrss_kb": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
++        },
++        "sampler_policy": "/tmp/quantlab_* only",
++        "sample_dir": str(args.sample_dir) if args.sample_dir else None,
++        "banned_ok_sha": BANNED_OK_SHA,
++        "created_et": datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z"),
++        "notes": [
++            "NEED_MEM_PROBE skeleton; formal real-data peak path awaits probe .ok",
++            "Ban raise RSS; if peak>=0.85*C4 exit 94 and split further",
++            "Do not apply for X2 .ok from this package alone",
++        ],
++    }
++    meta_path = out / "run_meta.json"
++    tmp = meta_path.with_suffix(".json.tmp")
++    tmp.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++    tmp.replace(meta_path)
++
++    # Optional: persist plan alongside
++    plan_path = out / "chunk_plan_used.json"
++    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++
++    print(
++        f"OK mem_probe dry={dry} universe={args.universe} chunk_id={chunk['chunk_id']} "
++        f"peak_kb={pk} meta={meta_path}",
++        flush=True,
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+--- /dev/null	2026-10-20 00:34:32.181793385 -0400
++++ research/leaf25_cfacc_desens_build_r1.py	2026-10-25 11:55:41.053938077 -0400
+@@ -0,0 +1,36 @@
++#!/usr/bin/env python3
++"""Leaf25 CFACC desens build r1 — STUB only (NotImplemented).
++
++NEED_MEM_PROBE package optional minimum. Does NOT implement full-leaf build.
++Do not pretend complete. live=false. Ban densify / ban raise RSS.
++Await mem_probe calibration + Arch X2 .ok before any real build run.
++"""
++from __future__ import annotations
++
++import argparse
++import sys
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description="Leaf25 CFACC desens build r1 STUB")
++    ap.add_argument("--window", choices=("x2", "sealed"), default="x2")
++    ap.add_argument("--x2-end", default="20261009")
++    ap.add_argument("--out", required=True)
++    ap.add_argument("--chunk-plan-json", default=None)
++    args = ap.parse_args(argv)
++    print(
++        "STOP: leaf25_cfacc_desens_build_r1 is a stub (NotImplemented); "
++        f"window={args.window} x2_end={args.x2_end} out={args.out}",
++        file=sys.stderr,
++    )
++    raise NotImplementedError(
++        "full-leaf CFACC/desens build not implemented; complete mem_probe first"
++    )
++
++
++if __name__ == "__main__":
++    try:
++        raise SystemExit(main())
++    except NotImplementedError as e:
++        print(f"NotImplementedError: {e}", file=sys.stderr)
++        raise SystemExit(3)
+
+--- /dev/null	2026-10-20 00:34:32.181793385 -0400
++++ docs/v2/audit/leaf25_step_m1/AI_LEAF25_MEM_PROBE_IMPL_COVER_20261025_ZH.md	2026-10-25 11:57:36.626527429 -0400
+@@ -0,0 +1,77 @@
++# 叶25 mem_probe 实现包封面（交 Arch 审）
++
++| 项 | 值 |
++|---|---|
++| 角色 | QuantLab AI（执行器） |
++| 起草 | `2026-10-25T11:57:36-0400`（America/New_York；墙钟 `2026-10-25 11:57:36 ET`） |
++| 状态 | **NEED_MEM_PROBE 实现包已落盘** · **未申 `.ok`** · **本回合未读真实行情/财务大表** |
++| live | **false** · promotion_approved **false** |
++| 对齐 | Arch 审 `ARCH_LEAF25_MEM_CHUNK_REVIEW_20261025_ZH.md` → **NEED_MEM_PROBE** |
++| 动作本回合 | 静态实现 + `py_compile`→`/tmp` + pyflakes + 文档/DIFF；**禁**实跑大表 · **禁**申 X2/probe `.ok` · **禁** git commit · **禁**抬 RSS 帽 |
++
++## 0. 目的
++
++落实 Arch §3 / §6：**先**交付 mem_probe + 最小 chunk_plan 实现包并交静态审；**不得**据此直接签 X2 实跑 `.ok`。正式峰路径（读 PIT→截面 α→落盘分区→gc）仅在 Arch **另签独立 probe `.ok`** 且主排短窗后触发。
++
++## 1. 输入 sha256 核对（全长）
++
++| 件 | 路径 | 期望 | 盘证 |
++|---|---|---|---|
++| Arch 审 NEED_MEM_PROBE | `docs/v2/audit/ARCH_LEAF25_MEM_CHUNK_REVIEW_20261025_ZH.md` | `f389c394041cf517b8b8449507bfc157a354e51d2a3f41484adc57d021596d49` | **MATCH** |
++| MEM 分块 | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_FULL_FACTOR_MEM_ESTIMATE_CHUNK_20261025_ZH.md` | `103717df1f9e5d63f8c681f16da091f44801e1b69b219ae1a18b2159446145d1` | **MATCH** |
++| r6 FROZEN 戳 | `docs/v2/AI_LEAF25_FULL_FACTOR_PREREG_r6_FROZEN_20261025_ZH.md` | `4bb1ff2b805f441499607ada5f871044e72e6176a66052c73b64816130d199e2` | **MATCH** |
++| wrapper v5 | `docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh` | `4240ce82f0929085ab4bcb37e2400a3414e70e162c9e697cf02d97103342f882` | **MATCH** |
++| X2.cmd 草案（参考） | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_FULL_FACTOR_X2_CMD_DRAFT_20261025_ZH.md` | `035e5818954e0f08798a860ad870312f278784b0291bcc424e602f8cf1be1c78` | **MATCH** |
++
++## 2. 交付物 sha256（全长；落盘后钉）
++
++| 件 | 路径 | sha256 |
++|---|---|---|
++| chunk_plan | `research/leaf25_full_factor_chunk_plan_r1.py` | `e858b32d314b9161a366ffef6661605943061162d707f7b86d01439d35dcdb12` |
++| mem_probe | `research/leaf25_full_factor_mem_probe_r1.py` | `a0071e627d37f7e2498ea73984abb5b7ee4b1d2d0d27afdb85f8fc30986aed23` |
++| build stub（可选最小） | `research/leaf25_cfacc_desens_build_r1.py` | `45537fb9294202f10293b8c0c7b57d9ebf95b835f8af23e3ef63a6dc25c47ee3` |
++| 本封面 | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_MEM_PROBE_IMPL_COVER_20261025_ZH.md` | （本文落盘后另核） |
++| probe cmd 草案 | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_MEM_PROBE_CMD_DRAFT_20261025_ZH.md` | （同批） |
++| unified DIFF | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_MEM_PROBE_R1_20261025.diff` | （同批） |
++
++## 3. 与 Arch §3 对齐（探针最小要求 → 本包）
++
++| Arch §3 要求 | 本包落实 |
++|---|---|
++| 独立小 `.ok`（禁与密封/X2 同张；禁复用 `1c32ab1e…`） | **未申**；cmd 草案占位 `<ARCH_PROBE_OK>`；代码硬禁复用 `1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0` |
++| wrapper v5 `4240ce82…`；C4/stop/hard **1331200/1484800/1536000**；禁抬帽 | cmd 草案钉 v5；脚本默认三帽；上调则 `STOP` |
++| 采样仅 `/tmp` | `--sample-dir` 强制 `/tmp/quantlab_*`；wrapper 默认 `/tmp/quantlab_wrapper_sampler/` |
++| 至少一块拟生产粒度；宇宙优先 HI_LIQ | 默认 `--mode month`（≈1 自然月）或 rebal×20；`--universe HI_LIQ` |
++| 走「读 PIT→截面 α→落盘分区→gc」主峰路径结构 | dry-run 模拟该结构；真实路径 **显式门闩**（`--allow-real-data` + `.ok`，且 r1 仍 NotImplemented 防 densify） |
++| 通过线 peak≤0.85×C4（≤1131520）否则再拆不抬帽 | `check_rss`：≥split→exit 94；≥hard→exit 95 |
++| 回执披露 peak/块边界/N 等 | `run_meta.json` + `chunk_plan_used.json` |
++
++## 4. 禁项（本回合与后续开跑前）
++
++- **禁**申 X2 实跑 `.ok`；**禁**本回合申 probe `.ok`（交 Arch 静态审实现包）
++- **禁**复用 step_m1 `.ok` `1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0`
++- **禁**抬 C4/stop/hard；破帽/破 0.85×C4 → 拆块，不自抬帽重试
++- **禁**整窗 densify；**禁** `--window both`
++- **禁**采样写入 `output*` / `data*`
++- **禁**本回合读真实行情/财务大表；默认 `--dry-run` / `--synthetic-calendar`
++- **禁** git commit；DIFF 交 Arch 审
++- **禁**在 research 落 `__pycache__`（`py_compile`→`/tmp`）
++
++## 5. 静态检查
++
++| 检查 | 结果 |
++|---|---|
++| `py_compile` → `/tmp/leaf25_chunk_plan_r1.pyc` | **PASS** |
++| `py_compile` → `/tmp/leaf25_mem_probe_r1.pyc` | **PASS** |
++| `py_compile` → `/tmp/leaf25_cfacc_build_r1.pyc` | **PASS** |
++| pyflakes（`/tmp/ql_pyflakes_venv`）三脚本 | **PASS**（rc=0） |
++| research `__pycache__` 新增 leaf25_full_factor* / leaf25_cfacc* | **无** |
++| dry-run 烟测（synthetic cal，`/tmp/quantlab_*` out） | **PASS**（未读财务/行情大表） |
++
++## 6. 给 Arch / 主的下一跳
++
++1. **Arch**：静态审本实现包（脚本 sha + 本封面 + cmd 草案 + DIFF）；通过后**另签独立 probe `.ok`**（钉 wrapper v5 / C4 三帽 / `/tmp` / 单块 HI_LIQ / 禁 `1c32ab1e` / `ai_no_retry`）。**本包不等于授权开跑。**
++2. **主**：叶27 让出后排 **mem_probe 短窗**；勿占用拟 X2 14:30–16:00 全段除非探针极短。
++3. **AI**：等 probe `.ok` + 入窗后再跑真实峰路径；**勿**申 X2 `.ok`；探针 PASS 后由 Arch 用实测峰硬钉 X2 内存键。
++
++live=false；promotion_approved=false。
+
+--- /dev/null	2026-10-20 00:34:32.181793385 -0400
++++ docs/v2/audit/leaf25_step_m1/AI_LEAF25_MEM_PROBE_CMD_DRAFT_20261025_ZH.md	2026-10-25 11:57:36.626527429 -0400
+@@ -0,0 +1,138 @@
++# 叶25 mem_probe · cmd 草案（未授权 · 未申 `.ok`）
++
++| 项 | 值 |
++|---|---|
++| 角色 | QuantLab AI（执行器） |
++| 起草 | `2026-10-25T11:57:36-0400`（America/New_York；墙钟 `2026-10-25 11:57:36 ET`） |
++| 状态 | **DRAFT**（**不是 `.ok`** · **未授权实跑** · **不替代 Arch 签发**） |
++| live | **false** · promotion_approved **false** |
++| 对齐 | Arch **NEED_MEM_PROBE** `f389c394041cf517b8b8449507bfc157a354e51d2a3f41484adc57d021596d49`；封面同批 |
++| 本回合 | **未申 `.ok`** · **未读真实行情/财务大表** · 仅静态/dry 结构 |
++
++---
++
++## 1. 钉表（全长）
++
++| 件 | 路径 / 值 | sha256 |
++|---|---|---|
++| Arch 审 | `docs/v2/audit/ARCH_LEAF25_MEM_CHUNK_REVIEW_20261025_ZH.md` | `f389c394041cf517b8b8449507bfc157a354e51d2a3f41484adc57d021596d49` |
++| MEM | `docs/v2/audit/leaf25_step_m1/AI_LEAF25_FULL_FACTOR_MEM_ESTIMATE_CHUNK_20261025_ZH.md` | `103717df1f9e5d63f8c681f16da091f44801e1b69b219ae1a18b2159446145d1` |
++| r6 FROZEN 戳 | `docs/v2/AI_LEAF25_FULL_FACTOR_PREREG_r6_FROZEN_20261025_ZH.md` | `4bb1ff2b805f441499607ada5f871044e72e6176a66052c73b64816130d199e2` |
++| **wrapper v5** | `docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh` | **`4240ce82f0929085ab4bcb37e2400a3414e70e162c9e697cf02d97103342f882`** |
++| chunk_plan | `research/leaf25_full_factor_chunk_plan_r1.py` | `e858b32d314b9161a366ffef6661605943061162d707f7b86d01439d35dcdb12` |
++| **mem_probe** | `research/leaf25_full_factor_mem_probe_r1.py` | **`a0071e627d37f7e2498ea73984abb5b7ee4b1d2d0d27afdb85f8fc30986aed23`** |
++| 禁复用 step_m1 `.ok` | CONSUMED | **`1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0`** |
++| 宇宙 | **HI_LIQ**（单块） | FULLA 后置 |
++| 块粒度 | 默认 `--mode month`（≈1 自然月）或 `--mode rebal_days --max-rebaldays 20` | 对齐 Arch §3 / MEM P0 |
++
++---
++
++## 2. 帽与采样（禁抬帽）
++
++| 项 | 值 |
++|---|---|
++| C4 | **1331200** kB |
++| wrapper STOPKB | **1484800** kB |
++| hard | **1536000** kB |
++| 拆块阈值 | **1131520** kB（0.85×C4）；破则 exit 94，再拆，**不**抬帽 |
++| 采样 | **仅** `/tmp/quantlab_*`（wrapper 默认 `/tmp/quantlab_wrapper_sampler/`；并行监控亦须 `/tmp`） |
++| 破帽 | **ABORT**；`ai_no_retry` |
++
++`.ok` / `.cmd` 若写成更高帽 → **Arch 应拒签**。
++
++---
++
++## 3. 拟 cmd（单块 HI_LIQ · wrapper v5 · **未申 `.ok`**）
++
++占位：
++- `<ET_TS>=$(date +%Y%m%d_%H%M%S)`（开跑瞬间）
++- `<ARCH_PROBE_OK>` = Arch **新**签发的 **独立 probe** `.ok`（拟名 `output/ai_factory/ARCH_RUN_AUTH_LEAF25_MEM_PROBE_R1.ok`）——**不得**填 `1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0` / 任何 CONSUMED/VOID / X2 `.ok`
++- 拟短窗：**主排**（建议叶27 12:30–13:30 ET 之后的短窗；**勿**默认抢占拟 X2 14:30–16:00 全段）——具体 not_before/expires 以主+Arch 为准；本稿仅占位
++
++```bash
++# DRAFT — 未授权；须新 probe .ok 且主排短窗内才可执行
++# 本文件不是 .ok；禁复用 1c32ab1e；禁抬帽；采样仅 /tmp；禁本回合申签
++cd /workspace/QuantLab && \
++ET_TS=$(date +%Y%m%d_%H%M%S) && \
++OUT=output/ai_factory/_leaf25_mem_probe/${ET_TS} && \
++LOGDIR=${OUT}_logs && \
++SAMPDIR=/tmp/quantlab_leaf25_mem_probe_${ET_TS} && \
++mkdir -p "$OUT" "$LOGDIR" "$SAMPDIR" && \
++# 预检：pgrep 空 + 新 probe .ok 钉 wrapper v5/C4/HI_LIQ/单块 + 时刻∈主排短窗 后，再：
++bash docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh \
++  --arch-ok <ARCH_PROBE_OK> \
++  --assert leaf25_full_factor_mem_probe_r1 \
++  --tag leaf25_mem_probe_r1 \
++  --logdir "$LOGDIR" \
++  --outdir "$OUT" \
++  --sampler-dir "$SAMPDIR" \
++  --meta "$OUT/run_meta.json" \
++  --cwd /workspace/QuantLab -- \
++  timeout 900 env PYTHONDONTWRITEBYTECODE=1 \
++  /workspace/qlvenv/bin/python research/leaf25_full_factor_mem_probe_r1.py \
++    --allow-real-data \
++    --arch-ok-path <ARCH_PROBE_OK> \
++    --universe HI_LIQ \
++    --mode month \
++    --start 2024-06-03 \
++    --end 2024-06-28 \
++    --chunk-id 0 \
++    --sample-dir "$SAMPDIR" \
++    --c4-kb 1331200 --stop-kb 1484800 --hard-kb 1536000 \
++    --out "$OUT/"
++```
++
++> 注：r1 骨架在 `--allow-real-data` 下仍对「真实 PIT 峰路径」保持 **NotImplemented 门闩**（防 densify）；Arch 审过实现包并签 probe `.ok` 后，须另补真实路径实现或 r2 再钉 sha，方可实跑校准峰。本草案展示 **开跑形参与帽/采样约束**，**不是**授权。
++
++**一行摘要（开跑核；待 `.ok`）**：
++
++```text
++bash docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh … -- /workspace/qlvenv/bin/python research/leaf25_full_factor_mem_probe_r1.py --allow-real-data --universe HI_LIQ --mode month
++```
++
++| 路径类 | 约定 |
++|---|---|
++| out_dir | `output/ai_factory/_leaf25_mem_probe/<ET_TS>/` |
++| log | `…/<ET_TS>_logs/` |
++| **sampler** | `/tmp/quantlab_leaf25_mem_probe_<ET_TS>/`（禁 `output*`/`data*`） |
++| 单块窗（example） | 如 2024-06 自然月开市日；以 chunk_plan 首块为准 |
++
++**明确禁止**：
++- 复用 step_m1 `.ok` `1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0`
++- 抬 C4/stop/hard 超 1331200/1484800/1536000
++- 采样写入 `output*` / `data*`
++- 将本草案或实现包封面当作 `.ok`
++- 本回合申 X2 实跑 `.ok` 或自开跑读大表
++- 与密封/X2 实跑同张 `.ok`
++
++---
++
++## 4. probe `.ok` 结构要求（供 Arch；AI **不申**）
++
++| 键意图 | 要求 |
++|---|---|
++| 轨 | **mem_probe only**（非 X2 / 非密封） |
++| wrapper | v5 `4240ce82f0929085ab4bcb37e2400a3414e70e162c9e697cf02d97103342f882` |
++| c4 / stop / hard | **1331200 / 1484800 / 1536000** |
++| peak_split_threshold_kb | **1131520** |
++| script | mem_probe `a0071e627d37f7e2498ea73984abb5b7ee4b1d2d0d27afdb85f8fc30986aed23` + chunk_plan `e858b32d314b9161a366ffef6661605943061162d707f7b86d01439d35dcdb12` |
++| universe | HI_LIQ；单块（month 或 ≤20 rebal） |
++| sampler | `/tmp` only；`allow_c5_ignore=false` |
++| ban_reuse_ok | 显式禁 `1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0` |
++| arch_mem_review_sha256 | `f389c394041cf517b8b8449507bfc157a354e51d2a3f41484adc57d021596d49` |
++| mem_estimate_sha256 | `103717df1f9e5d63f8c681f16da091f44801e1b69b219ae1a18b2159446145d1` |
++| ai_no_retry | true |
++| live | false |
++| 窗 | 主排短窗占位；not_before/expires 由主+Arch 填 |
++
++---
++
++## 5. 本文件边界
++
++| 本文件是 | 本文件不是 |
++|---|---|
++| probe cmd **草案** + 帽/采样/禁复用钉表 | **不是** `.ok` / 不是授权 |
++| 对齐 Arch NEED_MEM_PROBE §3 | **不**替代 Arch 签发 |
++| 拟短窗占位 | **未申 `.ok`**；**不**自开跑 |
++
++live=false.
+

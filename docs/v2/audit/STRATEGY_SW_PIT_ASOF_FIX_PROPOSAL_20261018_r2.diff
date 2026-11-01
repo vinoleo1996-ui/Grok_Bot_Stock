@@ -1,0 +1,692 @@
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -10,7 +10,7 @@
+ re-apply 申万一 stock-sleeve ≤25% at synthesis (pro-rata scale).
+ """
+ from __future__ import annotations
+-import json, subprocess, sys, hashlib, time
++import json, subprocess, sys, hashlib, time, resource
+ from pathlib import Path
+ import numpy as np
+ import pandas as pd
+@@ -21,6 +21,9 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
++from research.sw_pit_freshness import SwPitIntegrityError
++from research.sw_members_asof import (IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry,  # PIT fix (Arch 3f195231 r2)
++                                      pitfix_out_dir_guard, SW_L1_REL)
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -33,6 +36,8 @@
+ X2 = ("2024-06-03", "2026-10-09")
+ SEALED = ("2018-01-02", "2024-05-31")
+ FOCUS_INDS = ("电子", "计算机", "通信", "医药生物")
++# PIT-fix pre/post comparison must read this exact file (manifest 0b1d3432…, built 2026-10-14T04:00:19 ET)
++SW_L1_SHA_PIN = "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"
+ 
+ # T5 (Arch audit 2026-10-14): legs repointed to AI N1 regenerated legs (ind_cap_ok_book=true); old 1953xx-1957xx quarantined in _rejected_ind_cap/.
+ P = {
+@@ -78,10 +83,27 @@
+     )
+     ind["in_date"] = pd.to_datetime(ind["in_date"], errors="coerce")
+     # last known name per ts_code (approx PIT; same as FULLA helper)
++    # LEGACY — kept verbatim (Arch 3f195231 P2-4): has look-ahead; used by the "before" arm of --pitfix-compare
++    # and by importers (tie-sens / leg_review). New decision path: load_industry_asof().
+     last = ind.sort_values("in_date").groupby("ts_code").tail(1)
+     return dict(zip(last["ts_code"], last["l1_name"]))
+ 
+ 
++def load_industry_asof(as_of: str | None = None, static_map: dict | None = None) -> IndustryAsOf:
++    """PIT industry as-of each session (in_date < d, out_date null or >= d) + 主 Agent 10-18 ~05:45 ET gap carry.
++    Integrity/stale check kept."""
++    sw_pit_ensure_checked(ROOT, as_of=as_of or X2[1], as_of_defaulted=as_of is None)
++    return IndustryAsOf(load_sw_l1(ROOT), static_map=static_map)
++
++
++def check_sw_l1_pin() -> str:
++    """Explicit raise (not assert; survives python -O) — Arch P3-6."""
++    got = hashlib.sha256((ROOT / SW_L1_REL).read_bytes()).hexdigest()
++    if got != SW_L1_SHA_PIN:
++        raise SwPitIntegrityError(f"sw_pit l1 sha {got} != pinned {SW_L1_SHA_PIN}")
++    return got
++
++
+ def apply_ind_cap(agg: dict, ind_map: dict, cap: float = IND_CAP) -> tuple[dict, float]:
+     """Iteratively pro-rata scale SW L1 above `cap` of stock-sleeve; excess → BAL.
+ 
+@@ -119,10 +141,18 @@
+     return {**stock, **etf}, total_cut
+ 
+ 
+-def build_topn(mix: dict, aum: int, tag: str, ind_map: dict) -> tuple[pd.DataFrame, dict]:
++def build_topn(mix: dict, aum: int, tag: str, ind_map) -> tuple[pd.DataFrame, dict]:
++    """ind_map: IndustryAsOf (PIT, per-session lookup) or legacy static dict."""
+     used = list(mix)
+     D = {k: load_leg(P[k]) for k in used}
+     common = sorted(set.intersection(*[set(d["session"]) for d in D.values()]))
++    if isinstance(ind_map, IndustryAsOf):
++        pairs = pd.concat([d.loc[~d["instrument"].map(_is_etf), ["instrument", "session"]] for d in D.values()])
++        lut = ind_map.by_session(pairs[pairs["session"].isin(set(common))])
++        ind_mode = "asof_gap_carry"
++    else:
++        lut, ind_mode = None, "static_legacy"
++    n_ind_cap_sessions = n_ind_cap_x2 = n_unk_over_cap_x2 = 0
+     # keep full coverage; book-smoke will slice X2
+     G = {k: {s: g.set_index("instrument")["weight"] for s, g in d.groupby("session")} for k, d in D.items()}
+     n = N_BY_AUM[aum]
+@@ -155,15 +185,23 @@
+                 agg[BAL] = agg.get(BAL, 0.0) + agg[i] - CAP
+                 agg[i] = CAP
+         # re-apply IND≤25% of stock sleeve
+-        agg, ic = apply_ind_cap(agg, ind_map, IND_CAP)
++        im = lut.get(s, {}) if lut is not None else ind_map
++        in_x2 = X2[0] <= s <= X2[1]
++        st_pre = {i: v for i, v in agg.items() if not _is_etf(i)}
++        sl_pre = sum(st_pre.values())
++        if in_x2 and sl_pre > 0:  # P3-1: sessions where the _UNK_ bucket alone exceeds the cap (pre-cap)
++            n_unk_over_cap_x2 += int(sum(v for i, v in st_pre.items() if not im.get(i)) / sl_pre > IND_CAP + 1e-9)
++        agg, ic = apply_ind_cap(agg, im, IND_CAP)
+         ind_cut += ic
++        n_ind_cap_sessions += int(ic > 1e-12)
++        n_ind_cap_x2 += int(ic > 1e-12 and in_x2)
+         # track max industry share after
+         stock = {i: v for i, v in agg.items() if not _is_etf(i)}
+         sleeve = sum(stock.values())
+         if sleeve > 0:
+             by_ind: dict[str, float] = {}
+             for i, v in stock.items():
+-                by_ind[ind_map.get(i) or "_UNK_"] = by_ind.get(ind_map.get(i) or "_UNK_", 0.0) + v
++                by_ind[im.get(i) or "_UNK_"] = by_ind.get(im.get(i) or "_UNK_", 0.0) + v
+             max_ind_share = max(max_ind_share, max(by_ind.values()) / sleeve)
+         t = sum(agg.values())
+         if t <= 0:
+@@ -190,9 +228,18 @@
+         ind_cut_mean=ind_cut / max(len(common), 1),
+         max_ind_sleeve_share_after=float(max_ind_share),
+         ind_cap=IND_CAP,
++        ind_map_mode=ind_mode,
++        n_ind_cap_sessions=int(n_ind_cap_sessions),
++        n_ind_cap_sessions_x2=int(n_ind_cap_x2),  # sessions in X2 where apply_ind_cap actually cut weight
++        n_unk_over_cap_sessions_x2=int(n_unk_over_cap_x2),
+         mean_510300=float(W[W["instrument"] == BAL].groupby("session")["weight"].sum().reindex(common).fillna(0).mean()),
+         stock_names_median=float(stocks.groupby("session").size().median()) if len(stocks) else 0,
+     )
++    if isinstance(ind_map, IndustryAsOf):
++        hold = W.loc[~W["instrument"].map(_is_etf) & (W["session"] >= X2[0]) & (W["session"] <= X2[1]),
++                     ["session", "instrument", "weight"]]
++        meta["reclass_share_x2"] = ind_map.reclass_share(hold, weight_col="weight")  # disclosure only
++        meta["sw_asof_stats"] = dict(ind_map.stats)
+     return W, meta
+ 
+ 
+@@ -224,12 +271,17 @@
+         "--arms", "BOOK,C0",
+     ]
+     log = out_dir / "run.log"
++    sp = out_dir / "book_smoke_summary.json"
++    t_start = time.time()
++    pre_mtime = sp.stat().st_mtime if sp.exists() else None
+     with open(log, "w") as f:
+         r = subprocess.run(cmd, cwd=str(ROOT), stdout=f, stderr=subprocess.STDOUT, text=True)
+-    sp = out_dir / "book_smoke_summary.json"
+-    if not sp.exists():
+-        return {"ok": False, "returncode": r.returncode, "log": str(log)}
+-    return {"ok": True, "returncode": r.returncode, "summary": json.loads(sp.read_text()), "log": str(log)}
++    # Arch 3f195231 P2-3: success = returncode 0 AND a summary written by THIS run (not a stale file)
++    fresh = sp.exists() and sp.stat().st_mtime >= t_start and (pre_mtime is None or sp.stat().st_mtime > pre_mtime)
++    if r.returncode != 0 or not fresh:
++        return {"ok": False, "returncode": r.returncode, "summary_fresh": bool(fresh), "log": str(log)}
++    return {"ok": True, "returncode": r.returncode, "summary_fresh": True,
++            "summary": json.loads(sp.read_text()), "log": str(log)}
+ 
+ 
+ def win_rates(nav_csv: Path) -> dict:
+@@ -312,13 +364,10 @@
+         include_groups=False,
+     )
+     sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])
+-    ind = pd.read_parquet(
+-        ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+-        columns=["ts_code", "l1_name", "in_date"],
+-    )
+-    ind["in_date"] = pd.to_datetime(ind["in_date"], errors="coerce")
+-    last = ind.sort_values("in_date").groupby("ts_code").tail(1)[["ts_code", "l1_name"]]
+-    m2 = Wx.merge(last, left_on="instrument", right_on="ts_code", how="left")
++    ia = IndustryAsOf(load_sw_l1(ROOT))
++    m2 = Wx.copy()
++    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session").values  # as-of session (PIT)
++    reclass = ia.reclass_share(Wx, weight_col="weight")  # disclosure only
+     ind_share = (m2.groupby("l1_name")["weight"].sum() / m2["weight"].sum()).sort_values(ascending=False)
+     ind_share = ind_share[ind_share.index.notna()]
+     focus = {name: float(ind_share.get(name, 0.0)) for name in FOCUS_INDS}
+@@ -336,7 +385,8 @@
+             {"sw_name": str(k), "weight_time_share": float(v)} for k, v in ind_share.head(30).items()
+         ],
+         "focus_industries": focus,
+-        "note_zh": "行业用申万一级最新归属（近似 PIT）；小盘为逐日截面后30%。",
++        "reclass_share": reclass,
++        "note_zh": "行业用申万一级 as-of 归属（in_date<session 且 out_date 空或>=session，对齐 Intel；改分类空档日沿用旧行业 1 天，主 Agent 10-18 ~05:45 ET 裁定）；取不到行业的行不计入行业占比，数量见 reclass_share；小盘为逐日截面后30%。",
+     }
+ 
+ 
+@@ -499,7 +549,7 @@
+     # 2) B4 synthesize with IND≤25%
+     print("=== synthesize B4 + IND≤25% ===")
+     syn_as_of = max(str(load_leg(P[k])["session"].max())[:10] for mix in GROUPS.values() for k in mix)
+-    ind_map = load_industry_map(as_of=syn_as_of)
++    ind_map = load_industry_asof(as_of=syn_as_of)
+     B4_OUT.mkdir(parents=True, exist_ok=True)
+     synth_meta = {}
+     weight_files = {}
+@@ -695,5 +745,82 @@
+     return 0
+ 
+ 
++def _arm_ok(sm: dict, m: dict) -> bool:
++    return bool(sm.get("ok") and sm.get("returncode") == 0 and sm.get("summary_fresh")
++                and "error" not in m and m.get("cagr") is not None and m.get("mdd") is not None)
++
++
++def pitfix_compare(out_dir_arg: str) -> int:
++    """PIT-fix before/after (prereg docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md). B4 only; same legs/window/cost;
++    only the industry map differs: before = legacy load_industry_map (verbatim), after = as-of + gap carry.
++    All checks happen BEFORE any write; any arm failure -> VOID.md + all_ok=false + exit 1. Disclosure only."""
++    t0 = time.time()
++    out_dir = pitfix_out_dir_guard(ROOT, out_dir_arg)          # P2-2: under output/strategy_hiliq/, must not exist
++    mix = GROUPS["B4_50_25_25"]
++    for k in mix:
++        if not P[k].exists():
++            raise SystemExit(f"missing leg {k}: {P[k]}")
++    sha_pin = check_sw_l1_pin()                                 # P3-6: explicit raise
++    syn_as_of = max(str(load_leg(P[k])["session"].max())[:10] for k in mix)
++    legacy = load_industry_map(as_of=syn_as_of)                 # P2-4: verbatim legacy (before arm)
++    asof = load_industry_asof(as_of=syn_as_of, static_map=legacy)
++    if asof.sha256 != SW_L1_SHA_PIN:
++        raise SwPitIntegrityError(f"sw_pit l1 sha at as-of load {asof.sha256} != pinned {SW_L1_SHA_PIN}")
++    out_dir.mkdir(parents=False, exist_ok=False)                # first write; parent output/strategy_hiliq exists
++    res, all_ok = {}, True
++    for arm, im in (("before_static", legacy), ("after_asof", asof)):
++        for aum in (600000, 1000000):
++            W, meta = build_topn(mix, aum, "B4_50_25_25", im)
++            fp = out_dir / f"{arm}_B4_{aum // 10000}w.parquet"
++            W.to_parquet(fp, index=False)
++            sd = out_dir / f"smoke_{arm}_{aum // 10000}w"
++            sm = run_smoke(fp, sd, str(aum))
++            m = extract_arm(sm["summary"], aum, sd) if sm.get("ok") else {"error": "smoke_failed"}
++            ok = _arm_ok(sm, m)
++            all_ok &= ok
++            row = {k: m.get(k) for k in ("cagr", "mdd", "calmar", "win_rate_daily", "win_rate_monthly", "cost_pct", "error")}
++            row.update(ok=ok, returncode=sm.get("returncode"), summary_fresh=sm.get("summary_fresh"), log=sm.get("log"),
++                       n_ind_cap_sessions_x2=meta["n_ind_cap_sessions_x2"],
++                       n_unk_over_cap_sessions_x2=meta["n_unk_over_cap_sessions_x2"],
++                       ind_cut_mean=meta["ind_cut_mean"], max_ind_sleeve_share_after=meta["max_ind_sleeve_share_after"],
++                       reclass_share_x2=meta.get("reclass_share_x2"), sw_asof_stats=meta.get("sw_asof_stats"),
++                       weights_sha256=hashlib.sha256(fp.read_bytes()).hexdigest())
++            if arm == "before_static":  # P3-7: before arm vs existing b4 weights — disclosure only, not a gate
++                ref = B4_OUT / f"B4_50_25_25_topN_{aum // 10000}w.parquet"
++                cmp = {"ref": str(ref.relative_to(ROOT)), "ref_exists": ref.exists()}
++                if ref.exists():
++                    R0 = pd.read_parquet(ref, columns=["session", "instrument", "weight"])
++                    cmp["ref_sha256"] = hashlib.sha256(ref.read_bytes()).hexdigest()
++                    j = W[["session", "instrument", "weight"]].merge(R0, on=["session", "instrument"], how="outer",
++                                                                    suffixes=("", "_ref")).fillna(0.0)
++                    cmp["max_abs_weight_diff"] = float((j["weight"] - j["weight_ref"]).abs().max())
++                    cmp["same_sha"] = cmp["ref_sha256"] == row["weights_sha256"]
++                row["before_vs_existing_b4"] = cmp
++            res[f"{arm}_{aum // 10000}w"] = row
++    fr = sw_pit_last_result() or {}
++    summ = {"prereg": "docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md", "all_ok": bool(all_ok), "window": list(X2),
++            "gap_carry_rule": "主 Agent 2026-10-18 ~05:45 ET：无有效行且旧行 out_date==d-1 时沿用旧行业当天",
++            "sw_l1_sha256_pin_check": sha_pin, "sw_l1_sha256_asof_load": asof.sha256,
++            "results": res, "sw_pit_freshness": fr, "disclosure_zh": fr.get("disclosure_zh", ""),
++            "industry_cap_on_stale_sw_pit": bool(fr.get("stale")), "live": False, "promotion": False,
++            "disclosure_only": True, "elapsed_sec": round(time.time() - t0, 1),
++            "peak_rss_mb_self": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
++            "peak_rss_mb_children": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024}
++    (out_dir / "summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=2))
++    if not all_ok:
++        bad = [k for k, v in res.items() if not v["ok"]]
++        (out_dir / "VOID.md").write_text(
++            "# VOID — pitfix_compare\n\n按预注册第 3 节：有 arm 未成功（returncode≠0、summary 非本次生成或 extract 报错），"
++            f"整轮作废，不得引用数值。\n\n失败 arm：{', '.join(bad)}\n", encoding="utf-8")
++        print("VOID:", bad)
++        return 1
++    return 0
++
++
+ if __name__ == "__main__":
++    if len(sys.argv) >= 2 and sys.argv[1] == "--pitfix-compare":
++        if len(sys.argv) != 3:
++            raise SystemExit("usage: --pitfix-compare <out_dir under output/strategy_hiliq/>")
++        raise SystemExit(pitfix_compare(sys.argv[2]))
+     raise SystemExit(main())
++
+--- a/research/strategy_fulla_b4_x2.py
++++ b/research/strategy_fulla_b4_x2.py
+@@ -16,6 +16,7 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
++from research.sw_members_asof import IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry  # PIT fix (Arch 10-18 P2; r2 3f195231)
+ OUT = ROOT / "output/strategy_fulla/b4"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = ROOT / "output/strategy_fulla/legs"
+@@ -252,30 +253,12 @@
+     )
+     # industry PIT: as-of join on in_date/out_date
+     sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])  # integrity raises; stale warns
+-    ind = pd.read_parquet(ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+-                          columns=["ts_code", "l1_name", "in_date", "out_date"])
+-    ind["in_date"] = pd.to_datetime(ind["in_date"], errors="coerce")
+-    ind["out_date"] = pd.to_datetime(ind["out_date"], errors="coerce")
+-    # simplify: take latest membership per ts_code where in_date <= session (approx static for speed: last known name)
+-    # Proper PIT: for each holding row, pick membership covering session
+-    # Vectorized approx: explode by using merge_asof per instrument is heavy; use current name if out_date null or >= session
+-    # Build interval coverage via cross join is too big. Use: for each session date, filter ind.
+-    # Faster: map instrument -> list of intervals, then lookup.
+-    intervals = {}
+-    for r in ind.itertuples(index=False):
+-        intervals.setdefault(r.ts_code, []).append((r.in_date, r.out_date, r.l1_name))
+-    def lookup(inst, sess):
+-        t = pd.Timestamp(sess)
+-        for a, b, name in intervals.get(inst, []):
+-            if pd.isna(a):
+-                continue
+-            if a <= t and (pd.isna(b) or b >= t):
+-                return name
+-        return None
+-    # sample days for industry to keep runtime reasonable: use all holdings but vectorized year-end membership
+-    # Use last known l1_name per ts_code (is_new / max in_date)
+-    last = ind.sort_values("in_date").groupby("ts_code").tail(1)[["ts_code", "l1_name"]]
+-    m2 = Wx.merge(last, left_on="instrument", right_on="ts_code", how="left")
++    # PIT fix (Arch 10-18 P2 + R4 口径): as-of session, in_date < session AND (out_date null OR out_date >= session)
++    # replaces the previous in_date<=session / static last-known name approximation
++    ia = IndustryAsOf(load_sw_l1(ROOT))
++    m2 = Wx.copy()
++    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session").values  # + 主 Agent 10-18 ~05:45 ET gap carry
++    reclass = ia.reclass_share(Wx, weight_col="weight")  # disclosure only
+     ind_share = (
+         m2.groupby("l1_name")["weight"].sum() / m2["weight"].sum()
+     ).sort_values(ascending=False)
+@@ -293,7 +276,8 @@
+         "industry_weight_time_share": [
+             {"sw_name": str(k), "weight_time_share": float(v)} for k, v in ind_share.head(25).items()
+         ],
+-        "note_zh": "行业用申万一级最新归属（近似 PIT）；小盘为逐日截面后30%。",
++        "reclass_share": reclass,
++        "note_zh": "行业用申万一级 as-of 归属（in_date<session 且 out_date 空或>=session，对齐 Intel；改分类空档日沿用旧行业 1 天，主 Agent 10-18 ~05:45 ET 裁定）；小盘为逐日截面后30%。",
+     }
+ 
+ 
+--- /dev/null
++++ b/research/sw_members_asof.py
+@@ -0,0 +1,188 @@
++"""SW L1 membership as-of (point-in-time) lookup — fixes static "last known l1_name" look-ahead (Arch 10-18 P2; r2 per Arch 3f195231).
++
++口径对齐 Intel sw_members_asof (a5b0b633/0e968759)，两边落地后合并为公共函数。
++Rule for trading day d: in_date < d AND (out_date is null OR out_date >= d).
++  - in_date is published 18:00 Asia/Shanghai -> usable from the NEXT trading day (in_date == d excluded).
++  - out_date known only after the close -> still a member on out_date (out_date == d included).
++Parsing (Arch P2-1): raw non-null out_date that fails to parse -> SwPitIntegrityError (never silently "still member");
++raw non-null in_date that fails to parse -> NaT -> never matches, counted in stats.
++Overlap (Arch: adopt "latest in_date"): keep the matching row with latest in_date; equal in_date -> prefer
++is_new == "Y" or out_date null (P3-3), then later file row. NOTE Intel's intel_common uses keep="last" (file order)
++and its event_study/c1 use keep="first"; on the real table these differ for 4 codes (Arch P3-5, transferred to Intel).
++Reclassification-day gap (Arch P3-2) — 主 Agent ruling 2026-10-18 ~05:45 ET (binding): keep in_date < d; ONE exception:
++on day d, if a code has NO active row and has an old row with out_date == d - 1 calendar day (the "new in_date =
++old out_date + 1" case), carry that old row's l1_name for day d only (so at most 1 trading day). Every other
++no-active-row case -> unknown industry (None / _UNK_). Use sw_l1_asof_with_gap_carry() (shared public function,
++no hx2 dependency; Intel to call it next round). Table-level count: stats["n_reclass_gap_rows"].
++"""
++from __future__ import annotations
++
++import hashlib
++import io
++from pathlib import Path
++
++import numpy as np
++import pandas as pd
++
++from research.sw_pit_freshness import SwPitIntegrityError
++
++SW_L1_REL = "data/v2/sw_pit/industry_members_sw_l1_pit.parquet"
++
++
++def prep_sw(sw: pd.DataFrame) -> pd.DataFrame:
++    """Parse dates with explicit failure accounting; stats in .attrs["prep_stats"]."""
++    sw = sw.copy()
++    raw_in, raw_out = sw["in_date"], sw["out_date"]
++    nonnull_in = raw_in.notna() & (raw_in.astype(str).str.strip() != "")
++    nonnull_out = raw_out.notna() & (raw_out.astype(str).str.strip() != "")
++    sw["in_date"] = pd.to_datetime(raw_in, errors="coerce").dt.normalize()
++    sw["out_date"] = pd.to_datetime(raw_out, errors="coerce").dt.normalize()
++    n_out_unparsed = int((nonnull_out & sw["out_date"].isna()).sum())
++    n_in_unparsed = int((nonnull_in & sw["in_date"].isna()).sum())
++    if n_out_unparsed > 0:
++        raise SwPitIntegrityError(f"sw_pit out_date: {n_out_unparsed} non-null values failed to parse (would read as 'still member')")
++    isnew = sw["is_new"].astype(str).str.upper().eq("Y") if "is_new" in sw.columns else pd.Series(False, index=sw.index)
++    sw["_pri"] = 2 * isnew.astype(int) + sw["out_date"].isna().astype(int)  # tie order: is_new=Y, then out null
++    sw["_ord"] = np.arange(len(sw))
++    s = sw.sort_values(["ts_code", "in_date", "_ord"])
++    prev_out = s.groupby("ts_code")["out_date"].shift(1)
++    gap = int((s["in_date"].notna() & prev_out.notna() & (s["in_date"] == prev_out + pd.Timedelta(days=1))).sum())
++    sw.attrs["prep_stats"] = {"n_rows": int(len(sw)), "n_in_unparsed": n_in_unparsed, "n_out_unparsed": 0,
++                              "n_out_null": int((~nonnull_out).sum()), "n_reclass_gap_rows": gap,
++                              "has_is_new": "is_new" in sw.columns}
++    return sw
++
++
++def load_sw_l1(root: Path) -> pd.DataFrame:
++    """Single read of the file bytes: sha256 recorded from the same bytes that are parsed (no TOCTOU)."""
++    raw = (Path(root) / SW_L1_REL).read_bytes()
++    df = pd.read_parquet(io.BytesIO(raw))  # import surface: stdlib + numpy + pandas (+ sw_pit_freshness error type)
++    cols = ["ts_code", "l1_name", "in_date", "out_date"] + (["is_new"] if "is_new" in df.columns else [])
++    sw = prep_sw(df[cols])
++    sw.attrs["sha256"] = hashlib.sha256(raw).hexdigest()
++    return sw
++
++
++def sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
++    """Row filter identical to Intel intel_common.sw_members_asof (expects datetime in_date/out_date)."""
++    d = pd.Timestamp(d).normalize()
++    return sw[(sw.in_date < d) & (sw.out_date.isna() | (sw.out_date >= d))]
++
++
++def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
++            sess_col: str = "session", stats: dict | None = None, gap_carry: bool = False) -> pd.Series:
++    """Vectorized as-of l1_name per (code, session) row of `keys`; index aligned to keys; None if no member.
++    gap_carry=False: pure Intel-identical rule. gap_carry=True: 主 Agent 10-18 ~05:45 ET exception (see module doc).
++    If `stats` is a dict, fills n_rows_multi_match / n_codes_overlap_on_d, n_rows_gap_carry, n_rows_unknown."""
++    if "_ord" not in sw.columns:
++        sw = prep_sw(sw)
++    k = pd.DataFrame({"_code": keys[code_col].astype(str).values,
++                      "_d": pd.to_datetime(keys[sess_col].astype(str).str[:10]).dt.normalize().values,
++                      "_rid": np.arange(len(keys))})
++    s = sw[["ts_code", "l1_name", "in_date", "out_date", "_pri", "_ord"]].rename(columns={"ts_code": "_code"})
++    m = k.merge(s, on="_code", how="inner")
++    m = m[(m["in_date"] < m["_d"]) & (m["out_date"].isna() | (m["out_date"] >= m["_d"]))]
++    if stats is not None:
++        vc = m["_rid"].value_counts()
++        stats["n_rows_multi_match"] = int((vc > 1).sum())
++        stats["n_codes_overlap_on_d"] = int(m.loc[m["_rid"].isin(vc.index[vc > 1]), "_code"].nunique())
++    m = m.sort_values(["_rid", "in_date", "_pri", "_ord"]).drop_duplicates("_rid", keep="last")
++    out = np.full(len(keys), None, dtype=object)
++    out[m["_rid"].to_numpy()] = m["l1_name"].to_numpy()
++    n_carry = 0
++    if gap_carry:
++        miss = k[~k["_rid"].isin(m["_rid"])]
++        if len(miss):
++            g = miss.merge(s, on="_code", how="inner")
++            g = g[g["out_date"].notna() & (g["out_date"] == g["_d"] - pd.Timedelta(days=1))]
++            g = g.sort_values(["_rid", "in_date", "_pri", "_ord"]).drop_duplicates("_rid", keep="last")
++            out[g["_rid"].to_numpy()] = g["l1_name"].to_numpy()
++            n_carry = int(len(g))
++    if stats is not None:
++        stats["n_rows_gap_carry"] = n_carry
++        stats["n_rows_unknown"] = int(pd.isna(out).sum())
++    return pd.Series(out, index=keys.index, name="l1_name")
++
++
++def sw_l1_asof_with_gap_carry(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
++                              sess_col: str = "session", stats: dict | None = None) -> pd.Series:
++    """SHARED PUBLIC FUNCTION (Strategy + Intel). As-of SW L1 name per (code, session):
++    active rows = in_date < d AND (out_date null OR out_date >= d); latest in_date wins (tie: is_new=Y / out null,
++    then file order). If no active row and an old row has out_date == d - 1 calendar day, carry its l1_name for d
++    only (主 Agent ruling 2026-10-18 ~05:45 ET). Otherwise None (unknown industry).
++    `sw` = prep_sw()/load_sw_l1() output (raises SwPitIntegrityError on unparseable non-null out_date)."""
++    return l1_asof(sw, keys, code_col, sess_col, stats=stats, gap_carry=True)
++
++
++def l1_static_last(sw: pd.DataFrame) -> dict:
++    """Static last membership (latest in_date, tie -> is_new/out null, then file order). Disclosure only.
++    NOT the legacy hx2 map (that one is kept verbatim in hx2.load_industry_map, Arch P2-4)."""
++    if "_ord" not in sw.columns:
++        sw = prep_sw(sw)
++    last = sw.sort_values(["in_date", "_pri", "_ord"]).groupby("ts_code").tail(1)
++    return dict(zip(last["ts_code"], last["l1_name"]))
++
++
++class IndustryAsOf:
++    """Per-session industry map for hx2.build_topn / apply_ind_cap (which take a plain dict per session)."""
++
++    def __init__(self, sw: pd.DataFrame, static_map: dict | None = None):
++        self.sw = sw if "_ord" in sw.columns else prep_sw(sw)
++        self.static = static_map if static_map is not None else l1_static_last(self.sw)
++        self.stats = dict(self.sw.attrs.get("prep_stats", {}))
++        self.sha256 = self.sw.attrs.get("sha256")
++
++    def by_session(self, pairs: pd.DataFrame, code_col: str = "instrument",
++                   sess_col: str = "session") -> dict:
++        """{session: {code: l1_name}} for the given (code, session) pairs (unique-ified first)."""
++        p = pairs[[code_col, sess_col]].drop_duplicates().reset_index(drop=True)
++        st: dict = {}
++        p = p.assign(l1_name=sw_l1_asof_with_gap_carry(self.sw, p, code_col, sess_col, stats=st).values)
++        self.stats.update({f"by_session_{k}": v for k, v in st.items()})
++        p = p.dropna(subset=["l1_name"])
++        return {s: dict(zip(g[code_col], g["l1_name"])) for s, g in p.groupby(sess_col)}
++
++    def reclass_share(self, rows: pd.DataFrame, code_col: str = "instrument", sess_col: str = "session",
++                      weight_col: str | None = None) -> dict:
++        """Disclosure only: share of (session, holding) rows whose as-of l1 != static l1 (self.static);
++        unknown-industry (_UNK_) rows reported separately (Arch P3-1)."""
++        if rows.empty:
++            return {"n_rows": 0, "share_rows_diff": None}
++        st: dict = {}
++        a = sw_l1_asof_with_gap_carry(self.sw, rows, code_col, sess_col, stats=st)
++        s = rows[code_col].astype(str).map(self.static)
++        diff = (a.fillna("_UNK_") != s.fillna("_UNK_"))
++        a_miss, s_miss = a.isna(), s.isna()
++        out = {"n_rows": int(len(rows)), "n_rows_diff": int(diff.sum()), "share_rows_diff": float(diff.mean()),
++               "n_rows_diff_both_known": int((diff & ~a_miss & ~s_miss).sum()),
++               "n_rows_asof_missing": int(a_miss.sum()), "n_rows_static_missing": int(s_miss.sum()),
++               "n_rows_asof_missing_static_known": int((a_miss & ~s_miss).sum()),
++               "share_rows_asof_missing": float(a_miss.mean()), **st,
++               "share_rows_gap_carry": float(st["n_rows_gap_carry"] / len(rows)),
++               "n_reclass_gap_rows_table": self.stats.get("n_reclass_gap_rows"),
++               "n_in_unparsed_table": self.stats.get("n_in_unparsed")}
++        if weight_col:
++            w = rows[weight_col].astype(float)
++            out["share_weight_diff"] = float(w[diff].sum() / w.sum()) if w.sum() > 0 else None
++        return out
++
++
++def pitfix_out_dir_guard(root: Path, out_dir) -> Path:
++    """Arch P2-2: out_dir must resolve strictly under ROOT/output/strategy_hiliq/, must not exist, and must not be
++    (or sit under) b4 / capadv_x2 / legs or contain paper / frozen in any path part. Call before writing anything."""
++    base = (Path(root) / "output/strategy_hiliq").resolve()
++    p = Path(out_dir)
++    p = (p if p.is_absolute() else Path(root) / p).resolve()
++    try:
++        rel = p.relative_to(base)
++    except ValueError:
++        raise SystemExit(f"pitfix out_dir must be under {base}: {p}")
++    if not rel.parts:
++        raise SystemExit("pitfix out_dir must be a NEW subdirectory, not output/strategy_hiliq itself")
++    if rel.parts[0] in ("b4", "capadv_x2", "legs"):
++        raise SystemExit(f"pitfix out_dir may not be inside {rel.parts[0]}/: {p}")
++    if any(("paper" in x.lower()) or ("frozen" in x.lower()) for x in rel.parts):
++        raise SystemExit(f"pitfix out_dir may not contain paper/frozen: {p}")
++    if p.exists() or p.is_symlink():
++        raise SystemExit(f"pitfix out_dir already exists (no overwrite): {p}")
++    return p
+--- /dev/null
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -0,0 +1,128 @@
++"""Synthetic tests for research/sw_members_asof.py (PIT fix, r2 per Arch 3f195231 + 主 Agent 10-18 ~05:45 ET gap ruling).
++In-memory frames / tmp ROOT only; no real data."""
++import sys
++from pathlib import Path
++
++import pandas as pd
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
++from research import sw_members_asof as A  # noqa: E402
++from research.sw_pit_freshness import SwPitIntegrityError  # noqa: E402
++
++
++# Verbatim copy of Intel's function from _review/intel_sw_pit_freshness_20261018_r2.diff
++# (sha256 0e968759d390490d625c1a7705fd6505e19aeae968710ecbf6a818439c6da4b5, diff lines 90-94), docstring omitted.
++def intel_sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
++    d = pd.Timestamp(d).normalize()
++    return sw[(sw.in_date < d) & (sw.out_date.isna() | (sw.out_date >= d))]
++
++
++SW = pd.DataFrame({
++    # X: 电子 -> 计算机 (old out 03-10, new in 03-10); Y: 银行 open; Z: out 03-10, no successor
++    # O: overlap — stale open 钢铁 row (in 2018) listed AFTER the newer open 农林牧渔 row (in 2021) -> latest in_date wins
++    # T: equal in_date, both open; is_new=Y row must win regardless of file order
++    # G: gap — old 电子 out 2025-03-10 (Mon), new 计算机 in 2025-03-11 (Tue): 03-11 carries 电子
++    # H: no gap carry — old 电子 out 2025-03-09, new 计算机 in 2025-03-11 (out == d-2)
++    "ts_code": ["X.SZ", "X.SZ", "Y.SH", "Z.SH", "O.SZ", "O.SZ", "T.SZ", "T.SZ", "G.SZ", "G.SZ", "H.SZ", "H.SZ"],
++    "l1_name": ["电子", "计算机", "银行", "医药生物", "农林牧渔", "钢铁", "通信", "传媒", "电子", "计算机", "电子", "计算机"],
++    "in_date": ["20200101", "20250310", "20190101", "20200101", "20210730", "20180101", "20200803", "20200803",
++                "20200101", "20250311", "20200101", "20250311"],
++    "out_date": ["20250310", None, None, "20250310", None, None, None, None, "20250310", None, "20250309", None],
++    "is_new": ["N", "Y", "Y", "N", "Y", "N", "Y", "N", "N", "Y", "N", "Y"],
++})
++
++
++def _q(pairs, carry=False):
++    k = pd.DataFrame(pairs, columns=["instrument", "session"])
++    f = A.sw_l1_asof_with_gap_carry if carry else A.l1_asof
++    return f(A.prep_sw(SW), k).tolist()
++
++
++def test_reclassification_mid_period():
++    assert _q([("X.SZ", "2025-03-07"), ("X.SZ", "2025-03-11")]) == ["电子", "计算机"]
++
++
++def test_in_date_eq_d_excluded_out_date_eq_d_included():
++    assert _q([("X.SZ", "2025-03-10"), ("Z.SH", "2025-03-10"), ("Z.SH", "2025-03-11")]) == ["电子", "医药生物", None]
++
++
++def test_null_out_date_member_and_unknown_code():
++    assert _q([("Y.SH", "2026-10-09"), ("NOPE.SZ", "2026-10-09"), ("Y.SH", "2019-01-01")]) == ["银行", None, None]
++
++
++def test_overlap_latest_in_date_wins_and_tie_prefers_is_new():
++    assert _q([("O.SZ", "2025-01-02"), ("T.SZ", "2025-01-02")]) == ["农林牧渔", "通信"]
++    sw2 = A.prep_sw(SW.iloc[::-1].reset_index(drop=True))  # file order reversed -> same answers
++    k = pd.DataFrame([("O.SZ", "2025-01-02"), ("T.SZ", "2025-01-02")], columns=["instrument", "session"])
++    assert A.l1_asof(sw2, k).tolist() == ["农林牧渔", "通信"]
++
++
++def test_rowfilter_matches_intel_verbatim_and_vectorized():
++    sw = A.prep_sw(SW)
++    codes = sorted(SW.ts_code.unique())
++    for d in ("2019-06-03", "2025-03-07", "2025-03-10", "2025-03-11", "2025-03-12"):
++        mine, intel = A.sw_members_asof(sw, d), intel_sw_members_asof(sw, d)
++        assert list(mine["_ord"]) == list(intel["_ord"])  # identical row sets
++        pick = intel.sort_values(["in_date", "_pri", "_ord"]).groupby("ts_code").tail(1)
++        exp = dict(zip(pick.ts_code, pick.l1_name))
++        got = A.l1_asof(sw, pd.DataFrame({"instrument": codes, "session": d})).tolist()
++        assert got == [exp.get(c) for c in codes]
++    # documented divergence: Intel intel_common keep="last" (file order) picks the stale 钢铁 row for O.SZ
++    ik = intel_sw_members_asof(sw, "2025-01-02").drop_duplicates("ts_code", keep="last")
++    assert dict(zip(ik.ts_code, ik.l1_name))["O.SZ"] == "钢铁" and _q([("O.SZ", "2025-01-02")]) == ["农林牧渔"]
++
++
++def test_gap_day_carries_old_then_new_active():
++    st = {}
++    k = pd.DataFrame([("G.SZ", "2025-03-11"), ("G.SZ", "2025-03-12")], columns=["instrument", "session"])
++    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st).tolist() == ["电子", "计算机"]
++    assert st["n_rows_gap_carry"] == 1 and st["n_rows_unknown"] == 0
++    assert _q([("G.SZ", "2025-03-11")], carry=False) == [None]  # pure rule leaves the gap unknown
++
++
++def test_no_carry_when_out_date_is_d_minus_2():
++    st = {}
++    k = pd.DataFrame([("H.SZ", "2025-03-11"), ("Z.SH", "2025-03-12")], columns=["instrument", "session"])
++    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st).tolist() == [None, None]
++    assert st["n_rows_gap_carry"] == 0 and st["n_rows_unknown"] == 2
++    assert A.prep_sw(SW).attrs["prep_stats"]["n_reclass_gap_rows"] >= 1
++
++
++def test_gap_with_out_date_parse_failure_raises():
++    bad = SW.copy()
++    bad.loc[bad.index[8], "out_date"] = "2025-13-45"  # G.SZ old row (the gap row) unparseable
++    with pytest.raises(SwPitIntegrityError):
++        A.sw_l1_asof_with_gap_carry(bad, pd.DataFrame([("G.SZ", "2025-03-11")], columns=["instrument", "session"]))
++
++
++def test_in_date_parse_failure_counted_never_matches():
++    bad = SW.copy()
++    bad.loc[bad.index[2], "in_date"] = "garbage"
++    sw = A.prep_sw(bad)
++    assert sw.attrs["prep_stats"]["n_in_unparsed"] == 1
++    assert A.l1_asof(sw, pd.DataFrame([("Y.SH", "2025-01-02")], columns=["instrument", "session"])).tolist() == [None]
++
++
++def test_by_session_and_reclass_share():
++    ia = A.IndustryAsOf(SW, static_map={"X.SZ": "计算机", "Y.SH": "银行", "G.SZ": "计算机"})
++    rows = pd.DataFrame({"instrument": ["X.SZ", "X.SZ", "Y.SH", "G.SZ"],
++                         "session": ["2025-03-07", "2025-03-11", "2025-03-07", "2025-03-11"],
++                         "weight": [0.4, 0.2, 0.2, 0.2]})
++    bs = ia.by_session(rows)
++    assert bs["2025-03-07"] == {"X.SZ": "电子", "Y.SH": "银行"} and bs["2025-03-11"] == {"X.SZ": "计算机", "G.SZ": "电子"}
++    r = ia.reclass_share(rows, weight_col="weight")
++    assert r["n_rows_diff"] == 2 and r["n_rows_gap_carry"] == 1 and abs(r["share_rows_gap_carry"] - 0.25) < 1e-12
++    assert abs(r["share_weight_diff"] - 0.6) < 1e-12 and r["n_rows_asof_missing"] == 0
++
++
++def test_pitfix_out_dir_guard(tmp_path):
++    (tmp_path / "output/strategy_hiliq/b4").mkdir(parents=True)
++    (tmp_path / "output/strategy_hiliq/old_run").mkdir()
++    ok = A.pitfix_out_dir_guard(tmp_path, "output/strategy_hiliq/pitfix_compare_20261018")
++    assert ok == (tmp_path / "output/strategy_hiliq/pitfix_compare_20261018").resolve() and not ok.exists()
++    for bad in ("output/strategy_hiliq/b4", "output/strategy_hiliq/b4/x", "output/strategy_hiliq/old_run",
++                "output/strategy_hiliq", "output/strategy_fulla/x", "output/strategy_hiliq/paper_x",
++                "output/strategy_hiliq/FROZEN_y", "output/strategy_hiliq/../strategy_fulla/z", "/tmp/x"):
++        with pytest.raises(SystemExit):
++            A.pitfix_out_dir_guard(tmp_path, bad)
+--- /dev/null
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -0,0 +1,45 @@
++# 预注册：申万行业 as-of（PIT）修复，改前/改后对照（r2 草稿，待 Arch 审签）
++
++- 日期：2026-10-18（美东）；提出：QuantLab Strategy；状态：DRAFT，未运行
++- 代码提案：docs/v2/audit/STRATEGY_SW_PIT_ASOF_FIX_PROPOSAL_20261018_r2.diff（取代 r1 98633d9b；按 Arch 审查 3f195231 修改）
++- live=false，promotion=false。纸面（FROZEN_CONFIG、capadv/B4/S6 纸面轨、10-19 17:40 ET 纸面运行）和已封存产物都不动，也不读本结果。
++
++## 1. 要回答的问题
++hx2 合成 B4 时，行业 25% 上限用的是“每只股票最后一次出现的 l1_name”的静态映射，带前视偏差。改成按调仓日 as-of 归属后，结果变化多大。只做披露，不调参。
++
++## 2. 口径（固定，不得改动）
++- **as-of 规则**：调仓日 d 的有效行需满足 in_date < d，且 out_date 为空或 ≥ d。in_date 当天 18:00（上海时间）才发布，所以从下一交易日起生效。行过滤与 Intel sw_members_asof（a5b0b633/0e968759）逐行一致。
++- **取重**：同一代码有多条有效行时，取 in_date 最新的一条；in_date 相同时，is_new=Y 优先，其次 out_date 为空的，再其次按文件行序。Arch 3f195231 已裁定采纳。Intel 现有的 keep="last"/keep="first" 与此不同，已转 Intel 对齐。
++- **改分类空档日例外（主 Agent 2026-10-18 约 05:45 ET 裁定，有约束力）**：d 日某代码没有有效行、而它有一条旧行的 out_date == d−1（自然日）时，当天沿用该旧行的 l1_name，最多 1 个交易日。其余没有有效行的情况一律归入“未知行业”（_UNK_）。实现为公共函数 research/sw_members_asof.py::sw_l1_asof_with_gap_carry，只依赖 stdlib/numpy/pandas，以及 sw_pit_freshness 的错误类型；Intel 下一轮直接调用。只用于新代码；before 组不用。
++- **完整性**：out_date 原值非空、却解析失败的，只要有 1 行就 raise SwPitIntegrityError，不会被当成“仍在成分”。in_date 解析失败的行计数并披露，这些行永不命中。
++- **数据**：只用 data/v2/sw_pit/industry_members_sw_l1_pit.parquet，sha256 = 0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6（manifest built 2026-10-14T04:00:19，美东时间）。check_sw_l1_pin 显式 raise，不用 assert。as-of 加载时，sha 与解析用的是同一份字节，两次读取的 sha 都写进 summary。
++- **改前组**：改前（before_static）原样保留旧的 load_industry_map 实现：pd.to_datetime(coerce) 后 sort_values("in_date").groupby("ts_code").tail(1)，与 7dd5bea5 的逻辑逐字一致。改后（after_asof）用 as-of 加空档沿用。两组之间唯一的差别是行业映射。
++- **窗口**：X2 = 2024-06-03 至 2026-10-09（hx2 常量 X2，book-smoke --windows X2）。
++- **组合**：B4_50_25_25 = capacity_adv 0.5 / earnings_event 0.25 / insider_increase 0.25（HI_LIQ_V1.1 腿，hx2 中的 P 路径不变）；每条腿取 topN，60万 N=6，100万 N=10；单票上限 6%，超出部分转 510300.SH；股票袖套内申万一级行业上限 25%，迭代按比例缩放，超出部分转 510300.SH。
++- **调仓频率**：照现有实现。合成按腿文件每个 session 的权重逐日生成 target weight（共同 session 取交集），没有另设调仓日。session 就是决策日，book-smoke 次日开盘成交。
++- **成本与执行**：ExecConfig.strategy_v1（execution.py 373fed30）：次日开盘成交；佣金 0.00025，最低 5 元；印花税 2023-08-28 后卖出 0.0005；平方根冲击 k=1.0；参与率上限 10%；未成交部分顺延；按手取整；遵守涨跌停；按 tick 取整；处理公司行为。sleeves 为 {"core":0,"stock":1,"alpha_event":0}，arms 为 BOOK,C0。
++
++## 3. 运行
++- **授权**：在同一份 Arch 签的 run .ok 下只跑一次，不准重跑。不自行创建 .ok。
++- **命令**：`cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python research/strategy_hiliq_capadv_b4_x2.py --pitfix-compare output/strategy_hiliq/pitfix_compare_20261018`
++- **out_dir 保护**：out_dir 必须解析到 output/strategy_hiliq/ 之下，而且事先不存在；拒绝 b4、capadv_x2、legs，以及任何路径中带 paper 或 frozen 的目录。所有检查都先做完，然后才 mkdir(exist_ok=False)。
++- **成败判定**：每个 arm 要同时满足 returncode == 0、book_smoke_summary.json 是本次运行生成的（mtime 晚于子进程启动），并且 extract 没有报错、cagr 和 mdd 都不为空。任何一个 arm 失败：summary 写 all_ok=false，写 VOID.md，退出码 1，整轮数值不得引用。没有 summary.json 的运行同样记为 VOID，手写 VOID.md。
++- summary 记录父进程和子进程的峰值 RSS（上限 1.5GB）。跑完用 `find -newermt T0` 确认只有 out_dir 下的文件被写过。
++
++## 4. 报告（60万、100万两档，改前和改后）
++- **指标**：CAGR、MDD、Calmar、胜率（日、月）、行业上限触发次数（n_ind_cap_sessions_x2，指 X2 内 apply_ind_cap 实际削减权重的 session 数），以及 ind_cut_mean 和 max_ind_sleeve_share_after。
++- **只作披露**：
++  - 受改分类影响的持仓日占比：X2 内 (session, 持仓股票) 行中，as-of l1_name 与旧静态映射不同的占比，按行数和按权重各报一个（reclass_share_x2）；
++  - 未知行业单独报：n_rows_asof_missing、n_rows_static_missing、n_rows_asof_missing_static_known（Arch 实测 X2 约 477 个代码日，约 1.4%），以及 n_unk_over_cap_sessions_x2（_UNK_ 桶单独超过 25% 的 session 数）；
++  - 空档沿用：n_rows_gap_carry、share_rows_gap_carry（占 X2 持仓行的比例），n_rows_unknown，以及全表 n_reclass_gap_rows（Arch 实测 1545 次变更中有 1109 次 new in_date = old out_date + 1）；
++  - 重叠：n_rows_multi_match、n_codes_overlap_on_d；
++  - before 组与现有 output/strategy_hiliq/b4/B4_50_25_25_topN_{60w,100w}.parquet（ca77bc8c… / f75ace33…）对比 sha 和最大权重差。不作门槛。
++
++## 5. 披露与限制
++- sw_pit 表 built 是 10-14，按 R4 口径已 stale（落后 3 个交易日）。summary 带 industry_cap_on_stale_sw_pit=true 和 disclosure_zh，凡引用这次结果的报告，标题行都要带 disclosure_zh。
++- 结果只作披露：不调参，不据此改 B4 规则，不进纸面。如果要改规则，按 B4 规则流程走：主 Agent 裁定、Leo 决定、新的预注册，从 2026-11-02 起在 FWD 上测试。
++- 导入 hx2 的脚本：
++  - optimizer_core_x2_run.py 只 import run_smoke，而且那一行是死代码。run_smoke 现在会检查 returncode 和 summary 是否新鲜，判定更严，但不影响它。
++  - strategy_capadv_topn_tie_sensitivity.py 和 strategy_b4_hiliq_leg_review.py 仍走 load_industry_map()（原样保留）加 apply_ind_cap(dict)，签名和行为都不变，所以仍带前视偏差。两份结果文档已加“行业映射存在前视，待修”的提示行，修复单独出 diff，等本次 B 对照有结果后再交。
++  - tie-sens 如果要重跑，需要重新做预注册（dep_hx2_sha256 已过期）；凡钉过 hx2 sha 的 .ok 都要重签。
++- hx2 main() 默认改用 as-of 映射，但本次不授权重跑 hx2 main。

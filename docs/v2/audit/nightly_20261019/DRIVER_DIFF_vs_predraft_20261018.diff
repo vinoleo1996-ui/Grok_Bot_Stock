@@ -1,0 +1,434 @@
+--- predraft_20261018T113259/run_nightly_v1.py (5c9fbeda)
++++ docs/v2/audit/nightly_20261019/run_nightly_v1.py (revised)
+@@ -3,9 +3,12 @@
+ """10-19 日更驱动 run_nightly_v1.py（QuantLab Data，2026-10-18 起草，待 Arch 审；未运行）。只用标准库 + pyarrow（只读 parquet 元数据与 trade_cal 的 cal_date 列）。
+ 
+-文件名固定 run_nightly_v1.py（Eng 的 pgrep 精确匹配 nightly_update\\.py|tier1_pull\\.py|run_nightly_v1\\.py）。写 marker 之后只做两件事：
+-按规则释放 Data 自建的锁、写回执；然后退出（Eng 闸门 17:40 才读）。
++文件名固定 run_nightly_v1.py（Eng 的 pgrep 精确匹配 nightly_update\\.py|tier1_pull\\.py|run_nightly_v1\\.py）。
++每次运行只写一个 marker，且是最后一个写动作（回执先写）；写完即退出。驱动绝不删除、移动 RESEARCH_QUIET.lock（Arch 例程负责释放）。
++修订：2026-10-18 11:3x ET 预稿归档于 _recovery/data/nightly_20261019/predraft_20261018T113259/（原 sha 5c9fbeda…），按主 Agent / Arch 11:13、11:33 裁定原地修改。
+ 
+ 流程（全部串行，一次一个真实数据进程）：
+-  Q  RESEARCH_QUIET.lock：存在则沿用；不存在且 .ok 允许则按模板以 O_EXCL 新建（by=Data，待 Arch 确认）；随后 healthz 轮询 quiet=true（≤90 秒）→ 再等 15 秒 →
++  P  只读预检已有 marker：DONE 已存在 → 退出 2、不写任何东西；FAILED 已存在 → 仅当 .ok supersede_failed_marker_sha256 等于其全长 sha 才继续，
++     并在全部前置条件通过后同盘移到 output/nightly_markers/_superseded/（否则退出 2、不写任何东西）。
++  Q  RESEARCH_QUIET.lock（Arch 11:33）：存在则沿用；05:28 ET 及以后仍不存在且 .ok 允许才按 Arch 模板代设（owner=Arch_by_Data，.tmp + os.link，绝不覆盖）；healthz 轮询 quiet=true（≤90 秒）→ 再等 15 秒 →
+      复核 gen/snapshot/kline_running=false、child_pids={} → pgrep -af "kline.py|export_static.py|snapshot.py|gen.py" 为空（Arch 11:20）。
+   0  .ok / 钉 sha / 时间闸门。
+@@ -14,11 +17,10 @@
+      每次尝试后不论 rc：留 post 副本 → cal_compare_v1 → cal_restore_v2（rc=2 立即复跑一次；仍非 0 即 P0）→ 两次 sha（间隔 30 秒）== PIN；
+      查 .tmp.parquet 残留与行数门槛（≥ 同接口上一开市日文件 0.98 倍，daily_basic ≥ daily 0.98 倍）；不合格且 .ok 允许则隔离（同盘 rename）；
+-     relaxed 档且 .ok 允许时重试（每次重试前核实不合格文件已不在原位，否则不重试）。截止触发后：不重试、不起 call B。
++     relaxed 档且 .ok 允许时重试（≤2 次，间隔 30 分钟，须仍在同一 call B 闸门内；每次重试前核实不合格文件已隔离）。strict 被停后或任何档被墙钟截止停后：不重试、不起 call B。
+   B  call B：nightly_update.py --date D --steps <14 步>（不含 daily_pull、trade_cal、sw）；闸门 = 实际起跑时刻 + budget ≤ latest-finish 且 trade_cal sha == PIN。
+   C  核查：summary 各步 ok、无 skipped；daily_update_status status=ok、target_trade_date ≥ D、REQUIRED_TABLES last_date ≥ D；data_freshness overall=ok；trade_cal 仍 == PIN；快照 v2 AFTER + compare 退出 0。
+-  M  写 marker：output/nightly_markers/nightly_<D>.DONE.json（status=OK）或 .FAILED.json（status=FAILED），O_EXCL + 原子；全文不得出现 skipped。
+-  R  只在锁由本驱动创建且内容未变时删除锁；写回执 JSON；退出。
+-退出码：0 OK marker；1 FAILED marker；2 前置条件失败（未起任何数据进程，仍写 FAILED marker）；4 P0（纸面日历未恢复到 PIN）。
+-时间闸门默认值待 Arch / 主 Agent 裁定（Eng 称纸面 17:40 ET 跑）；strict 为默认档，relaxed 只在 Arch 审过 diff 后启用。
++  M  先写回执 JSON，再写唯一 marker：output/nightly_markers/nightly_<D>.DONE.json（status=OK）或 .FAILED.json（status=FAILED），O_EXCL + 原子；全文不得出现 skipped；然后退出。
++退出码：0 OK marker；1 FAILED marker；2 前置条件失败（写了唯一 FAILED marker；若因已有 marker 被拒则什么都不写）；3 marker 写入失败（P0）；4 P0（纸面日历未恢复到 PIN）。
++档位：strict（默认，06:20 / 06:30 为 Arch strict 值，pending Arch）；relaxed（主 Agent + Arch 11:13 定：05:30 起，单次 30 分钟，call B 起跑 + 55 ≤ 16:00，重试 ≤2、间隔 30 分钟），需 .ok 授权。
+ """
+ import argparse, datetime, hashlib, json, os, re, secrets, signal, subprocess, sys, time
+@@ -67,6 +69,9 @@
+ PGREP_PAT = "kline.py|export_static.py|snapshot.py|gen.py"
+ MARK_DIR = ROOT + "/output/nightly_markers"
+-PROFILES = {"strict": dict(call_b_latest_finish="06:30", budget_min=55, daily_pull_cutoff="06:20", retries=False, relay_partial_ok=False),
+-            "relaxed": dict(call_b_latest_finish="16:30", budget_min=55, daily_pull_cutoff="06:20", retries=True, relay_partial_ok=True)}
++PROFILES = {  # 中转专用步骤 partial 两档都判 FAILED，除非 Eng 书面确认（relay_partial_ok=False）
++    "strict": dict(call_b_latest_finish="06:30", budget_min=55, daily_pull_cutoff="06:20", daily_pull_max_min=None, retry_wait_min=None,
++                   retries=False, relay_partial_ok=False, ruling="Arch strict 值，pending Arch"),
++    "relaxed": dict(call_b_latest_finish="16:00", budget_min=55, daily_pull_cutoff=None, daily_pull_max_min=30, retry_wait_min=30,
++                    retries=True, relay_partial_ok=False, ruling="主 Agent + Arch 11:13 定稿")}
+ 
+ R = dict(events=[], alerts=[], fail_reasons=[], prior_attempts=[], invocations=[], checks={}, quiet={})
+@@ -357,26 +362,41 @@
+ 
+ 
+-# ---------------- RESEARCH_QUIET（主 Agent 方案，待 Arch 确认；Arch 11:20 闸门） ----------------
++# ---------------- RESEARCH_QUIET（Arch 11:33 裁定；驱动绝不删除、移动锁） ----------------
++LOCK_CREATE_NOT_BEFORE = "05:28"  # Arch 例程 05:25 设锁；驱动只在 05:28 及以后仍不存在时代设
++
++
+ def lock_text():
+-    if A.lock_template:
+-        t = open(A.lock_template, encoding="utf-8").read()
+-        return t.replace("{SET_AT_ET}", ts()).replace("{SET_BY}", "QuantLab Data").replace("{DATE}", D).replace("{PID}", str(os.getpid()))
+-    return ("reason=data_nightly_%s_arch_offline\nset_by=QuantLab Data\nset_at_et=%s\npid=%d\n"
+-            "release=after nightly marker written (driver releases only if it created this lock)\n" % (D, ts(), os.getpid()))
+-
+-
+-def ensure_lock(kv):
++    """Arch 模板：ASCII key=value，LF 结尾。set_at 等价 date +%Y-%m-%dT%H:%M:%S%:z。"""
++    return ("owner=Arch_by_Data\npurpose=nightly_%s\nset_at=%s\nrelease_when=output/nightly_markers/nightly_%s.DONE.json or .FAILED.json exists\nset_by_pid=%d\n"
++            % (D, now().isoformat(timespec="seconds"), D, os.getpid()))
++
++
++def ensure_lock(kv, dry=False):
+     q = R["quiet"]; q["lock_path"] = QUIET_LOCK
++    if not os.path.isfile(QUIET_LOCK) and not dry:
++        t0 = hm(LOCK_CREATE_NOT_BEFORE)
++        if now() < t0:
++            ev("锁尚未设置，等到 %s ET 再判断" % LOCK_CREATE_NOT_BEFORE)
++            while now() < t0 and not os.path.isfile(QUIET_LOCK):
++                time.sleep(5)
+     if os.path.isfile(QUIET_LOCK):
+-        q.update(existed_at_start=True, created_by_data=False, lock_sha256_at_start=sha256(QUIET_LOCK), checked_at=ts())
+-        ev("LOCK 已存在（Arch 设置），沿用")
++        q.update(existed_at_check=True, created_by_data=False, lock_sha256=sha256(QUIET_LOCK), checked_at=ts())
++        ev("LOCK 已存在，沿用（释放由 Arch 例程负责）")
+         return None
+-    q["existed_at_start"] = False
++    q["existed_at_check"] = False
+     if not truthy(kv.get("allow_create_research_quiet_lock_%s" % D)):
+         return "RESEARCH_QUIET.lock 不存在且 .ok 未授权 allow_create_research_quiet_lock_%s" % D
+-    write_new(QUIET_LOCK, lock_text())
+-    q.update(created_by_data=True, created_at_et=ts(), created_by="QuantLab Data", lock_sha256_created=sha256(QUIET_LOCK),
+-             template=A.lock_template or "builtin")
+-    alert("INFO", "Arch 未设锁：Data 已创建 %s" % QUIET_LOCK)
++    if dry:
++        q["would_create"] = True
++        return None
++    txt = lock_text().encode("ascii")
++    try:
++        write_new(QUIET_LOCK, txt.decode("ascii"))  # 同目录 .tmp + os.link 发布；已存在即 FileExistsError，绝不覆盖
++    except FileExistsError:
++        q.update(existed_at_check=True, created_by_data=False, race="创建瞬间锁已出现，沿用", lock_sha256=sha256(QUIET_LOCK))
++        return None
++    q.update(created_by_data=True, created_at_et=ts(), lock_sha256=sha256(QUIET_LOCK), lock_text=txt.decode("ascii"),
++             team_state_note="Data 于 %s 代 Arch 设 RESEARCH_QUIET.lock（owner=Arch_by_Data，pid %d）；释放由 Arch 例程移到 output/loop/_released/" % (ts(), os.getpid()))
++    alert("INFO", "05:28 后锁仍不存在：Data 已代设 %s（记入 TEAM_STATE）" % QUIET_LOCK)
+     return None
+ 
+@@ -420,19 +440,4 @@
+         return "pgrep 非空或出错 rc=%d（%s）" % (pg.returncode, tag)
+     return None
+-
+-
+-def release_lock():
+-    q = R["quiet"]
+-    if not q.get("created_by_data"):
+-        q["release"] = "未释放：锁由 Arch 设置，留给 Arch"
+-        return
+-    try:
+-        cur = sha256(QUIET_LOCK)
+-    except FileNotFoundError:
+-        q["release"] = "锁已不存在（他人已释放）"; return
+-    if cur != q.get("lock_sha256_created"):
+-        q["release"] = "未释放：锁内容已被他人改动（sha %s），留给 Arch" % cur; return
+-    os.unlink(QUIET_LOCK)
+-    q["release"] = "Data 创建的锁已释放 %s" % ts()
+ 
+ 
+@@ -562,5 +567,6 @@
+              gates=R["checks"].get("gates"), research_quiet=dict((k, v) for k, v in R["quiet"].items() if k != "gates"),
+              fail_reasons=R["fail_reasons"], alerts=R["alerts"], driver_sha256=R["checks"].get("driver_sha256"),
+-             ok_sha256=(R["checks"].get("ok") or {}).get("sha256"), live=False, promotion_approved=False, written_at_et=ts())
++             ok_sha256=(R["checks"].get("ok") or {}).get("sha256"), superseded_failed_marker=R.get("supersede"), receipt=R.get("receipt"),
++             live=False, promotion_approved=False, written_at_et=ts())
+     txt = json.dumps(m, ensure_ascii=False, indent=1)
+     if "skipped" in txt.lower():  # Eng：marker 全文不得出现 skipped
+@@ -571,38 +577,79 @@
+             txt = re.sub("(?i)skipped", "not_run", json.dumps(m, ensure_ascii=False, indent=1))
+     os.makedirs(MARK_DIR, exist_ok=True)
+-    name = "nightly_%s.%s.json" % (D, "DONE" if status == "OK" else "FAILED")
+-    path = os.path.join(MARK_DIR, name)
+-    try:
+-        write_new(path, txt)
++    path = os.path.join(MARK_DIR, "nightly_%s.%s.json" % (D, "DONE" if status == "OK" else "FAILED"))
++    write_new(path, txt)  # 每次运行只写这一个 marker；已存在即 FileExistsError，绝不写第二份
++    R["marker"] = dict(path=path, sha256=sha256(path), status=status)
++    print("%s MARKER %s %s sha256=%s" % (ts(), status, path, R["marker"]["sha256"]), flush=True)
++    return status
++
++
++def marker_paths():
++    return (os.path.join(MARK_DIR, "nightly_%s.DONE.json" % D), os.path.join(MARK_DIR, "nightly_%s.FAILED.json" % D))
++
++
++def ok_path():
++    return A.ok or (ROOT + "/output/ai_factory/ARCH_RUN_AUTH_DATA_NIGHTLY_%s.ok" % D)
++
++
++def marker_precheck():
++    """只读。DONE 已存在 → 拒绝；FAILED 已存在 → 只有 .ok supersede_failed_marker_sha256 等于其全长 sha 才可继续（稍后移走）。"""
++    done, failed = marker_paths()
++    if os.path.lexists(done):
++        return "DONE marker 已存在 %s" % done
++    if not os.path.lexists(failed):
++        return None
++    want = ""
++    if os.path.isfile(ok_path()):
++        want = parse_ok(ok_path()).get("supersede_failed_marker_sha256", "").strip().lower()
++    if not re.fullmatch(r"[0-9a-f]{64}", want):
++        return "FAILED marker 已存在，.ok 没有合法的 supersede_failed_marker_sha256（须为 64 位十六进制全长；true 无效）"
++    cur = sha256(failed)
++    if cur != want:
++        return "FAILED marker sha256 %s 与 .ok supersede_failed_marker_sha256 %s 不符" % (cur, want)
++    R["supersede"] = dict(path=failed, sha256=cur, state="pending")
++    return None
++
++
++def supersede_failed():
++    """所有前置条件通过后、第一次写入前执行：同盘 rename 到 output/nightly_markers/_superseded/。"""
++    s = R.get("supersede")
++    if not s:
++        return None
++    sd = os.path.join(MARK_DIR, "_superseded"); os.makedirs(sd, exist_ok=True)
++    dst = os.path.join(sd, "nightly_%s.FAILED.%s.%s.json" % (D, s["sha256"][:12], STAMP))
++    if os.path.lexists(dst) or os.stat(s["path"]).st_dev != os.stat(sd).st_dev:
++        return "无法同盘移动旧 FAILED marker 到 %s" % dst
++    if sha256(s["path"]) != s["sha256"]:
++        return "旧 FAILED marker 在检查后被改动"
++    os.rename(s["path"], dst); fsync_dir(MARK_DIR); fsync_dir(sd)
++    ok = sha256(dst) == s["sha256"] and not os.path.lexists(s["path"])
++    s.update(state="moved" if ok else "move_check_failed", to=dst, at=ts())
++    ev("SUPERSEDE %s → %s ok=%s" % (s["path"], dst, ok))
++    return None if ok else "移动旧 FAILED marker 后核对失败"
++
++
++def finish(code, ok):
++    """唯一出口。marker 是最后一个写动作（回执先写）；锁不删不动。"""
++    if A is not None and A.check_only:
++        print(json.dumps(dict(check_only=True, fail_reasons=R["fail_reasons"], quiet=R["quiet"], supersede=R.get("supersede")),
++                         ensure_ascii=False, indent=1))
++        sys.exit(code)
++    if R.get("no_write"):
++        print("%s EXIT 2 未写任何文件：%s" % (ts(), "；".join(R["fail_reasons"])), flush=True)
++        sys.exit(2)
++    R["exit"] = code if (code != 0 or ok) else 1
++    R["marker_planned"] = "nightly_%s.%s.json" % (D, "DONE" if ok else "FAILED")
++    rp = os.path.join(HERE, "driver_receipt_%s.json" % STAMP)
++    try:
++        write_new(rp, json.dumps(R, ensure_ascii=False, indent=1, default=str))
++        R["receipt"] = dict(path=rp, sha256=sha256(rp))
++    except Exception as e:
++        R["receipt"] = dict(error=repr(e)[:200])
++    try:
++        write_marker(ok)
+     except FileExistsError:
+-        path = os.path.join(MARK_DIR, "nightly_%s.%s.%s.json" % (D, "DONE" if status == "OK" else "FAILED", STAMP))
+-        alert("P1", "%s 已存在，改写 %s（Eng 闸门只读固定文件名，需人工处理）" % (name, os.path.basename(path)))
+-        write_new(path, txt)
+-    R["marker"] = dict(path=path, sha256=sha256(path), status=status)
+-    ev("MARKER %s %s" % (status, path))
+-    return status
+-
+-
+-def finish(code, ok):
+-    if A is not None and A.check_only:  # 预检不写 marker、不写回执
+-        print(json.dumps(dict(fail_reasons=R["fail_reasons"], quiet=R["quiet"]), ensure_ascii=False, indent=1))
+-        try:
+-            release_lock()
+-        except Exception:
+-            pass
+-        sys.exit(code)
+-    try:
+-        st = write_marker(ok)
++        print("%s ALERT P0 marker 已被他人写出，不写第二份" % ts(), flush=True); sys.exit(3)
+     except Exception as e:
+-        st = None; alert("P0", "marker 写入失败 %r" % e)
+-    try:
+-        release_lock()
+-    except Exception as e:
+-        R["quiet"]["release"] = "释放失败 %r" % e
+-    R["exit"] = code if (st == "OK" or code != 0) else 1
+-    try:
+-        write_new(os.path.join(HERE, "driver_receipt_%s.json" % STAMP), json.dumps(R, ensure_ascii=False, indent=1, default=str))
+-    except Exception as e:
+-        print("WARN 回执写入失败 %r" % e)
++        print("%s ALERT P0 marker 写入失败 %r" % (ts(), e), flush=True); sys.exit(3)
+     sys.exit(R["exit"])
+ 
+@@ -611,4 +658,8 @@
+ BACKUP = None
+ STAMP = None
++
++
++def parse_hm_opt(v):
++    return None if v is None or str(v).lower() in ("none", "off", "") else v
+ 
+ 
+@@ -618,12 +669,11 @@
+     ap.add_argument("--date", default="20261019")
+     ap.add_argument("--profile", choices=sorted(PROFILES), default="strict")
+-    ap.add_argument("--call-b-latest-finish", default=None, help="HH:MM ET；strict 默认 06:30，relaxed 默认 16:30（待裁定）")
++    ap.add_argument("--call-b-latest-finish", default=None, help="HH:MM ET；strict 06:30（pending Arch），relaxed 16:00")
+     ap.add_argument("--budget-min", type=int, default=None, help="call B 预算分钟，默认 55")
+-    ap.add_argument("--daily-pull-cutoff", default=None, help="HH:MM ET，默认 06:20")
+-    ap.add_argument("--daily-pull-max-min", type=int, default=None, help="单次 daily_pull 最长分钟（可选）")
+-    ap.add_argument("--retry-wait-min", type=int, default=10)
++    ap.add_argument("--daily-pull-cutoff", default=None, help="HH:MM ET 或 none；strict 06:20（pending Arch），relaxed none")
++    ap.add_argument("--daily-pull-max-min", type=int, default=None, help="单次 daily_pull 最长运行分钟；relaxed 30")
++    ap.add_argument("--retry-wait-min", type=int, default=None, help="重试间隔分钟；relaxed 30")
+     ap.add_argument("--ok", default=None)
+-    ap.add_argument("--lock-template", default=None, help="Arch 锁模板文件（{SET_AT_ET} {SET_BY} {DATE} {PID} 占位）")
+-    ap.add_argument("--check-only", action="store_true")
++    ap.add_argument("--check-only", action="store_true", help="只读预检：不写任何文件")
+     A = ap.parse_args()
+     D = A.date
+@@ -633,25 +683,39 @@
+     latest = A.call_b_latest_finish or pf["call_b_latest_finish"]
+     budget = A.budget_min if A.budget_min is not None else pf["budget_min"]
+-    cutoff = A.daily_pull_cutoff or pf["daily_pull_cutoff"]
++    cutoff = parse_hm_opt(A.daily_pull_cutoff if A.daily_pull_cutoff is not None else pf["daily_pull_cutoff"])
++    max_min = A.daily_pull_max_min if A.daily_pull_max_min is not None else pf["daily_pull_max_min"]
++    wait_min = A.retry_wait_min if A.retry_wait_min is not None else pf["retry_wait_min"]
+     STAMP = now().strftime("%Y%m%dT%H%M%S")
+     R.update(started_et=ts(), pid=os.getpid(), date=D, profile=A.profile)
+-    R["checks"]["gates"] = dict(call_b_latest_finish=latest, budget_min=budget, daily_pull_cutoff=cutoff,
+-                                daily_pull_max_min=A.daily_pull_max_min, retry_wait_min=A.retry_wait_min, ruling="pending Arch / 主 Agent")
++    R["checks"]["gates"] = dict(call_b_latest_finish=latest, budget_min=budget, daily_pull_cutoff=cutoff, daily_pull_max_min=max_min,
++                                retry_wait_min=wait_min, call_b_gate="call B 实际起跑时刻 + budget ≤ latest 且 trade_cal == PIN",
++                                ruling=pf["ruling"])
++
++    # 只读前置：已有 marker（Eng 闸门要求 .FAILED.json 不存在）
++    e = marker_precheck()
++    if e:
++        R["no_write"] = True; fail("PRE " + e); finish(2, False)
++    kv, e = check_ok()
++    blocked_by_failed = bool(R.get("supersede"))  # 旧 FAILED 仍在原位时，任何前置失败都不能再写 FAILED
++    for e2 in ([e] if e else []) + ([] if e else [check_pins(), "16:40–18:40 禁跑" if in_blackout() else None,
++                                                  ("已过 daily_pull 截止 %s" % cutoff) if cutoff and now() >= hm(cutoff) else None]):
++        if e2:
++            R["no_write"] = blocked_by_failed or A.check_only; fail("PRE " + e2); finish(2, False)
++    if A.check_only:
++        e = ensure_lock(kv, dry=True)
++        if not e and os.path.isfile(QUIET_LOCK):
++            e = quiet_gate("check_only", full=True)
++        if e:
++            fail("PRE " + e); finish(2, False)
++        ev("CHECK_ONLY 通过（未写任何文件）"); finish(0, True)
++    e = supersede_failed()
++    if e:
++        R["no_write"] = True; fail("PRE " + e); finish(2, False)
++    e = ensure_lock(kv) or quiet_gate("pre", full=True)
++    if e:
++        fail("PRE " + e); finish(2, False)
+     os.makedirs(ROOT + "/_recovery/data/nightly_%s" % D, exist_ok=True)
+     RUN_DIR = ROOT + "/_recovery/data/nightly_%s/run_%s" % (D, STAMP)
+     os.mkdir(RUN_DIR)
+-
+-    kv, e = check_ok()
+-    if e:
+-        fail("PRE " + e); finish(2, False)
+-    for e in (check_pins(), "16:40–18:40 禁跑" if in_blackout() else None,
+-              "已过 daily_pull 截止 %s" % cutoff if now() >= hm(cutoff) else None):
+-        if e:
+-            fail("PRE " + e); finish(2, False)
+-    e = ensure_lock(kv) or quiet_gate("pre", full=True)
+-    if e:
+-        fail("PRE " + e); finish(2, False)
+-    if A.check_only:
+-        ev("CHECK_ONLY 通过（不写 marker 之外的任何东西）"); release_lock(); sys.exit(0)
+ 
+     # 1 备份与 BEFORE
+@@ -676,45 +740,47 @@
+     if pf["retries"]:
+         try:
+-            max_retry = min(2, int(kv.get("allow_daily_pull_retry_%s" % D, "0")))
++            max_retry = max(0, min(2, int(kv.get("allow_daily_pull_retry_%s" % D, "0"))))
+         except ValueError:
+             max_retry = 0
+     allow_q = truthy(kv.get("allow_quarantine_mv_daily_raw_%s" % D))
+-    k, final, cut_hit, pending_bad = 0, None, False, []
++    black0 = hm("%02d:%02d" % BLACKOUT[0])
++    k, final, no_more, pending_bad = 0, None, False, []
+     while True:
+         k += 1
+-        still = [p for p in pending_bad if os.path.exists(p)]  # 重试前：不合格文件必须已不在原位，否则 cached_day 会跳过
++        still = [p for p in pending_bad if os.path.exists(p)]  # 重试前：不合格文件必须已隔离，否则 cached_day 会跳过
+         if still:
+             fail("重试前 %s 仍在原位（未隔离），不重试" % still); break
+-        if now() >= hm(cutoff):
++        if cutoff and now() >= hm(cutoff):
+             fail("第 %d 次尝试开始前已过截止 %s" % (k, cutoff)); break
+-        dl = hm(cutoff); why = "daily_pull 截止 %s" % cutoff
+-        if A.daily_pull_max_min:
+-            alt = now() + datetime.timedelta(minutes=A.daily_pull_max_min)
++        dl, why = black0, "16:40 禁跑开始"
++        if cutoff and hm(cutoff) < dl:
++            dl, why = hm(cutoff), "daily_pull 截止 %s" % cutoff
++        if max_min:
++            alt = now() + datetime.timedelta(minutes=max_min)
+             if alt < dl:
+-                dl, why = alt, "单次上限 %d 分钟" % A.daily_pull_max_min
++                dl, why = alt, "单次运行上限 %d 分钟" % max_min
+         rec = run_nightly("daily_pull", "callA_a%d" % k, (dl, why), "scripts/acquire/tier1_pull.py")
+         rec["attempt"] = k
+-        cal_ok = compare_restore(k)
++        cal_ok = compare_restore(k)  # 每次尝试后都恢复并核 sha
+         bad, tmps, raw = raw_check()
+         rec.update(raw=raw, bad=bad, tmp_left=tmps, calendar_restored=cal_ok)
+         if not cal_ok:
+             R["prior_attempts"].append(rec); fail("P0 日历未恢复"); finish(4, False)
+-        if rec["stopped"]:
+-            cut_hit = True
+-            rec["quarantine"] = quarantine(tmps + [p for p in [os.path.join(RAW, a, "%s.parquet" % D) for a, _ in bad]], allow_q, k)
+-            alert("P1", "daily_pull 被停（%s）；不重试、不起 call B；18:40 后整套重跑需新 .ok" % rec["stopped"]["reason"])
+-            R["prior_attempts"].append(rec); fail("daily_pull 被截止"); break
+-        if rec["rc"] == 0 and not bad and not tmps:
++        bad_paths = [os.path.join(RAW, a, "%s.parquet" % D) for a, _ in bad]
++        if rec["rc"] == 0 and not bad and not tmps and not rec["stopped"]:
+             final = rec; break
+-        bad_paths = [os.path.join(RAW, a, "%s.parquet" % D) for a, _ in bad]
+         rec["quarantine"] = quarantine(tmps + bad_paths, allow_q, k)
+-        alert("P1", "daily_pull 第 %d 次 rc=%s 不合格=%s tmp=%s" % (k, rec["rc"], bad, tmps))
+         R["prior_attempts"].append(rec)
+         pending_bad = tmps + bad_paths
++        if rec["stopped"] and (A.profile == "strict" or "截止" in rec["stopped"]["reason"] or "16:40" in rec["stopped"]["reason"]):
++            alert("P1", "daily_pull 被停（%s）；不重试、不起 call B；18:40 后整套重跑需新 .ok" % rec["stopped"]["reason"])
++            no_more = True; fail("daily_pull 被停：%s" % rec["stopped"]["reason"]); break
++        alert("P1", "daily_pull 第 %d 次不合格 rc=%s stopped=%s bad=%s tmp=%s" % (k, rec["rc"], bool(rec["stopped"]), bad, tmps))
+         if k > max_retry:
+             fail("daily_pull 不合格且无剩余重试（profile=%s，max=%d）" % (A.profile, max_retry)); break
+-        if now() + datetime.timedelta(minutes=A.retry_wait_min + 5) >= hm(cutoff):
+-            fail("剩余时间不足以重试（截止 %s）" % cutoff); break
+-        ev("等待 %d 分钟后重试" % A.retry_wait_min); time.sleep(A.retry_wait_min * 60)
++        nxt = now() + datetime.timedelta(minutes=(wait_min or 0))
++        if nxt + datetime.timedelta(minutes=(max_min or 0) + budget) > hm(latest) or (cutoff and nxt >= hm(cutoff)):
++            fail("重试超出同一闸门（下次开始 %s + %s + %d 分钟 > %s）" % (nxt.strftime("%H:%M"), max_min, budget, latest)); break
++        ev("等待 %s 分钟后重试" % wait_min); time.sleep((wait_min or 0) * 60)
+     if final:
+         R["invocations"].append(dict(name="daily_pull", cmd=final["cmd"], rc=final["rc"], pid=final["pid"],
+@@ -723,8 +789,8 @@
+     # B
+     b_cmd = "%s scripts/nightly_update.py --date %s --steps %s" % (PY, D, ",".join(CALL_B_STEPS))
+-    if final and not cut_hit:
++    if final and not no_more:
+         start_b = now()
+         g_time = start_b + datetime.timedelta(minutes=budget) <= hm(latest)
+-        g_black = not in_blackout(start_b) and not (start_b < hm("%02d:%02d" % BLACKOUT[0]) <= start_b + datetime.timedelta(minutes=budget))
++        g_black = not in_blackout(start_b) and not (start_b < black0 <= start_b + datetime.timedelta(minutes=budget))
+         g_sha = sha256(TRADE_CAL) == PIN
+         R["checks"]["call_b_gate"] = dict(at=start_b.isoformat(timespec="seconds"), budget_min=budget, latest_finish=latest,
+@@ -732,13 +798,14 @@
+         qe = quiet_gate("pre_call_b", full=False)
+         if g_time and g_black and g_sha and not qe:
+-            rb = run_nightly(",".join(CALL_B_STEPS), "callB", (hm("%02d:%02d" % BLACKOUT[0]), "16:40 禁跑开始"), "scripts/")
++            rb = run_nightly(",".join(CALL_B_STEPS), "callB", (black0, "16:40 禁跑开始"), "scripts/")
++            over = now() > hm(latest)
+             R["invocations"].append(dict(name="call_b", cmd=rb["cmd"], rc=rb["rc"], pid=rb["pid"], started_et=rb["started_et"],
+-                                         finished_et=rb["finished_et"], overrun=now() > hm(latest)))
++                                         finished_et=rb["finished_et"], overrun=over))
+             if rb["stopped"]:
+                 fail("call B 被停：%s" % rb["stopped"]["reason"])
+             elif rb["rc"] != 0:
+                 fail("call B rc=%s" % rb["rc"])
+-            if now() > hm(latest):
+-                alert("P1", "call B 结束晚于 %s" % latest)
++            if over:
++                alert("P1", "call B 结束晚于 %s（只告警，不停；16:40 才按 PID 停）" % latest)
+         else:
+             why = "time" if not g_time else ("blackout" if not g_black else ("trade_cal sha" if not g_sha else qe))
+@@ -746,6 +813,6 @@
+             alert("P1", "call B 未起：%s" % why); fail("call B 未起：%s" % why)
+     else:
+-        R["invocations"].append(dict(name="call_b", cmd=b_cmd, rc=None, not_run_reason="daily_pull 未成功或被截止"))
+-        fail("call B 未起：daily_pull 未成功")
++        R["invocations"].append(dict(name="call_b", cmd=b_cmd, rc=None, not_run_reason="daily_pull 未成功或被停"))
++        fail("call B 未起：daily_pull 未成功或被停")
+ 
+     # C 核查

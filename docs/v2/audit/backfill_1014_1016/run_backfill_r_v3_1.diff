@@ -1,0 +1,710 @@
+--- run_backfill_r_v3.py
++++ run_backfill_r_v3_1.py
+@@ -1,21 +1,36 @@
+ #!/usr/bin/python3
+ # -*- coding: utf-8 -*-
+-"""方案 R 补跑执行器 run_backfill_r_v3.py（v3 = v2 28bc5e0e + Arch 11:20 RESEARCH_QUIET/healthz/pgrep 前置条件，去掉 --quiet-evidence；v2 取代同目录未审的 run_backfill_r.py 1e81c4f1：判定异常不再崩溃、run2 增查 summary 状态；QuantLab Data，2026-10-18 起草，待 Arch 审；未运行）。只用标准库，判定处只读 parquet 元数据（pyarrow）。
+-
+-对应：docs/v2/audit/BACKFILL_1014_1016_OK_REQUEST_ZH_r3.md；Arch 审查 ARCH_DATA_TIMELINE_1019_AND_PLAN_R_REVIEW_ZH.md（717c3e7c）§5.4、§9。
+-强制执行：
+-  P2-3 严格串行：run1（cyq）退出 → wait 取 rc → 快照 v2 compare 通过 → cyq 判定全过，才起 run2（tier3,bundle,freshness）。
+-  P2-4 RSS 自动停：每 5 秒读 /proc/<pid>/status VmRSS，对 nightly 进程及其全部子孙求和；> 1484800 kB 即核 cmdline 后按确切 PID
+-       先子后父 TERM，10 秒后仍存活才 KILL；采样日志写新文件 /tmp/arch1018/backfill_rss_runN.log。
+-  P2-5 前后快照都用 v2（c930ed5c），范围 579c8605。
+-  P3-6 run1 前备份含两个 cyq bundle 副本。
+-不做的事：不 STOP / CONT 94322（操作员按 .ok 执行，执行器只核 /proc/94322/stat 为 T）；不移动 .ok 到 _consumed；不删任何文件。
++"""方案 R 补跑执行器 run_backfill_r_v3_1.py（v3.1 = v3 f006c0b2 + Arch 审查 ARCH_DATA_PLAN_R_R3_REVIEW_ZH.md（8338d131）全部 P1/P2 与 P3 修复；
++QuantLab Data，2026-10-18 起草，待 Arch 增量复核；未对项目数据运行）。只用标准库，判定处只读 parquet 元数据（pyarrow）。
++
++对应：docs/v2/audit/BACKFILL_1014_1016_OK_REQUEST_ZH_r3.md、_r3_1.md；Arch 审查 8338d131（取代 717c3e7c 的 §5.4/§9 引用）。
++v3.1 修复：
++  P1-1 dry-run 不再重复解释器：run_tool 只收脚本参数，dry-run 传 c[1:]，并断言 c[0]==PY、args[0]!=PY。
++  P2-1 停树：SIGSTOP nightly → 子孙最深先 TERM→10 s→KILL（每次核 cmdline+PPID）→ SIGKILL nightly → p.wait(60 s 超时)
++       → 扫 /proc 孤儿（pids_seen 中且含 scripts/acquire/，或 PPID=1 且启动晚于本次 run 且含 scripts/acquire/|nightly_update）并按确切 PID 停。
++  P2-2 run1/run2 rc 必须 ==0；summary（logs/nightly/20261016_summary.json）date==20261016、finished 落在本次 run 窗口内、mtime 在窗口内、所需步骤 status==ok。
++       注：nightly 只写顶层 finished（nightly_update.py L136），步骤条目无单独时间戳，故以顶层 finished+mtime 判定整份 summary 为本次写出。
++  P2-3/Q4 cyq 恢复：仅 .ok allow_restore_cyq_202610_from_backup=true 时；备份 sha == SHA256SUMS_pre_run1 == backfill_before.txt 三者一致；
++       同目录 O_EXCL 临时文件 → fsync → 核 sha → os.replace → fsync 目录；parquet 缺失/损坏也触发；恢复后复核 == before；仍退出 1；
++       只在 check_cyq 不过这一条路径；rc≠0、compare 不过、停树路径只报告。
++  Q5 bundle：≥8MB 只限 tier3 20261016 新文件，记录路径/字节/源 sha/原因/目标旧副本 sha；cyq_perf_202610 被跳过（SKIP>8MB 或缺失）即退出 1；
++       bundle.files 中所有 cyq/* 与 tier3_daily/* 条目都核副本 sha == 源 sha（P3-8 部分）。
++  Q7/P3-7 run2 前锁 sha 必须与 run1 前相同；运行中每次采样只记录锁是否存在，不做 pgrep。
++  P3-1 未捕获异常也写结果 JSON：未起 run 退出 2，已起 run 退出 1。P3-2 runN.out 用 "x"。P3-3 sha 键必填、行内注释拒绝、run2 前再核 expires_et。
++  P3-4 94322 核 cmdline 含 remaining_after_stk_surv.py。P3-5 发信号均核 PPID。P3-6 --check-only 退出 10，结果 JSON 带 mode。
++不做的事：不 STOP / CONT 94322（只核 /proc/94322/stat 为 T）；不建、不删、不移 RESEARCH_QUIET.lock；不移动 .ok；不删任何项目文件
++（只删除自建且未替换成功的临时文件）。
++allow_write（P3-13 已补）：data/v2/tushare_raw/cyq_perf/2026101{4,5,6}.parquet；data/v2/cyq/cyq_perf_202610.parquet、manifest.json；
++  data/v2/cyq/.cyq_perf_202610.parquet.restore_tmp.<pid>、.manifest.json.restore_tmp.<pid>（仅 Q4=true）；data/v2/tier3_daily/*/20261016.parquet、
++  manifests/20261016.json；output/data_v2_bundle/**；output/data_freshness_status.json 与 output/data_freshness_status.tmp；output/relay_health.json；
++  output/relay_outage_backfill_queue.json；logs/nightly/20261016_summary.json、20261016_{cyq,tier3,freshness}.log、backfill_20261018_run{1,2}.out；
++  _recovery/data/backfill_1014_1016/**；/tmp/arch1018/backfill_*；docs/v2/audit/backfill_1014_1016/run_backfill_r_result_*.json；以上目录内 .*.tmp.<pid>。
+ 用法：
+-  PYTHONDONTWRITEBYTECODE=1 nice -n 10 /usr/bin/python3 docs/v2/audit/backfill_1014_1016/run_backfill_r_v3.py [--check-only] </dev/null
+-前置：RESEARCH_QUIET.lock 已由 Arch/操作员设好（执行器不建、不删锁）；执行器自己轮询 healthz 并 pgrep。
+-退出码：0 全部通过；1 判定 / compare 不过（已按规则中止）；2 前置条件不满足（未起任何运行）；3 RSS 或 15:55 截止触发停进程。
++  PYTHONDONTWRITEBYTECODE=1 nice -n 10 /usr/bin/python3 docs/v2/audit/backfill_1014_1016/run_backfill_r_v3_1.py [--check-only] </dev/null
++前置：RESEARCH_QUIET.lock 已由 Arch/操作员设好；执行器轮询 healthz（≤90 s 至 quiet=true，再等 15 s）并 pgrep。
++退出码：0 全部通过；1 判定/compare/rc 不过或已起 run 后异常；2 前置条件不满足或未起 run 前异常；3 RSS / 15:55 截止 / wait 超时触发停进程；10 --check-only 通过。
+ """
+-import argparse, datetime, hashlib, json, os, re, shutil, signal, subprocess, sys, time
++import argparse, datetime, hashlib, json, os, re, shutil, signal, subprocess, sys, time, traceback
+ from zoneinfo import ZoneInfo
+ 
+ ET = ZoneInfo("America/New_York")
+@@ -53,6 +68,13 @@
+ HARD_STOP = (15, 55)
+ BLACKOUT = ((16, 40), (18, 40))
+ P94322 = 94322
++P94322_MARK = "remaining_after_stk_surv.py"  # P3-4：防 PID 复用
++NIGHTLY_MARK = "scripts/nightly_update.py"
++ACQ_MARK = "scripts/acquire/"
++WAIT_TIMEOUT_S = 60  # P2-1：p.wait 超时
++CHECK_ONLY_EXIT = 10  # P3-6
++RESTORE_KEY = "allow_restore_cyq_202610_from_backup"
++CFG = {"restore_allowed": False, "expires": None}
+ BK = ROOT + "/_recovery/data/backfill_1014_1016"
+ BK_RUN1 = ["data/v2/cyq/cyq_perf_202610.parquet", "data/v2/cyq/manifest.json",
+            "logs/nightly/20261014_summary.json", "logs/nightly/20261015_summary.json", "logs/nightly/20261016_summary.json",
+@@ -67,7 +89,7 @@
+ SNAP_DIR = "/tmp/arch1018"
+ RESULT_DIR = ROOT + "/docs/v2/audit/backfill_1014_1016"
+ 
+-R = {"started_et": None, "events": [], "checks": {}, "runs": {}}
++R = {"runner": "run_backfill_r_v3_1.py", "mode": None, "started_et": None, "run_started": False, "events": [], "checks": {}, "runs": {}}
+ 
+ 
+ def now():
+@@ -181,91 +203,166 @@
+     return 0
+ 
+ 
+-def signal_exact(pid, sig, must_contain, parent=None):
+-    """发信号前核 cmdline（与 PPID）；进程已退出（ESRCH）不算错误（P3-4）。"""
++def descendants_pp(pid):
++    # 深度优先返回 (pid, 期望 PPID)，最深的在前（P2-1、P3-5）
++    res = []
++    for c in children(pid):
++        res = descendants_pp(c) + [(c, pid)] + res
++    return res
++
++
++def starttime_epoch(pid):
++    # /proc/<pid>/stat 第 22 字段（时钟滴答，自开机）→ epoch 秒
++    try:
++        s = open("/proc/%d/stat" % pid).read()
++        st = int(s[s.rfind(")") + 2:].split()[19])
++        bt = None
++        for ln in open("/proc/stat"):
++            if ln.startswith("btime "):
++                bt = int(ln.split()[1])
++        return bt + st / os.sysconf("SC_CLK_TCK")
++    except Exception:
++        return None
++
++
++def signal_exact(pid, sig, must_contain, parent):
++    # 发信号前核 cmdline 与 PPID（P3-5：parent 必填）；进程已退出 / 僵尸（ESRCH / Z）不算错误
+     cl = cmdline(pid)
+     if not alive(pid):
+-        ev("SIGNAL skip pid=%d 已退出" % pid); return
+-    if must_contain not in cl or (parent is not None and ppid(pid) != parent):
+-        ev("SIGNAL refuse pid=%d cmdline/ppid 不符（%r ppid=%s），不发信号" % (pid, cl[:160], ppid(pid))); return
+-    try:
+-        os.kill(pid, sig); ev("SIGNAL %s pid=%d cmd=%r" % (signal.Signals(sig).name, pid, cl[:160]))
++        ev("SIGNAL skip pid=%d 已退出或 Z" % pid); return "gone"
++    pp = ppid(pid)
++    if must_contain not in cl or pp != parent:
++        ev("SIGNAL refuse pid=%d cmdline/ppid 不符（%r ppid=%s 期望 %s），不发信号" % (pid, cl[:160], pp, parent)); return "refused"
++    try:
++        os.kill(pid, sig); ev("SIGNAL %s pid=%d ppid=%d cmd=%r" % (signal.Signals(sig).name, pid, pp, cl[:160])); return "sent"
+     except ProcessLookupError:
+-        ev("SIGNAL pid=%d ESRCH（已退出）" % pid)
++        ev("SIGNAL pid=%d ESRCH（已退出）" % pid); return "gone"
++
++
++def wait_gone(pid, secs):
++    t0 = time.time()
++    while alive(pid) and time.time() - t0 < secs:
++        time.sleep(0.5)
++    return not alive(pid)
++
++
++def term_then_kill(pid, mark, parent):
++    r = signal_exact(pid, signal.SIGTERM, mark, parent)
++    if r != "sent":
++        return r
++    if wait_gone(pid, TERM_WAIT_S):
++        return "term_ok"
++    signal_exact(pid, signal.SIGKILL, mark, parent)
++    return "killed" if wait_gone(pid, 5) else "still_alive"
+ 
+ 
+ def stop_tree(npid, reason):
++    # P2-1 顺序：(1) SIGSTOP nightly，冻结它，不让它起下一步；(2) 重读子孙，最深者先 TERM→10 s→KILL；(3) SIGKILL nightly。
++    # p.wait(超时) 与孤儿扫描在 run() 里做。
++    rec = dict(reason=reason, at=ts(), npid=npid, steps=[])
++    R["checks"].setdefault("stop_tree", []).append(rec)
+     ev("STOP_TREE npid=%d reason=%s" % (npid, reason))
+-    for c in descendants(npid):  # 截止时刻重读子进程（P3-3）
+-        signal_exact(c, signal.SIGTERM, "scripts/acquire/")
+-        t0 = time.time()
+-        while alive(c) and time.time() - t0 < TERM_WAIT_S:
+-            time.sleep(0.5)
+-        if alive(c):
+-            signal_exact(c, signal.SIGKILL, "scripts/acquire/")
+-            t0 = time.time()
+-            while alive(c) and time.time() - t0 < 5:
+-                time.sleep(0.5)
+-    t0 = time.time()
+-    while alive(npid) and time.time() - t0 < TERM_WAIT_S:
+-        time.sleep(0.5)
+-    if alive(npid):
+-        signal_exact(npid, signal.SIGTERM, "scripts/nightly_update.py")
+-        t0 = time.time()
+-        while alive(npid) and time.time() - t0 < TERM_WAIT_S:
+-            time.sleep(0.5)
+-        if alive(npid):
+-            signal_exact(npid, signal.SIGKILL, "scripts/nightly_update.py")
++    me = os.getpid()
++    rec["steps"].append(("SIGSTOP", npid, signal_exact(npid, signal.SIGSTOP, NIGHTLY_MARK, me)))
++    for c, par in descendants_pp(npid):
++        rec["steps"].append(("TERM_KILL", c, term_then_kill(c, ACQ_MARK, par)))
++    rec["steps"].append(("SIGKILL", npid, signal_exact(npid, signal.SIGKILL, NIGHTLY_MARK, me)))
++
++
++def orphan_scan(seen, t0_epoch, tag):
++    # P2-1(4)：nightly 退出后扫 /proc；pids_seen 中且含 scripts/acquire/，或 PPID=1 且启动晚于本次 run 且含 acquire/nightly，一律记录并按确切 PID 停
++    me = os.getpid(); found = []
++    for name in os.listdir("/proc"):
++        if not name.isdigit():
++            continue
++        pid = int(name)
++        if pid in (me, P94322) or not alive(pid):
++            continue
++        cl = cmdline(pid); pp = ppid(pid)
++        hit = (pid in seen and ACQ_MARK in cl)
++        if not hit and pp == 1 and (ACQ_MARK in cl or NIGHTLY_MARK in cl):
++            st = starttime_epoch(pid)
++            hit = st is not None and st >= t0_epoch - 1
++        if hit:
++            mark = NIGHTLY_MARK if NIGHTLY_MARK in cl else ACQ_MARK
++            found.append(dict(pid=pid, ppid=pp, cmdline=cl[:200], action=term_then_kill(pid, mark, pp)))
++    R["checks"]["orphans_" + tag] = found
++    ev("ORPHAN_SCAN %s found=%d" % (tag, len(found)))
++    return found
+ 
+ 
+ # ---------------- 前置 ----------------
+ def parse_ok(p):
+-    kv = {}
+-    for ln in open(p, encoding="utf-8"):
++    # P3-3：值里不得带行内注释（含 # 即拒绝）；无法解析的非空非注释行也拒绝；重复键拒绝
++    kv, errs = {}, []
++    for i, ln in enumerate(open(p, encoding="utf-8"), 1):
+         ln = ln.strip()
+         if not ln or ln.startswith("#"):
+             continue
+         m = re.match(r"^([A-Za-z0-9_]+)\s*[:=]\s*(.*)$", ln)
+-        if m:
+-            kv[m.group(1)] = m.group(2).strip()
+-    return kv
++        if not m:
++            errs.append("L%d 无法解析" % i); continue
++        k, v = m.group(1), m.group(2).strip()
++        if "#" in v:
++            errs.append("L%d %s 含行内注释" % (i, k))
++        if k in kv:
++            errs.append("L%d %s 重复" % (i, k))
++        kv[k] = v
++    return kv, errs
+ 
+ 
+ def truthy(v):
+     return str(v).strip().lower() in ("true", "1", "yes")
++
++
++def check_expiry(tag):
++    exp = CFG["expires"]
++    if exp is None or exp <= now():
++        return "expires_et 已过期（%s）" % tag
++    return None
+ 
+ 
+ def check_ok():
+     if not os.path.isfile(OK_PATH):
+         return "run .ok 不存在 %s" % OK_PATH
+-    kv = parse_ok(OK_PATH)
+-    R["checks"]["ok"] = dict(path=OK_PATH, sha256=sha256(OK_PATH), keys=sorted(kv))
++    kv, errs = parse_ok(OK_PATH)
++    R["checks"]["ok"] = dict(path=OK_PATH, sha256=sha256(OK_PATH), keys=sorted(kv), parse_errors=errs)
++    if errs:
++        return ".ok 格式错误：%s" % "；".join(errs)
+     if kv.get("ok_id") != OK_ID:
+         return "ok_id 不符：%r" % kv.get("ok_id")
+-    if kv.get("ok_type", "run") != "run":
+-        return "ok_type 不是 run"
++    if kv.get("ok_type") != "run":
++        return "ok_type 不是 run：%r" % kv.get("ok_type")
+     try:
+         exp = datetime.datetime.fromisoformat(kv.get("expires_et", ""))
+     except Exception:
+-        return "expires_et 无法解析"
++        return "expires_et 缺失或无法解析"
+     if exp.tzinfo is None or exp <= now():
+         return "expires_et 无时区或已过期：%s" % kv.get("expires_et")
+-    for k, rel in OK_SHA_KEYS.items():
+-        if k in kv and kv[k].lower() != PINS[rel]:
++    CFG["expires"] = exp
++    for k, rel in OK_SHA_KEYS.items():  # P3-3：必填
++        if k not in kv:
++            return ".ok 缺必填键 %s" % k
++        if kv[k].lower() != PINS[rel]:
+             return ".ok %s=%s 与执行器钉值 %s 不符" % (k, kv[k], PINS[rel])
+     me = sha256(os.path.abspath(__file__))
+-    if "sha_runner" in kv and kv["sha_runner"].lower() != me:
++    if "sha_runner" not in kv:
++        return ".ok 缺必填键 sha_runner"
++    if kv["sha_runner"].lower() != me:
+         return ".ok sha_runner 与本执行器 sha %s 不符" % me
+-    if "rss_stop_kb" in kv and kv["rss_stop_kb"] != str(RSS_STOP_KB):
+-        return ".ok rss_stop_kb 不是 %d" % RSS_STOP_KB
++    if kv.get("rss_stop_kb") != str(RSS_STOP_KB):
++        return ".ok rss_stop_kb 缺失或不是 %d" % RSS_STOP_KB
+     for k in ("allow_run_nightly_update_cyq", "allow_run_nightly_update_tier3_bundle_freshness"):
+         if not truthy(kv.get(k)):
+             return ".ok 未授权 %s" % k
+     for k in ("allow_daily_pull", "allow_trade_cal", "allow_sw", "allow_force", "allow_delete"):
+         if truthy(kv.get(k)):
+             return ".ok 意外地把 %s 设为 true，拒绝" % k
+-    R["checks"]["ok"]["expires_et"] = kv["expires_et"]
+-    R["checks"]["ok"]["runner_sha256"] = me
++    rv = (kv.get(RESTORE_KEY) or "").lower()
++    if rv not in ("true", "false"):
++        return ".ok %s 必须显式为 true 或 false" % RESTORE_KEY
++    CFG["restore_allowed"] = rv == "true"
++    R["checks"]["ok"].update(expires_et=kv["expires_et"], runner_sha256=me, restore_allowed=CFG["restore_allowed"])
+     return None
+ 
+ 
+@@ -300,6 +397,8 @@
+     R["checks"].setdefault("p94322", []).append(dict(at=ts(), tag=tag, state=st, cmdline=cl[:200]))
+     if st is None:
+         ev("94322 不存在（%s），按 r1 §7 记录后继续" % tag); return None
++    if P94322_MARK not in cl:
++        return "94322 cmdline 不含 %s（PID 复用？）：%r（%s）" % (P94322_MARK, cl[:160], tag)
+     if st != "T":
+         return "94322 状态 %s，不是 T（%s）" % (st, tag)
+     return None
+@@ -319,7 +418,7 @@
+         return json.loads(r.read().decode("utf-8"))
+ 
+ 
+-def quiet_gate(tag, full=True):
++def quiet_gate(tag, full=True, expect_lock_sha=None):
+     """lock 必须已存在（执行器不建锁）；轮询 healthz 直到 quiet=true（最多 90 秒）；再等 15 秒；
+     复核 gen/snapshot/kline_running 均 false、child_pids == {}；pgrep -f 结果为空。full=False 时省去 90 秒轮询与 15 秒等待，只做复核。"""
+     rec = dict(tag=tag, at=ts(), lock=QUIET_LOCK)
+@@ -327,6 +426,8 @@
+     if not os.path.isfile(QUIET_LOCK):
+         return "RESEARCH_QUIET.lock 不存在（%s）" % tag
+     rec["lock_sha256"] = sha256(QUIET_LOCK)
++    if expect_lock_sha is not None and rec["lock_sha256"] != expect_lock_sha:  # Q7 / P3-7
++        return "RESEARCH_QUIET.lock sha 与 run1 前不同（%s != %s，%s）" % (rec["lock_sha256"], expect_lock_sha, tag)
+     rec["lock_text"] = open(QUIET_LOCK, encoding="utf-8", errors="replace").read()[:500]
+     if full:
+         t0 = time.time(); h = None
+@@ -335,6 +436,8 @@
+                 h = healthz()
+             except Exception as e:
+                 h = {"error": repr(e)[:200]}
++            if not isinstance(h, dict):
++                h = {"error": "healthz 非 dict：%r" % (h,)}
+             if h.get("quiet") is True:
+                 break
+             time.sleep(3)
+@@ -346,6 +449,8 @@
+         h = healthz()
+     except Exception as e:
+         return "healthz 复核失败 %r（%s）" % (e, tag)
++    if not isinstance(h, dict):
++        return "healthz 复核返回非 dict（%s）" % tag
+     rec["recheck"] = dict(at=ts(), healthz=h)
+     bad = [k for k in ("gen_running", "snapshot_running", "kline_running") if h.get(k) is not False]
+     if h.get("quiet") is not True or bad or h.get("child_pids") != {}:
+@@ -365,11 +470,11 @@
+     for rel in rels:
+         src = os.path.join(ROOT, rel); dst = os.path.join(BK, rel)
+         if os.path.lexists(dst):
+-            raise SystemExit("备份目标已存在 %s" % dst)
++            raise RuntimeError("备份目标已存在 %s" % dst)
+         os.makedirs(os.path.dirname(dst), exist_ok=True)
+         shutil.copy2(src, dst)
+         if sha256(dst) != sha256(src):
+-            raise SystemExit("备份 sha 与源不符 %s" % rel)
++            raise RuntimeError("备份 sha 与源不符 %s" % rel)
+         lines.append("%s  %s" % (sha256(dst), rel))
+     write_new(os.path.join(BK, sums_name), "\n".join(lines) + "\n")
+     ev("BACKUP %s %d 个文件 → %s" % (sums_name, len(rels), BK))
+@@ -378,9 +483,13 @@
+ 
+ # ---------------- 快照 ----------------
+ def run_tool(args, logname):
++    # P1-1：args 只含脚本及其参数，不得以解释器开头；解释器只在这里加一次
++    assert args and args[0] != PY and os.path.basename(args[0]) != "python3", "run_tool 参数不得以解释器开头：%r" % (args[:2],)
++    argv = ["nice", "-n", "10", PY] + args
++    R["checks"].setdefault("tool_argv", []).append(dict(log=logname, argv=argv))
+     p = os.path.join(SNAP_DIR, logname)
+     with open(p, "x") as fh:
+-        rc = subprocess.call(["nice", "-n", "10", PY] + args, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
++        rc = subprocess.call(argv, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
+                              env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+     out = open(p, encoding="utf-8", errors="replace").read()
+     return rc, out
+@@ -402,18 +511,21 @@
+ 
+ # ---------------- 运行 ----------------
+ def run(n, cmd):
+-    gate = time_gate(n)
++    gate = time_gate(n) or check_expiry("run%d" % n)
+     if gate:
+         return dict(rc=None, aborted=gate)
++    assert cmd[0] == PY and cmd[1] != PY, "CMD 解释器重复：%r" % (cmd[:2],)
+     out_path = ROOT + "/logs/nightly/backfill_20261018_run%d.out" % n
+-    rss_log = open(os.path.join(SNAP_DIR, "backfill_rss_run%d.log" % n), "x")
+-    t0 = ts()
+-    fh = open(out_path, "a")
++    rss_path = os.path.join(SNAP_DIR, "backfill_rss_run%d.log" % n)
++    rss_log = open(rss_path, "x")
++    fh = open(out_path, "x")  # P3-2
++    t0 = ts(); t0e = time.time()
++    R["run_started"] = True
+     p = subprocess.Popen(["nice", "-n", "10"] + cmd, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
+                          env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+-    npid = p.pid
++    npid = p.pid; CFG["npid"] = npid
+     ev("RUN%d start npid=%d cmd=%s" % (n, npid, " ".join(cmd)))
+-    rss_log.write("# ts_et\tnpid\tpid:rss_kb...\tsum_kb\n"); rss_log.flush()
++    rss_log.write("# ts_et\tnpid\tlock_present\tpid:rss_kb...\tsum_kb\n"); rss_log.flush()
+     max_sum, max_one, seen, stopped = 0, 0, set(), None
+     while p.poll() is None:
+         pids = [npid] + descendants(npid)
+@@ -421,18 +533,27 @@
+         rs = [(x, vmrss_kb(x)) for x in pids]
+         s = sum(v for _, v in rs)
+         max_sum = max(max_sum, s); max_one = max([max_one] + [v for _, v in rs])
+-        rss_log.write("%s\t%d\t%s\t%d\n" % (ts(), npid, " ".join("%d:%d" % r for r in rs), s)); rss_log.flush()
++        lock = os.path.isfile(QUIET_LOCK)  # P3-7：只记录，不停进程，不 pgrep
++        rss_log.write("%s\t%d\t%s\t%s\t%d\n" % (ts(), npid, lock, " ".join("%d:%d" % r for r in rs), s)); rss_log.flush()
+         if s > RSS_STOP_KB:
+             stopped = "RSS 采样和 %d kB > %d" % (s, RSS_STOP_KB); stop_tree(npid, stopped); break
+         if now() >= at(HARD_STOP):
+             stopped = "15:55 ET 截止"; stop_tree(npid, stopped); break
+         time.sleep(SAMPLE_S)
+-    rc = p.wait()
++    wait_timeout = False
++    try:
++        rc = p.wait(timeout=WAIT_TIMEOUT_S)  # P2-1(5)
++    except subprocess.TimeoutExpired:
++        rc = None; wait_timeout = True
++        ev("RUN%d p.wait 超时 %d s" % (n, WAIT_TIMEOUT_S))
++        stopped = (stopped or "") + "；wait 超时"
++    t1e = time.time(); CFG["npid"] = None
+     fh.close(); rss_log.close()
+-    res = dict(npid=npid, start_et=t0, end_et=ts(), rc=rc, cmd=" ".join(cmd), stopped=stopped, rss_max_sum_kb=max_sum,
+-               rss_max_single_kb=max_one, pids_seen=sorted(seen), out=out_path, rss_log=os.path.join(SNAP_DIR, "backfill_rss_run%d.log" % n),
+-               note="RSS 为 5 秒采样峰值，不是真实峰值")
+-    ev("RUN%d end rc=%s stopped=%s rss_max_sum=%d" % (n, rc, stopped, max_sum))
++    orphans = orphan_scan(seen, t0e, "run%d" % n)
++    res = dict(npid=npid, start_et=t0, end_et=ts(), start_epoch=t0e, end_epoch=t1e, rc=rc, cmd=" ".join(cmd), stopped=stopped,
++               wait_timeout=wait_timeout, orphans=len(orphans), rss_max_sum_kb=max_sum, rss_max_single_kb=max_one, pids_seen=sorted(seen),
++               out=out_path, rss_log=rss_path, note="RSS 为 5 秒采样峰值，不是真实峰值")
++    ev("RUN%d end rc=%s stopped=%s orphans=%d rss_max_sum=%d" % (n, rc, stopped, len(orphans), max_sum))
+     return res
+ 
+ 
+@@ -446,11 +567,36 @@
+     return json.load(open(p, encoding="utf-8"))
+ 
+ 
+-def check_cyq(log_off, bk_sums):
++SUMMARY = ROOT + "/logs/nightly/20261016_summary.json"
++
++
++def check_summary(steps, run_res, tag):
++    # P2-2：summary 必须是本次 run 写出：date==20261016、顶层 finished 与 mtime 落在 [start_epoch, end_epoch]、所需步骤 ok 且无 skipped
+     f = []
+-    sm = jload(ROOT + "/logs/nightly/20261016_summary.json").get("steps", {}).get("cyq", {})
+-    if sm.get("status") != "ok" or "skipped" in sm:
+-        f.append("summary steps.cyq=%s" % sm)
++    sm = jload(SUMMARY)
++    lo, hi = run_res["start_epoch"] - 1, run_res["end_epoch"] + 1
++    if sm.get("date") != "20261016":
++        f.append("summary date=%r" % sm.get("date"))
++    try:
++        fin = datetime.datetime.fromisoformat(sm.get("finished", "")).timestamp()
++    except Exception:
++        fin = None
++    if fin is None or not (lo <= fin <= hi):
++        f.append("summary finished=%r 不在本次 %s 窗口 %s–%s" % (sm.get("finished"), tag, run_res["start_et"], run_res["end_et"]))
++    mt = os.path.getmtime(SUMMARY)
++    if not (lo <= mt <= hi):
++        f.append("summary mtime %.0f 不在本次 %s 窗口" % (mt, tag))
++    st = sm.get("steps", {})
++    for k in steps:
++        v = st.get(k) or {}
++        if v.get("status") != "ok" or "skipped" in v:
++            f.append("summary steps.%s=%s" % (k, v))
++    R["checks"]["summary_" + tag] = dict(finished=sm.get("finished"), mtime=mt, window=[lo, hi], steps={k: st.get(k) for k in steps}, fails=f)
++    return f
++
++
++def check_cyq(log_off, r1):
++    f = check_summary(["cyq"], r1, "run1")
+     lp = ROOT + "/logs/nightly/20261016_cyq.log"
+     seg = ""
+     if os.path.exists(lp):
+@@ -491,13 +637,35 @@
+             f.append("manifest %s 条目与备份不同" % mm)
+     if (man.get("date_range") or [None, None])[1] != "20261016":
+         f.append("顶层 date_range=%r" % man.get("date_range"))
+-    pr = num_rows(ROOT + "/data/v2/cyq/cyq_perf_202610.parquet")
++    pr = cyq_parquet_rows()
+     if pr != m10.get("rows"):
+-        f.append("cyq_perf_202610 num_rows %d != manifest rows %r" % (pr, m10.get("rows")))
++        f.append("cyq_perf_202610 num_rows %r != manifest rows %r" % (pr, m10.get("rows")))
+     R["checks"]["cyq"] = dict(log_rows=days, raw_num_rows=raw, manifest_202610=m10, parquet_rows=pr, want_rows=want_rows, fails=f)
+-    if f and pr < CYQ_BASE_ROWS:
+-        restore_cyq(bk_sums)
+     return not f
++
++
++CYQ_PQ = "data/v2/cyq/cyq_perf_202610.parquet"
++CYQ_MAN = "data/v2/cyq/manifest.json"
++
++
++def cyq_parquet_rows():
++    # 缺失或损坏返回 None（Q4(4)：不抛异常，不被 guarded 吞掉）
++    try:
++        return num_rows(os.path.join(ROOT, CYQ_PQ))
++    except Exception as e:
++        R["checks"]["cyq_parquet_read_error"] = repr(e)[:300]
++        return None
++
++
++def load_snap(p):
++    # 读快照 v2 的 sha 行（sha256sum 格式，路径为绝对路径）
++    h = {}
++    for ln in open(p, encoding="utf-8"):
++        ln = ln.rstrip("\n")
++        if ln and not ln.startswith("#"):
++            s, path = ln.split("  ", 1)
++            h[path] = s
++    return h
+ 
+ 
+ def restore_one(rel, want):
+@@ -519,17 +687,38 @@
+     return ok
+ 
+ 
+-def restore_cyq(bk_sums):
+-    ev("cyq 判 FAIL 且 202610 行数低于 %d：按备份原子恢复" % CYQ_BASE_ROWS)
+-    R["checks"]["cyq_restore"] = {rel: restore_one(rel, bk_sums[rel]) for rel in ("data/v2/cyq/cyq_perf_202610.parquet", "data/v2/cyq/manifest.json")}
+-
+-
+-def check_run2(bk2, t_start, t_end):
+-    f = []
+-    st = jload(ROOT + "/logs/nightly/20261016_summary.json").get("steps", {})
+-    for k in ("tier3", "bundle", "freshness"):
+-        if (st.get(k) or {}).get("status") != "ok" or "skipped" in (st.get(k) or {}):
+-            f.append("summary steps.%s=%s" % (k, st.get(k)))
++def maybe_restore_cyq(bk_sums, before_path):
++    # Q4：只在 check_cyq 不过且 202610 parquet 缺失/损坏/行数 < 22238 时调用；调用方无论结果都退出 1
++    pr = cyq_parquet_rows()
++    rec = dict(trigger_parquet_rows=pr, allowed=CFG["restore_allowed"], files={})
++    R["checks"]["cyq_restore"] = rec
++    if pr is not None and pr >= CYQ_BASE_ROWS:
++        rec["action"] = "not_triggered"; return
++    if not CFG["restore_allowed"]:
++        rec["action"] = "report_only（.ok %s=false）" % RESTORE_KEY; ev("cyq 恢复未授权，只报告"); return
++    try:
++        before = load_snap(before_path)
++    except Exception as e:
++        rec["action"] = "report_only（before 快照不可读 %r）" % e; return
++    want = {}
++    for rel in (CYQ_PQ, CYQ_MAN):
++        b = sha256(os.path.join(BK, rel)); s = bk_sums.get(rel); n = before.get(os.path.join(ROOT, rel))
++        rec["files"][rel] = dict(backup=b, sums=s, before_snap=n)
++        if not (b == s == n and b):
++            rec["action"] = "report_only（%s 三方 sha 不一致）" % rel; ev("cyq 恢复：%s sha 三方不一致，只报告" % rel); return
++        want[rel] = b
++    ev("cyq 判 FAIL 且 202610 parquet rows=%r：按备份原子恢复" % pr)
++    for rel in (CYQ_PQ, CYQ_MAN):
++        rec["files"][rel]["restored"] = restore_one(rel, want[rel])
++    for rel in (CYQ_PQ, CYQ_MAN):  # Q4(5) 复核
++        rec["files"][rel]["after_sha"] = sha256(os.path.join(ROOT, rel))
++        rec["files"][rel]["after_eq_before"] = rec["files"][rel]["after_sha"] == want[rel]
++    rec["action"] = "restored" if all(v.get("after_eq_before") for v in rec["files"].values()) else "restore_incomplete"
++
++
++def check_run2(bk2, r2):
++    t_start, t_end = r2["start_et"], r2["end_et"]
++    f = check_summary(["tier3", "bundle", "freshness"], r2, "run2")
+     man = jload(ROOT + "/data/v2/tier3_daily/manifests/20261016.json"); it = man.get("items", {})
+     def rows_ok(k, lo, hi):
+         v = it.get(k, {})
+@@ -553,18 +742,31 @@
+         if rel.endswith(".parquet") or rel.endswith(".json"):
+             if sha256(os.path.join(ROOT, rel)) != s:
+                 f.append("10-14/15 文件变化 %s" % rel)
+-    sm = jload(ROOT + "/logs/nightly/20261016_summary.json").get("steps", {})
++    sm = jload(SUMMARY).get("steps", {})
+     files = (sm.get("bundle") or {}).get("files") or []
+-    need = ["cyq/cyq_perf_202610.parquet"] + ["tier3_daily/%s/20261016.parquet" % k for k, v in it.items() if v.get("status") == "ok"]
+-    for x in need:
+-        src = ROOT + ("/data/v2/" + x)
+-        if x not in files:
+-            if os.path.exists(src) and os.path.getsize(src) >= 8e6:
+-                pit.setdefault("bundle_skip_ge_8mb", []).append(x); continue  # nightly L73/L81：≥8MB 不复制，记录不判失败
+-            f.append("bundle.files 缺 %s" % x); continue
+-        dst = ROOT + "/output/data_v2_bundle/" + x
+-        if not (os.path.exists(src) and os.path.exists(dst) and sha256(src) == sha256(dst)):
+-            f.append("bundle 副本 sha != 源 %s" % x)
++    # Q5：cyq_perf_202610 若被 ≥8MB 跳过或缺失即失败；≥8MB 只记录限于 tier3 20261016 新文件
++    if "SKIP>8MB cyq_perf_202610.parquet" in files or "cyq/cyq_perf_202610.parquet" not in files:
++        f.append("bundle 未复制 cyq/cyq_perf_202610.parquet（跳过或缺失）")
++    for k, v in it.items():
++        if v.get("status") != "ok":
++            continue
++        x = "tier3_daily/%s/20261016.parquet" % k
++        src = ROOT + "/data/v2/" + x
++        if x in files:
++            continue
++        if os.path.exists(src) and os.path.getsize(src) >= 8e6:
++            dst = ROOT + "/output/data_v2_bundle/" + x
++            pit.setdefault("bundle_skip_ge_8mb", []).append(dict(path="data/v2/" + x, bytes=os.path.getsize(src), src_sha256=sha256(src),
++                reason="nightly_update.py L81 size>=8e6 未复制", dst_exists=os.path.exists(dst), dst_sha256=sha256(dst) if os.path.exists(dst) else None))
++            continue
++        f.append("bundle.files 缺 %s" % x)
++    for x in files:  # P3-8（部分）：cyq/* 与 tier3_daily/* 副本 sha == 源 sha
++        if x.startswith("SKIP"):
++            continue
++        if x.startswith("cyq/") or x.startswith("tier3_daily/"):
++            src = ROOT + "/data/v2/" + x; dst = ROOT + "/output/data_v2_bundle/" + x
++            if not (os.path.exists(src) and os.path.exists(dst) and sha256(src) == sha256(dst)):
++                f.append("bundle 副本 sha != 源 %s" % x)
+     if sha256(ROOT + "/data/v2/sw_pit/industry_members_sw_l1_pit.parquet") != SW_PIT_PIN:
+         f.append("sw_pit L1 源 sha 变化")
+     fr = jload(ROOT + "/output/data_freshness_status.json"); fb = jload(BK + "/output/data_freshness_status.json")
+@@ -620,10 +822,8 @@
+     sys.exit(code)
+ 
+ 
+-def main():
+-    ap = argparse.ArgumentParser(description="方案 R 补跑执行器")
+-    ap.add_argument("--check-only", action="store_true", help="只核 .ok / sha / 时间 / 94322，不起任何运行")
+-    a = ap.parse_args()
++def main_inner(a):
++    R["mode"] = "check_only" if a.check_only else "full"
+     R["started_et"] = ts(); R["pid"] = os.getpid()
+     for chk in (check_ok, check_pins):
+         e = chk()
+@@ -632,14 +832,16 @@
+     for e in (time_gate(1), check_94322("pre"), quiet_gate("pre_run1", full=True)):
+         if e:
+             ev("PRECONDITION " + e); finish(2)
++    lock_sha_pre = R["checks"]["quiet"][-1].get("lock_sha256")
+     if not os.path.isdir(SNAP_DIR):
+         ev("PRECONDITION %s 不存在" % SNAP_DIR); finish(2)
+     if a.check_only:
+-        ev("CHECK_ONLY 通过，未起任何运行"); finish(0)
+-
+-    # 第 0 步 dry-run（nightly L106、L137：不跑子进程、不探测中转、不写 summary）
++        ev("CHECK_ONLY 通过，未起任何运行"); finish(CHECK_ONLY_EXIT)
++
++    # 第 0 步 dry-run（nightly L106、L137：不跑子进程、不探测中转、不写 summary）。P1-1：c[1:] 去掉解释器
+     for i, c in ((1, CMD1), (2, CMD2)):
+-        rc, txt = run_tool(c + ["--dry-run"], "backfill_dryrun_cmd%d.log" % i)
++        assert c[0] == PY and c[1] != PY
++        rc, txt = run_tool(c[1:] + ["--dry-run"], "backfill_dryrun_cmd%d.log" % i)
+         R["checks"]["dryrun_%d" % i] = dict(rc=rc, tail=txt[-800:])
+         if rc != 0:
+             ev("dry-run cmd%d rc=%d" % (i, rc)); finish(2)
+@@ -652,20 +854,25 @@
+     log_off = os.path.getsize(lp) if os.path.exists(lp) else 0
+ 
+     r1 = run(1, CMD1); R["runs"]["run1"] = r1
++    if r1.get("aborted"):
++        ev("run1 未起：" + r1["aborted"]); finish(2)
+     rc, a1 = snap("after_run1")
+     ok_cmp = rc == 0 and compare(before, a1, "run1")
+-    if r1.get("aborted"):
+-        ev("run1 未起：" + r1["aborted"]); finish(2)
+-    if r1.get("stopped"):
+-        finish(3)
++    if r1.get("stopped") or r1.get("wait_timeout"):
++        finish(3)  # 停树路径：不自动恢复，只报告
++    if r1.get("orphans"):
++        ev("run1 后发现孤儿进程"); finish(1)
++    if r1.get("rc") != 0:
++        ev("run1 rc=%r ≠ 0" % r1.get("rc")); finish(1)  # P2-2；不自动恢复
+     if not ok_cmp:
+-        ev("run1 后 compare 不过，停"); finish(1)
+-    if not guarded(check_cyq, log_off, bk1):
++        ev("run1 后 compare 不过，停"); finish(1)  # 不自动恢复
++    if not guarded(check_cyq, log_off, r1):
++        maybe_restore_cyq(bk1, before)  # Q4(7)：唯一恢复路径
+         ev("run1 cyq 判定不过，不起 run2"); finish(1)
+     if sha256(ROOT + "/output/daily_update_status.json") != DUS_PIN:
+         ev("daily_update_status 变化"); finish(1)
+ 
+-    e = time_gate(2) or check_94322("pre_run2") or quiet_gate("pre_run2", full=False)
++    e = time_gate(2) or check_expiry("pre_run2") or check_94322("pre_run2") or quiet_gate("pre_run2", full=False, expect_lock_sha=lock_sha_pre)
+     if e:
+         ev("run2 不起：" + e); finish(1)
+     present = [x for x in ABSENT_RUN2 if os.path.lexists(os.path.join(ROOT, x))]
+@@ -674,17 +881,42 @@
+         ev("20261016 目标已存在 %s，不起 run2" % present); finish(1)
+     bk2 = backup(BK_RUN2, "SHA256SUMS_pre_run2", mkdir=False)
+     r2 = run(2, CMD2); R["runs"]["run2"] = r2
++    if r2.get("aborted"):
++        ev("run2 未起：" + r2["aborted"]); finish(1)
+     rc, a2 = snap("after_run2")
+     ok_cmp = rc == 0 and compare(before, a2, "run2")
+-    if r2.get("stopped"):
++    if r2.get("stopped") or r2.get("wait_timeout"):
+         finish(3)
++    if r2.get("orphans"):
++        ev("run2 后发现孤儿进程"); finish(1)
++    if r2.get("rc") != 0:
++        ev("run2 rc=%r ≠ 0" % r2.get("rc")); finish(1)
+     if not ok_cmp:
+         ev("run2 后 compare 不过"); finish(1)
+-    if not guarded(check_run2, bk2, r2["start_et"], r2["end_et"]):
++    if not guarded(check_run2, bk2, r2):
+         finish(1)
+     check_94322("post")
+     ev("全部通过"); finish(0)
+ 
+ 
++def main():
++    ap = argparse.ArgumentParser(description="方案 R 补跑执行器 v3.1")
++    ap.add_argument("--check-only", action="store_true", help="只核 .ok / sha / 时间 / 94322 / quiet，不起任何运行；通过退出 10")
++    a = ap.parse_args()
++    try:
++        main_inner(a)
++    except SystemExit:
++        raise
++    except BaseException as e:  # P3-1：未捕获异常也写结果 JSON
++        R["uncaught"] = dict(type=type(e).__name__, msg=str(e)[:400], tb=traceback.format_exc()[-3000:])
++        ev("UNCAUGHT %s: %s" % (type(e).__name__, e))
++        if CFG.get("npid") and alive(CFG["npid"]):  # 异常发生在运行中：按 P2-1 顺序停树
++            try:
++                stop_tree(CFG["npid"], "未捕获异常")
++            except Exception as e2:
++                R["uncaught_stop_error"] = repr(e2)[:300]
++        finish(1 if R.get("run_started") else 2)
++
++
+ if __name__ == "__main__":
+     main()

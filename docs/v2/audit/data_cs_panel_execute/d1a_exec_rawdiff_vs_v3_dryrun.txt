@@ -1,0 +1,28 @@
+1,13c1,13
+< RUN_CONDITION_MATCHES [{"pid": 94403, "state": "T", "patterns": ["relay_outage_backfill"], "verdict": "allowed_stopped", "cmd": "python3 scripts/acquire/relay_outage_backfill.py"}]
+< GATE_PASS step=D1a_fixesnone_check mode=dryrun ok_sha256=dac5f6dd7ee6e011101a6201db7a1b113d8fb1f12f8824711da86787ba2b2124
+< 2018 {"rows_v1": 783166, "rows": 783166, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 703}
+< 2019 {"rows_v1": 846470, "rows": 846470, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 877}
+< 2020 {"rows_v1": 880720, "rows": 880720, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 957}
+< 2021 {"rows_v1": 983990, "rows": 983990, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1025}
+< 2022 {"rows_v1": 1087168, "rows": 1087168, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1077}
+< 2023 {"rows_v1": 1163879, "rows": 1163879, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1153}
+< 2024 {"rows_v1": 1198136, "rows": 1198136, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1212}
+< 2025 {"rows_v1": 1204295, "rows": 1204295, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1231}
+< 2026 {"rows_v1": 924485, "rows": 924485, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1231}
+< DRY-RUN PASS: nothing written
+< WRAPPER_EXIT 0 PEAK_RSS_KB 1260656
+---
+> RUN_CONDITION_MATCHES []
+> GATE_PASS step=D1a_fixesnone_check mode=execute ok_sha256=f03357f19f087def6cd47716f34e7ae0fd093184a2fde7f31231357f13fe1a52
+> 2018 {"rows_v1": 783166, "rows": 783166, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 692, "sha256": "035d1f60d90911d8c8988b386eb8b845cb3cc0fbe9826af4f2ca7cd19222d8a9", "v1_sha256": "035d1f60d90911d8c8988b386eb8b845cb3cc0fbe9826af4f2ca7cd19222d8a9", "bytes_equal": true}
+> 2019 {"rows_v1": 846470, "rows": 846470, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 894, "sha256": "b843a7bc00fc383d016f407a10d910131eeaadf0345acd5c373b67da7cc3f857", "v1_sha256": "b843a7bc00fc383d016f407a10d910131eeaadf0345acd5c373b67da7cc3f857", "bytes_equal": true}
+> 2020 {"rows_v1": 880720, "rows": 880720, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 966, "sha256": "e25a7e59fe587b921760da751c2fb330b771847fab9dd56a2fdfa0887eee8904", "v1_sha256": "e25a7e59fe587b921760da751c2fb330b771847fab9dd56a2fdfa0887eee8904", "bytes_equal": true}
+> 2021 {"rows_v1": 983990, "rows": 983990, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1054, "sha256": "bea54e540332248165239a3407f85da248d38f0b75aaade25f041302835dead8", "v1_sha256": "bea54e540332248165239a3407f85da248d38f0b75aaade25f041302835dead8", "bytes_equal": true}
+> 2022 {"rows_v1": 1087168, "rows": 1087168, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1067, "sha256": "ad188ddaf9807ae343bda6db8d53aa20737e4778f66bda7810faa042d699fc5e", "v1_sha256": "ad188ddaf9807ae343bda6db8d53aa20737e4778f66bda7810faa042d699fc5e", "bytes_equal": true}
+> 2023 {"rows_v1": 1163879, "rows": 1163879, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1184, "sha256": "6acf163e12fac1aacfe2188ebe9e0f2df4f2abff5ad95d5907c88296bc302ab5", "v1_sha256": "6acf163e12fac1aacfe2188ebe9e0f2df4f2abff5ad95d5907c88296bc302ab5", "bytes_equal": true}
+> 2024 {"rows_v1": 1198136, "rows": 1198136, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1210, "sha256": "6d238ee3b2429edc1a5f70d36c1aea48bda70a9031fef54e987a255b11b7fc7b", "v1_sha256": "6d238ee3b2429edc1a5f70d36c1aea48bda70a9031fef54e987a255b11b7fc7b", "bytes_equal": true}
+> 2025 {"rows_v1": 1204295, "rows": 1204295, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1251, "sha256": "39568253199713f28305409b512d380340d0d0c915464ee8a1c0020611db331f", "v1_sha256": "39568253199713f28305409b512d380340d0d0c915464ee8a1c0020611db331f", "bytes_equal": true}
+> 2026 {"rows_v1": 924485, "rows": 924485, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1251, "sha256": "4608d8bc1eec7109a85f7b8018ab9a2f4d0fdcd1f36b4d1faefdc9714ecb2868", "v1_sha256": "4608d8bc1eec7109a85f7b8018ab9a2f4d0fdcd1f36b4d1faefdc9714ecb2868", "bytes_equal": true}
+> COMMITTED /workspace/QuantLab/output/ai_factory/panel_cache_v2_fixesnone
+> WRAPPER_EXIT 0 PEAK_RSS_KB_getrusage 1281432

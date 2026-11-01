@@ -1,0 +1,159 @@
+{
+  "schema": "quantlab.eng.paper_daily_rebridge_receipt.v1",
+  "D": "20261026",
+  "written_at_et": "2026-10-26T19:35:30-04:00",
+  "status": "REFUSED",
+  "paper_daily_bus_exit": 0,
+  "paper_daily_bus": {
+    "exits": [
+      0,
+      0,
+      0
+    ],
+    "nav": true,
+    "holdings": true,
+    "gate": true,
+    "receipt": true
+  },
+  "rehash_exits": {
+    "b4": 1,
+    "s6": 1
+  },
+  "forced": false,
+  "live": false,
+  "promotion_approved": false,
+  "weights_modified": false,
+  "done_sha8": "fbddcd2b",
+  "readiness_sha8": "3b76da6b",
+  "abort_kept_sha8": "665232a5",
+  "log": "/tmp/paper_daily_20261026_rebridge_20261026T193249_3057069.log",
+  "out_dir": "output/loop/paper_daily_20261026",
+  "scripts": {
+    "b4": "da62b28a",
+    "s6": "93b00354"
+  },
+  "parquets": {
+    "b4_60w": "7c99ab58",
+    "b4_100w": "48cbb6e2",
+    "s6_60w": "8d76180a",
+    "s6_100w": "0d6ce661"
+  },
+  "frozen_tips": {
+    "b4": {
+      "600000": {
+        "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_60w_20261014_r2.parquet",
+        "sha8": "efcef7c4"
+      },
+      "1000000": {
+        "path": "output/small_aum_concentration/v2/B_B4_50_25_25_topN_100w_20261014_r2.parquet",
+        "sha8": "4736c030"
+      }
+    },
+    "s6": {
+      "600000": {
+        "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_60w_20261014.parquet",
+        "sha8": "6ce63a79"
+      },
+      "1000000": {
+        "path": "output/strategy_paper_s6/S6_cap50_ee25_eq25_topN_100w_20261014.parquet",
+        "sha8": "b1f9ae65"
+      }
+    }
+  },
+  "content_gate": {
+    "b4": {
+      "pass": false,
+      "reason": "script changed/missing: research/b4_paper_extend.py (check da62b28a43a8 vs pinned 6c927ae69268)",
+      "line": "REHASH REFUSED: checks failed; FROZEN_CONFIG.json unchanged"
+    },
+    "s6": {
+      "pass": false,
+      "reason": "script changed/missing: research/s6_paper_extend.py (check 93b003543192 vs pinned 3b258bbe9bd2); script changed/missing: research/b4_paper_extend.py (check da62b28a43a8 vs pinned 6c927ae69268)",
+      "line": "REHASH REFUSED: checks failed; FROZEN_CONFIG.json unchanged"
+    }
+  },
+  "track_status": {
+    "capacity_adv": "OK_HOLD_EXTEND",
+    "b4": "PENDING",
+    "s6": "PENDING"
+  },
+  "tracks": {
+    "capacity_adv_600000": {
+      "nav_last": 810864.5111,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1382463352,
+      "mdd_x2": -0.1007402256,
+      "calmar_x2": 1.3723051973,
+      "win_monthly_x2": 0.5,
+      "win_daily_x2": 0.5272407733,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "capacity_adv_1000000": {
+      "nav_last": 1311336.9508,
+      "nav_date": "2026-10-26",
+      "segment": "X2H",
+      "cagr_x2": 0.1223377608,
+      "mdd_x2": -0.1162408466,
+      "calmar_x2": 1.0524507037,
+      "win_monthly_x2": 0.5714285714,
+      "win_daily_x2": 0.5360281195,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "b4_600000": {
+      "nav_last": 829067.6107,
+      "nav_date": "2026-10-14",
+      "segment": "X2H",
+      "cagr_x2": 0.151074087,
+      "mdd_x2": -0.1384535055,
+      "calmar_x2": 1.0911539325,
+      "win_monthly_x2": 0.6428571429,
+      "win_daily_x2": 0.525483304,
+      "status": "PENDING"
+    },
+    "b4_1000000": {
+      "nav_last": 1353463.9562,
+      "nav_date": "2026-10-14",
+      "segment": "X2H",
+      "cagr_x2": 0.1423532931,
+      "mdd_x2": -0.1317137586,
+      "calmar_x2": 1.0807777003,
+      "win_monthly_x2": 0.5714285714,
+      "win_daily_x2": 0.5289982425,
+      "status": "PENDING"
+    },
+    "s6_600000": {
+      "nav_last": 863721.6693,
+      "nav_date": "2026-10-14",
+      "segment": "X2H",
+      "cagr_x2": 0.1714513292,
+      "mdd_x2": -0.1194934042,
+      "calmar_x2": 1.434818351,
+      "win_monthly_x2": 0.6428571429,
+      "win_daily_x2": 0.5202108963,
+      "status": "PENDING"
+    },
+    "s6_1000000": {
+      "nav_last": 1413772.0544,
+      "nav_date": "2026-10-14",
+      "segment": "X2H",
+      "cagr_x2": 0.1637447276,
+      "mdd_x2": -0.1266122444,
+      "calmar_x2": 1.29327719,
+      "win_monthly_x2": 0.6071428571,
+      "win_daily_x2": 0.5237258348,
+      "status": "PENDING"
+    }
+  },
+  "pending_reasons": {
+    "b4": "B4 rehash gate REFUSED; B4 stays on previously frozen files",
+    "s6": "S6 rehash gate REFUSED (history/rules/cadence/pinned leg); S6 stays on previously frozen files"
+  },
+  "receipt_md": "docs/v2/audit/ENG_PAPER_DAILY_20261026_REBRIDGE_RECEIPT_ZH.md",
+  "receipt_md_sha8": "c56469d5",
+  "anomalies": [
+    "content-gate refused because FROZEN still pins old script shas (b4 6c927ae69268 / s6 3b258bbe9bd2) while disk scripts are da62b28a / 93b00354; Arch hotfix ACK present in TEAM_STATE but does not auto-update FROZEN script pins",
+    "B4/S6 X2H bridge remains ended 2026-10-14; capacity_adv OK_HOLD_EXTEND to 2026-10-26",
+    "diagnostic rehash re-invoked after paper-daily solely to capture full gate JSON; FROZEN unchanged"
+  ]
+}

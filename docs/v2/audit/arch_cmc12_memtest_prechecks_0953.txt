@@ -1,0 +1,31 @@
+# Arch prechecks for leaf24 CMC v1.2 memtest .ok; taken 2026-10-18T09:53:28-04:00
+## 1 ps -o pid,stat,etime -p 94322
+    PID STAT     ELAPSED COMMAND
+  94322 Tsl     08:29:48 python3 scripts/acquire/remaining_after_stk_surv.py
+stat_field=T
+## 2 RESEARCH_QUIET.lock
+-rw-r--r-- 1 box box 217 Oct 18 09:38 output/loop/RESEARCH_QUIET.lock
+b5e780699e479955f39920078546893111f2421bfea561e71c041fd924ed8d9c  output/loop/RESEARCH_QUIET.lock
+## 3 pgrep -aP 2905775 (server.py; expect empty)
+    PID STAT COMMAND
+2905775 SNl  python3 -X utf8 server.py
+children:[] rc=1
+## 4 pgrep -aP 2859825 (deploy_loop)
+    PID STAT COMMAND
+2859825 S    /bin/bash ./deploy_loop.sh
+children:
+3019489 sleep 60
+forbidden_child_match:[]
+## 5 healthz
+{"ok": true, "ts": "2026-10-18T09:53:29-04:00", "live": false, "quiet": true, "quiet_reason": "lock:/workspace/QuantLab/output/loop/RESEARCH_QUIET.lock", "snapshot_pending": true, "gen_running": false}
+## 6 pytest/alpha_combo/real-data processes
+[]
+## 7 out dirs absent
+ls: cannot access 'output/alpha/cmc_v1_2_memtest_leaf24': No such file or directory
+ls: cannot access 'output/alpha/cmc_v1_2_memtest_leaf24_logs': No such file or directory
+## 8 adj cache present
+-rw-r--r-- 1 box box 13239467 Oct 18 01:13 data/v2/adj/adj_factor_2023h2plus.parquet
+## 9 git HEAD
+0ec38296adbfb1fe691694879c2c042f3b45422d
+## 10 pycache count
+22

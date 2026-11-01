@@ -1,0 +1,61 @@
+PASS good: ACCEPTED
+PASS missing_file: REFUSED :: tie_sens blocked: run-auth file missing: /tmp/tiesens_lpfuyqj1/nope.ok (Arch writes it; St
+PASS missing_format: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['format']
+PASS missing_version: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['version']
+PASS missing_signed_by: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['signed_by']
+PASS missing_signed_et: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['signed_et']
+PASS missing_allow_full: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['allow_full']
+PASS missing_allow_smoke: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['allow_smoke']
+PASS missing_out_dir: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['out_dir']
+PASS missing_script_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['script_sha256']
+PASS missing_prereg_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['prereg_sha256']
+PASS missing_dep_ts_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['dep_ts_sha256']
+PASS missing_dep_lr_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['dep_lr_sha256']
+PASS missing_dep_hx2_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['dep_hx2_sha256']
+PASS missing_ref_weights_60w_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['ref_weights_60w_sha256']
+PASS missing_ref_weights_100w_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['ref_weights_100w_sha256']
+PASS missing_audit_csv_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['audit_csv_sha256']
+PASS missing_capadv_pos_weights_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['capadv_pos_weights_sha256']
+PASS missing_capadv_ref_nav_60w_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['capadv_ref_nav_60w_sha256']
+PASS missing_capadv_ref_nav_100w_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['capadv_ref_nav_100w_sha256']
+PASS missing_leg_capadv_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['leg_capadv_sha256']
+PASS missing_leg_ee_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['leg_ee_sha256']
+PASS missing_leg_ii_sha256: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['leg_ii_sha256']
+PASS empty_value: REFUSED :: tie_sens blocked: run-auth lacks structured fields ['signed_et']
+PASS duplicate: REFUSED :: tie_sens blocked: run-auth field 'allow_full' appears more than once
+PASS bool_typo: REFUSED :: tie_sens blocked: allow_full='yes', must be exactly true or false
+PASS bool_True_case: REFUSED :: tie_sens blocked: allow_full='True', must be exactly true or false
+PASS allow_full_false: REFUSED :: tie_sens blocked: allow_full is not true (this script has only a full mode)
+PASS allow_smoke_true: REFUSED :: tie_sens blocked: allow_smoke must be false (no smoke/partial mode exists)
+PASS bad_format: REFUSED :: tie_sens blocked: format='x', expected quantlab_run_auth_v1
+PASS bad_version: REFUSED :: tie_sens blocked: version='v1_3', expected tie_sens_v1
+PASS signed_by_other: REFUSED :: tie_sens blocked: signed_by='strategy', expected arch
+PASS signed_by_ARCH_case: ACCEPTED
+PASS out_dir_other: REFUSED :: tie_sens blocked: out_dir='output/x' != 'output/strategy_hiliq/tie_sens_prereg_v1'
+PASS short_sha: REFUSED :: tie_sens blocked: script_sha256 is not a 64-hex lowercase sha256
+PASS upper_sha: REFUSED :: tie_sens blocked: script_sha256 is not a 64-hex lowercase sha256
+PASS sha_mismatch_script_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for research/strategy_tie_sensitivity_prereg_v1.py: meas
+PASS sha_mismatch_prereg_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for docs/v2/STRATEGY_TIE_SENSITIVITY_PREREG_ZH.md: measu
+PASS sha_mismatch_dep_ts_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for research/strategy_capadv_topn_tie_sensitivity.py: me
+PASS sha_mismatch_dep_lr_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for research/strategy_b4_hiliq_leg_review.py: measured 1
+PASS sha_mismatch_dep_hx2_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for research/strategy_hiliq_capadv_b4_x2.py: measured 3f
+PASS sha_mismatch_ref_weights_60w_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/b4_leg_review/weights_B4_50_25
+PASS sha_mismatch_ref_weights_100w_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/b4_leg_review/weights_B4_50_25
+PASS sha_mismatch_audit_csv_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/topn_tie_audit/capadv_leg_scor
+PASS sha_mismatch_capadv_pos_weights_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/b4_leg_review/capadv_only_pos_
+PASS sha_mismatch_capadv_ref_nav_60w_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/capadv_x2/aum_600000/X2/BOOK/n
+PASS sha_mismatch_capadv_ref_nav_100w_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/capadv_x2/aum_1000000/X2/BOOK/
+PASS sha_mismatch_leg_capadv_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/legs/g1g5_capacity_adv_hiliq_v
+PASS sha_mismatch_leg_ee_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/legs/g1g5_earnings_event_hiliq
+PASS sha_mismatch_leg_ii_sha256: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/legs/g1g5_insider_increase_hil
+PASS pinned_file_tampered: REFUSED :: tie_sens blocked: sha256 mismatch for output/strategy_hiliq/topn_tie_audit/capadv_leg_scor
+PASS pinned_file_missing: REFUSED :: tie_sens blocked: pinned file missing: output/strategy_hiliq/topn_tie_audit/capadv_leg_sco
+PASS out_dir_new: ACCEPTED
+PASS out_dir_empty: ACCEPTED
+PASS out_dir_nonempty: REFUSED :: tie_sens blocked: output dir exists and is not an empty directory: /tmp/tiesens_lpfuyqj1/f
+PASS out_dir_is_file: REFUSED :: tie_sens blocked: output dir exists and is not an empty directory: /tmp/tiesens_lpfuyqj1/a
+PASS split_crossing_tie {'A': np.float64(0.05), 'B': np.float64(0.013333333333333332), 'C': np.float64(0.013333333333333332), 'D': np.float64(0.013333333333333332)}
+PASS split_no_crossing {'A': np.float64(0.05), 'B': np.float64(0.04), 'C': np.float64(0.04), 'D': np.float64(0.04)}
+PASS split_all_equal 20 0.24
+PASS variant_list_fixed
+TOTAL 60/60 PASS

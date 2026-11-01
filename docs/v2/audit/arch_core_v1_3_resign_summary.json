@@ -1,0 +1,218 @@
+{
+ "a_contamination": {
+  "run_start_et": "2026-10-18 00:20:04.259413",
+  "n_files": 107,
+  "non_pkl_files": [],
+  "n_pkl": 107,
+  "expected_rebal_days": 107,
+  "ckpt_days_match_calendar": true,
+  "earliest_mtime_et": "2026-10-18 00:20:04.640344620",
+  "latest_mtime_et": "2026-10-18 00:27:01.048344612",
+  "earliest_ge_run_start": true,
+  "earliest_ge_0020": true,
+  "mtime_monotonic_in_day_order": true,
+  "smoke_markers_in_ckpt": [],
+  "log_smoke_tokens": [],
+  "log_header": "run_start_et=2026-10-18 00:20:04.259413607 EDT ckpt_dir_exists=no smoke_run=none cmd='.venv_opt/bin/python -u research/optimizer_core_x2_run.py --version v1_3'",
+  "log_exit": [
+   "EXIT=0 end_et=2026-10-18 00:27:01 EDT"
+  ]
+ },
+ "b_constants": {
+  "calib_lambda_risk": 117.21317483995702,
+  "calib_lambda_turn": {
+   "60w": 0.6,
+   "100w": 0.6
+  },
+  "meta_lambda_risk": 117.21317483995702,
+  "meta_lambda_turn": {
+   "600000": 0.6,
+   "1000000": 0.6
+  },
+  "ok": true,
+  "NAME_CAP": {
+   "600000": 0.06,
+   "1000000": 0.05
+  },
+  "W_FLOOR": 0.02,
+  "IND_ACTIVE": 0.08,
+  "IND_ABS": 0.2,
+  "SIZE_BOX": 0.35,
+  "BETA_BOX": 0.1,
+  "SIZE_SLACK_MAX": 0.05,
+  "IND_SLACK_MAX": 0.01,
+  "NEFF": [
+   20,
+   30
+  ],
+  "ETF": 0.2,
+  "CASH_MAX": 0.02,
+  "mask_sha256_meta": "c5433e80a74ac3acc0cd5a52d57fdd0bda5ed578fb86fb98cbd652ccb9f1b9af",
+  "industry_benchmark_meta": "full_pool_wb",
+  "returns_computed_meta": false
+ },
+ "parquet_flat_between_rebal_violations": {
+  "600000_equity_100": 0,
+  "600000_equity80_etf20_510300": 0,
+  "1000000_equity_100": 0,
+  "1000000_equity80_etf20_510300": 0
+ },
+ "c_prelot": {
+  "n_rows": 177,
+  "v_size": {
+   "n_gt_tol": 0,
+   "max": 1.4155343563970746e-13
+  },
+  "v_mid": {
+   "n_gt_tol": 0,
+   "max": 5.889300158656852e-11
+  },
+  "v_beta": {
+   "n_gt_tol": 0,
+   "max": 5.615050091556384e-11
+  },
+  "v_ind_rel": {
+   "n_gt_tol": 0,
+   "max": 6.047565226374729e-12
+  },
+  "v_ind_abs": {
+   "n_gt_tol": 0,
+   "max": 3.763417355528986e-11
+  },
+  "v_cap": {
+   "n_gt_tol": 0,
+   "max": 6.589515044730376e-11
+  },
+  "v_names": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_cashneg": {
+   "n_gt_tol": 0,
+   "max": 2.220446049250313e-16
+  },
+  "v_slack": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_floor": {
+   "n_gt_tol": 0,
+   "max": 5.402345237826012e-12
+  },
+  "v_sum": {
+   "n_gt_tol": 0,
+   "max": 3.3306690738754696e-16
+  },
+  "v_ballast": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "abs_size_max": 0.3652911851657592,
+  "abs_mid_max": 0.4000000000292858,
+  "abs_beta_max": 0.1000000000561505,
+  "ind_act_max": 0.08715846021657214,
+  "ind_abs_max": 0.20000000003763418,
+  "zero_held_ind_max_wb": 0.08641718306284984,
+  "n_range": [
+   20,
+   26
+  ],
+  "held_excluded_total": 0,
+  "n_notpool_total": 0
+ },
+ "c_postlot": {
+  "n_rows": 354,
+  "v_size": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_mid": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_beta": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_ind_rel": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_ind_abs": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_cap": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_names": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_cashneg": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_slack": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_floor": {
+   "n_gt_tol": 76,
+   "max": 0.013313333333333333
+  },
+  "v_sum": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "v_ballast": {
+   "n_gt_tol": 0,
+   "max": 0.0
+  },
+  "abs_size_max": 0.335545635156995,
+  "abs_mid_max": 0.39963430470324757,
+  "abs_beta_max": 0.09988247107189219,
+  "ind_act_max": 0.08663908305362789,
+  "ind_abs_max": 0.199905,
+  "zero_held_ind_max_wb": 0.08641718306284984,
+  "n_range": [
+   20,
+   26
+  ],
+  "held_excluded_total": 0,
+  "n_notpool_total": 0,
+  "ckpt_vs_parquet_maxdiff": 0.0,
+  "max_lot_cost_over_cap": 0,
+  "eqnorm_ind_abs_gt20_rows": 81,
+  "eqnorm_ind_abs_max": 0.21342232471026376,
+  "eqnorm_ind_act_gt_box_rows": 30,
+  "eqnorm_ind_act_max": 0.09562928056957876,
+  "below_floor_rows": 76,
+  "below_floor_names": 100,
+  "minw_min": 0.00466
+ },
+ "e_exclusions": {
+  "rows_ckpt_total": 3034,
+  "rows_mine_total": 3034,
+  "miss": 0,
+  "extra": 0,
+  "csv_eq_ckpt_all": true,
+  "log_n_excluded_eq": true,
+  "n_spot": 25,
+  "spot_close_mismatch": 0,
+  "spot_lot_mismatch": 0
+ },
+ "d_infeasible": {
+  "n": 35,
+  "all_carried_equal_prev": true,
+  "all_sleeves_absent": true,
+  "parquet_eq_prevheld_all": true,
+  "repro_K_match": 35,
+  "repro_flag_match": {
+   "equity_100": 35,
+   "equity80_etf20_510300": 35
+  }
+ },
+ "peak_rss_mb": 784
+}

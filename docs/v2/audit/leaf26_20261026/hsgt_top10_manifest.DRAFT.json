@@ -1,0 +1,27 @@
+{
+  "table": "northbound/hsgt_top10_daily_2018plus.parquet",
+  "rows": 38364,
+  "days": 2033,
+  "date_range": [
+    "20180102",
+    "20261016"
+  ],
+  "source": "DRAFT recal from current file only; NOT written to production manifest",
+  "available_at": "trade_date 18:00 Asia/Shanghai",
+  "promotion_approved": false,
+  "built_draft_at": "2026-10-26T01:20:00-04:00",
+  "sha256": {
+    "northbound/hsgt_top10_daily_2018plus.parquet": "c54935e82c8372bb5ac37023a4319ea16eff7f9fbc0aa03ef3106937f59a42f1"
+  },
+  "note": "Research-only DRAFT. Do NOT overwrite data/v2/northbound/hsgt_top10_manifest.json without Arch .ok.",
+  "delta_vs_production_manifest": {
+    "prod_rows": 38304,
+    "prod_days": 2030,
+    "prod_date_range_end": "20261013",
+    "prod_embedded_parquet_sha": "94fdb34763a36b5c8c2a4f3a1518cf17358574743ebad066174e7a2d041d31e9",
+    "file_rows": 38364,
+    "file_days": 2033,
+    "file_date_range_end": "20261016",
+    "file_sha": "c54935e82c8372bb5ac37023a4319ea16eff7f9fbc0aa03ef3106937f59a42f1"
+  }
+}

@@ -1,0 +1,502 @@
+# DIFF C — SW L1 as-of gap carry: d-1 = previous SSE trading day (trade-day version) + r2 review P3 fixes
+# Author: QuantLab Strategy, 2026-10-18 (ET). Status: PROPOSAL, not applied, not run, not committed.
+# Rulings: 主 Agent 2026-10-18 06:01 ET (d-1 = previous SSE open day; calendar passed in as a parameter; session
+#   outside the calendar -> raise); Arch review docs/v2/ARCH_STRATEGY_SW_PIT_ASOF_FIX_R2_REVIEW_ZH.md (c72f0856) P3-1/2/4/5/8.
+# Landing order: only AFTER leaf 23 has finished and its receipt is reviewed, and AFTER the calendar-day pitfix-compare run
+#   (that run uses r2 as-is). Needs its own Arch code-change .ok + selftest .ok. Intel may call the shared function only after landing.
+#
+# BASELINE = state after DIFF B r2 (docs/v2/audit/STRATEGY_SW_PIT_ASOF_FIX_PROPOSAL_20261018_r2.diff, sha256
+#   d0fb1d3faa6962d19e8405280975e8818766ef406b00f390edcc9b02f81ee250) has been applied. Old -> new sha256:
+#   research/sw_members_asof.py                     0444d9d6f6b66195d19a91cf9c45e53ed0cb715b81b2a595c1388a47ecc2e945 -> 405e8182c6e4c9895b62162eb6dc8f7a58a6ce7addab0288c8072b066720ce16
+#   research/tests_sw_pit/test_sw_members_asof.py   4f468b482613329912e82ab71b2bd4c0d062efdc4451d508e16e21812eeb3ffb -> fc9d969994f4b5d4beb84823fa958318871690b12343b7905385061979859e2c
+#   research/strategy_hiliq_capadv_b4_x2.py (hx2)   1728c12666af87ece9c5a76486c279e3f3b0f7868ef027464a6ea21f6b2695a2 -> 8c5932d36d176c777ce9ed2550fda35d0213672b5a1c56c1b02591533f4b7825
+#   docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md   c2b37127772bdb792cd4f85851c47325fbe9a13794cb99ecbb2c374de8d1003c -> 0b917e8ff555a4f55c6084a5832c6c77cf3f2ca2a5d7bc537071e1ed31f0f85f
+#   Unchanged (verify before and after): research/strategy_fulla_b4_x2.py 88b6f36746ecf2e062d78fe67f390f1c6d8d886a85f660a527d44910cd7ff824,
+#   research/sw_pit_freshness.py 5191997e3a63be758c538c463464038694615f44f195e3f8e74427a9674db43f.
+#   Data pin (read-only, sha checked in code): data/v2/calendar/trade_cal_sse_pit.parquet fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41.
+#   NOTE: the real repo today is still at HEAD state (hx2 1c51531a, fulla 7bd657ed); this diff does NOT apply there until r2 lands.
+#
+# Section 1 — research/sw_members_asof.py (shared function; 主 Agent 06:01 ruling ①, Arch P3-1, P3-2a, P3-2b)
+#   - New TradeCal(cal_df, sha256): validates non-empty, cal_date all YYYYMMDD, unique, contiguous daily start..end, is_open in {0,1};
+#     prev_open(d) = latest is_open=1 cal_date strictly < d; d < start, d > end (now 20261231) or no open day before d -> SwPitIntegrityError.
+#     Never falls back to calendar days.
+#   - New load_trade_cal(root=None, sha_pin=TRADE_CAL_SHA_PIN): single byte read, sha256 must equal pin, else SwPitIntegrityError.
+#   - Gap carry: out_date == prev_open(d) (was d - 1 calendar day). All sessions are range-checked when gap_carry=True.
+#     Pure rule (gap_carry=False, Intel-identical row filter) unchanged and does not use the calendar.
+#   - P3-2a: carry candidates require parsed in_date (in_date.notna()).
+#   - P3-2b: carry does not require a successor row; documented in module/function docstrings; new stat n_rows_gap_carry_no_successor
+#     (successor = another row of the code with parsed in_date >= carried out_date).
+#   - New stat n_rows_gap_out_closed_day_not_carried: out_date strictly between prev_open(d) and d (non-open day) is NOT carried under the
+#     literal ruling (the calendar-day rule would carry d = out_date + 1). Real table: 0 such out_dates inside the calendar (read-only check
+#     2026-10-18; the 37 out_dates on non-open days all predate 2005-01-01).
+#   - New stats gap_carry_rule, trade_cal_sha256. sw_l1_asof_with_gap_carry / l1_asof take keyword-only cal=TradeCal (None -> pinned default
+#     load); IndustryAsOf(sw, static_map=None, cal=None) stores self.cal and passes it on. Positional signatures unchanged (fulla call works).
+#   - Imports unchanged: hashlib, io, pathlib, numpy, pandas, research.sw_pit_freshness.SwPitIntegrityError.
+#   - stats["n_reclass_gap_rows"] (table-level, calendar-day definition) intentionally unchanged.
+# Section 2 — research/tests_sw_pit/test_sw_members_asof.py (ruling ③ tests, Arch P3-5)
+#   - Synthetic CAL (2018-01-01..2026-12-31, Mon-Fri open) passed explicitly to every gap-carry call; no real data read.
+#   - Fixture: +2 rows W.SZ (old out 2025-03-07 Fri, new in 2025-03-10 Mon). Existing row indices unchanged.
+#   - +6 tests: cross-weekend (Mon carries); natural-day cases under trade-day rule (G same, H 03-11 same, H 03-10 differs, Z no-successor
+#     carried, Z d+2 None); unparsed in_date not carried; session outside calendar raises (after end, short calendar, before start,
+#     start day with no prior open day; pure rule unaffected); load_trade_cal sha pin + TradeCal validation (gap/is_open/format/dup/empty);
+#     out_dir guard: symlink -> b4 (itself and child), capadv_x2/new, legs/new (match on the reason text).
+#   - Expected: this file 11 -> 17 tests; with test_sw_pit_freshness.py (12, unchanged cee59fc5) total 23 -> 29 passed.
+# Section 3 — hx2 research/strategy_hiliq_capadv_b4_x2.py (Arch P3-8 + caller passes calendar)
+#   - import load_trade_cal; load_industry_asof() and the small-cap disclosure path pass cal=load_trade_cal(ROOT) explicitly
+#     (and cal=ia.cal to sw_l1_asof_with_gap_carry).
+#   - pitfix_compare summary: gap_carry_rule text updated to the trade-day rule + no-successor note; adds trade_cal_sha256.
+#   - Removes the extra trailing blank line at EOF. No other logic change (load_industry_map, apply_ind_cap, build_topn, main untouched).
+#   - fulla is NOT changed: it keeps calling IndustryAsOf(load_sw_l1(ROOT)) / sw_l1_asof_with_gap_carry(...) without cal and gets the
+#     pinned default calendar (same file, same sha check). Its gap-carry behaviour still switches to trade-day once this lands.
+# Section 4 — docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md (Arch P3-4)
+#   - n_reclass_gap_rows: summary.json value is authoritative (Arch expects 1088 under prep_sw); "1545 中 1109" marked r1 口径, reference only.
+#   - CAUTION: the prereg is pinned (c2b37127) by the calendar-day pitfix-compare run .ok; land this section only after that run, or move it
+#     to a separate addendum if Arch prefers the prereg file untouched.
+#
+# Static checks done (no project code run): py_compile with cfile under /tmp (deleted), pyflakes: only the baseline hx2 charts2 warning.
+# Verified: git apply --check of this diff on a fresh copy of the r2-landed files reproduces the new shas above.
+diff --git a/research/sw_members_asof.py b/research/sw_members_asof.py
+index 077c1e4..dc683e0 100644
+--- a/research/sw_members_asof.py
++++ b/research/sw_members_asof.py
+@@ -9,11 +9,20 @@ raw non-null in_date that fails to parse -> NaT -> never matches, counted in sta
+ Overlap (Arch: adopt "latest in_date"): keep the matching row with latest in_date; equal in_date -> prefer
+ is_new == "Y" or out_date null (P3-3), then later file row. NOTE Intel's intel_common uses keep="last" (file order)
+ and its event_study/c1 use keep="first"; on the real table these differ for 4 codes (Arch P3-5, transferred to Intel).
+-Reclassification-day gap (Arch P3-2) — 主 Agent ruling 2026-10-18 ~05:45 ET (binding): keep in_date < d; ONE exception:
+-on day d, if a code has NO active row and has an old row with out_date == d - 1 calendar day (the "new in_date =
+-old out_date + 1" case), carry that old row's l1_name for day d only (so at most 1 trading day). Every other
+-no-active-row case -> unknown industry (None / _UNK_). Use sw_l1_asof_with_gap_carry() (shared public function,
+-no hx2 dependency; Intel to call it next round). Table-level count: stats["n_reclass_gap_rows"].
++Reclassification-day gap (Arch P3-2) — 主 Agent ruling 2026-10-18 ~05:45 ET (binding) + 06:01 ET (d-1 = previous SSE
++trading day; Arch c72f0856 P3-1): keep in_date < d; ONE exception: on day d, if a code has NO active row and has an
++old row with parsed in_date (Arch c72f0856 P3-2a) and out_date == prev_open(d) (the latest is_open=1 cal_date < d in
++the pinned SSE calendar), carry that old row's l1_name for day d only (so at most 1 trading day; a Fri out / Mon in
++change carries on Mon). The carry does NOT require a successor row (Arch c72f0856 P3-2b): a code that left SW with
++no later row is also carried for that one day; such rows are disclosed as stats["n_rows_gap_carry_no_successor"].
++out_date on a non-open day strictly between prev_open(d) and d is NOT carried (literal ruling); disclosed as
++stats["n_rows_gap_out_closed_day_not_carried"] (real table: 0 such out_dates inside the calendar, 2026-10-18 check).
++Every other no-active-row case -> unknown industry (None / _UNK_).
++Calendar: passed in as TradeCal (load_trade_cal() reads data/v2/calendar/trade_cal_sse_pit.parquet, sha pinned
++TRADE_CAL_SHA_PIN). Any session d before the calendar start, after its end (now 20261231) or with no open day before
++it -> SwPitIntegrityError (never falls back to calendar days). Use sw_l1_asof_with_gap_carry() (shared public
++function, no hx2 dependency; Intel to call it next round). Table-level count (calendar-day definition, unchanged):
++stats["n_reclass_gap_rows"].
+ """
+ from __future__ import annotations
+ 
+@@ -27,6 +36,59 @@ import pandas as pd
+ from research.sw_pit_freshness import SwPitIntegrityError
+ 
+ SW_L1_REL = "data/v2/sw_pit/industry_members_sw_l1_pit.parquet"
++TRADE_CAL_REL = "data/v2/calendar/trade_cal_sse_pit.parquet"
++TRADE_CAL_SHA_PIN = "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41"
++_DEFAULT_ROOT = Path(__file__).resolve().parents[1]
++
++
++class TradeCal:
++    """SSE trading calendar (cal_date YYYYMMDD str, is_open 0/1). Validates: non-empty, all cal_date parse, unique,
++    contiguous daily coverage start..end, is_open in {0, 1}. Any violation -> SwPitIntegrityError."""
++
++    def __init__(self, cal: pd.DataFrame, sha256: str | None = None):
++        if cal is None or len(cal) == 0 or not {"cal_date", "is_open"} <= set(cal.columns):
++            raise SwPitIntegrityError("trade calendar empty or missing cal_date/is_open")
++        d = pd.to_datetime(cal["cal_date"].astype(str), format="%Y%m%d", errors="coerce")
++        if d.isna().any():
++            raise SwPitIntegrityError(f"trade calendar: {int(d.isna().sum())} cal_date values not YYYYMMDD")
++        if not d.is_unique:
++            raise SwPitIntegrityError("trade calendar: duplicate cal_date")
++        iso = pd.to_numeric(cal["is_open"], errors="coerce")
++        if not iso.isin([0, 1]).all():
++            raise SwPitIntegrityError("trade calendar: is_open must be 0/1")
++        order = np.argsort(d.to_numpy())
++        dd, oo = d.to_numpy()[order], iso.to_numpy()[order].astype(int)
++        self.start, self.end = pd.Timestamp(dd[0]), pd.Timestamp(dd[-1])
++        if len(dd) != (self.end - self.start).days + 1:
++            raise SwPitIntegrityError(f"trade calendar not contiguous {self.start.date()}..{self.end.date()}")
++        self.open_days = dd[oo == 1]
++        if len(self.open_days) == 0:
++            raise SwPitIntegrityError("trade calendar has no open day")
++        self.sha256 = sha256
++
++    def prev_open(self, d) -> np.ndarray:
++        """Latest open cal_date strictly before each d (datetime64[ns] array). Raises SwPitIntegrityError if any d is
++        before the calendar start, after its end, or has no open day before it (no calendar-day fallback)."""
++        x = pd.to_datetime(pd.Series(np.asarray(d).ravel())).dt.normalize().to_numpy()
++        if len(x) == 0:
++            return x
++        lo, hi = pd.Timestamp(x.min()), pd.Timestamp(x.max())
++        if lo < self.start or hi > self.end:
++            raise SwPitIntegrityError(f"session outside trade calendar {self.start.date()}..{self.end.date()}: "
++                                      f"min={lo.date()} max={hi.date()}; extend trade_cal_sse_pit")
++        i = np.searchsorted(self.open_days, x, side="left") - 1
++        if (i < 0).any():
++            raise SwPitIntegrityError(f"trade calendar has no open day before {pd.Timestamp(x[i < 0].min()).date()}")
++        return self.open_days[i]
++
++
++def load_trade_cal(root: Path | None = None, sha_pin: str | None = TRADE_CAL_SHA_PIN) -> TradeCal:
++    """Single read of the calendar bytes; sha256 of those bytes must equal sha_pin (None = record only)."""
++    raw = (Path(root if root is not None else _DEFAULT_ROOT) / TRADE_CAL_REL).read_bytes()
++    sha = hashlib.sha256(raw).hexdigest()
++    if sha_pin is not None and sha != sha_pin:
++        raise SwPitIntegrityError(f"trade_cal_sse_pit sha mismatch: actual={sha} pinned={sha_pin}")
++    return TradeCal(pd.read_parquet(io.BytesIO(raw), columns=["cal_date", "is_open"]), sha256=sha)
+ 
+ 
+ def prep_sw(sw: pd.DataFrame) -> pd.DataFrame:
+@@ -70,10 +132,13 @@ def sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
+ 
+ 
+ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+-            sess_col: str = "session", stats: dict | None = None, gap_carry: bool = False) -> pd.Series:
++            sess_col: str = "session", stats: dict | None = None, gap_carry: bool = False, *,
++            cal: TradeCal | None = None) -> pd.Series:
+     """Vectorized as-of l1_name per (code, session) row of `keys`; index aligned to keys; None if no member.
+-    gap_carry=False: pure Intel-identical rule. gap_carry=True: 主 Agent 10-18 ~05:45 ET exception (see module doc).
+-    If `stats` is a dict, fills n_rows_multi_match / n_codes_overlap_on_d, n_rows_gap_carry, n_rows_unknown."""
++    gap_carry=False: pure Intel-identical rule (calendar unused). gap_carry=True: 主 Agent 10-18 exception (see module
++    doc); `cal` = TradeCal (None -> load_trade_cal() with the pinned sha); every session is range-checked.
++    If `stats` is a dict, fills n_rows_multi_match / n_codes_overlap_on_d, n_rows_gap_carry,
++    n_rows_gap_carry_no_successor, n_rows_gap_out_closed_day_not_carried, n_rows_unknown, gap_carry_rule, trade_cal_sha256."""
+     if "_ord" not in sw.columns:
+         sw = prep_sw(sw)
+     k = pd.DataFrame({"_code": keys[code_col].astype(str).values,
+@@ -89,29 +154,48 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+     m = m.sort_values(["_rid", "in_date", "_pri", "_ord"]).drop_duplicates("_rid", keep="last")
+     out = np.full(len(keys), None, dtype=object)
+     out[m["_rid"].to_numpy()] = m["l1_name"].to_numpy()
+-    n_carry = 0
++    n_carry = n_no_succ = n_closed = 0
+     if gap_carry:
++        if cal is None:
++            cal = load_trade_cal()
++        k["_prev"] = cal.prev_open(k["_d"].to_numpy())  # raises if any session is outside the calendar
+         miss = k[~k["_rid"].isin(m["_rid"])]
+         if len(miss):
+-            g = miss.merge(s, on="_code", how="inner")
+-            g = g[g["out_date"].notna() & (g["out_date"] == g["_d"] - pd.Timedelta(days=1))]
++            g0 = miss.merge(s, on="_code", how="inner")
++            g0 = g0[g0["in_date"].notna() & g0["out_date"].notna()]  # P3-2a: unparsed in_date never carried
++            g = g0[g0["out_date"] == g0["_prev"]]
+             g = g.sort_values(["_rid", "in_date", "_pri", "_ord"]).drop_duplicates("_rid", keep="last")
+             out[g["_rid"].to_numpy()] = g["l1_name"].to_numpy()
+             n_carry = int(len(g))
++            c = g0[(g0["out_date"] > g0["_prev"]) & (g0["out_date"] < g0["_d"]) & ~g0["_rid"].isin(g["_rid"])]
++            n_closed = int(c["_rid"].nunique())
++            if n_carry:  # P3-2b: successor = another row of the code with parsed in_date >= carried out_date
++                sc = g[["_rid", "_code", "out_date", "_ord"]].merge(
++                    s[["_code", "in_date", "_ord"]].rename(columns={"_ord": "_ord2"}), on="_code", how="left")
++                has = sc[(sc["_ord2"] != sc["_ord"]) & sc["in_date"].notna() & (sc["in_date"] >= sc["out_date"])]
++                n_no_succ = int(n_carry - has["_rid"].nunique())
+     if stats is not None:
+         stats["n_rows_gap_carry"] = n_carry
++        if gap_carry:
++            stats["n_rows_gap_carry_no_successor"] = n_no_succ
++            stats["n_rows_gap_out_closed_day_not_carried"] = n_closed
++            stats["gap_carry_rule"] = "out_date == prev SSE open day (主 Agent 2026-10-18 06:01 ET)"
++            stats["trade_cal_sha256"] = cal.sha256
+         stats["n_rows_unknown"] = int(pd.isna(out).sum())
+     return pd.Series(out, index=keys.index, name="l1_name")
+ 
+ 
+ def sw_l1_asof_with_gap_carry(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+-                              sess_col: str = "session", stats: dict | None = None) -> pd.Series:
++                              sess_col: str = "session", stats: dict | None = None, *,
++                              cal: TradeCal | None = None) -> pd.Series:
+     """SHARED PUBLIC FUNCTION (Strategy + Intel). As-of SW L1 name per (code, session):
+     active rows = in_date < d AND (out_date null OR out_date >= d); latest in_date wins (tie: is_new=Y / out null,
+-    then file order). If no active row and an old row has out_date == d - 1 calendar day, carry its l1_name for d
+-    only (主 Agent ruling 2026-10-18 ~05:45 ET). Otherwise None (unknown industry).
++    then file order). If no active row and an old row with parsed in_date has out_date == previous SSE open day
++    before d (from `cal`), carry its l1_name for d only — also when the code has no successor row (disclosed as
++    n_rows_gap_carry_no_successor). 主 Agent rulings 2026-10-18 ~05:45 / 06:01 ET. Otherwise None (unknown industry).
++    `cal`: TradeCal; None -> load_trade_cal() (pinned sha fa4260b8...). Session outside the calendar -> raises.
+     `sw` = prep_sw()/load_sw_l1() output (raises SwPitIntegrityError on unparseable non-null out_date)."""
+-    return l1_asof(sw, keys, code_col, sess_col, stats=stats, gap_carry=True)
++    return l1_asof(sw, keys, code_col, sess_col, stats=stats, gap_carry=True, cal=cal)
+ 
+ 
+ def l1_static_last(sw: pd.DataFrame) -> dict:
+@@ -126,10 +210,12 @@ def l1_static_last(sw: pd.DataFrame) -> dict:
+ class IndustryAsOf:
+     """Per-session industry map for hx2.build_topn / apply_ind_cap (which take a plain dict per session)."""
+ 
+-    def __init__(self, sw: pd.DataFrame, static_map: dict | None = None):
++    def __init__(self, sw: pd.DataFrame, static_map: dict | None = None, cal: TradeCal | None = None):
+         self.sw = sw if "_ord" in sw.columns else prep_sw(sw)
+         self.static = static_map if static_map is not None else l1_static_last(self.sw)
++        self.cal = cal if cal is not None else load_trade_cal()  # pinned sha; callers should pass it explicitly
+         self.stats = dict(self.sw.attrs.get("prep_stats", {}))
++        self.stats["trade_cal_sha256"] = self.cal.sha256
+         self.sha256 = self.sw.attrs.get("sha256")
+ 
+     def by_session(self, pairs: pd.DataFrame, code_col: str = "instrument",
+@@ -137,7 +223,7 @@ class IndustryAsOf:
+         """{session: {code: l1_name}} for the given (code, session) pairs (unique-ified first)."""
+         p = pairs[[code_col, sess_col]].drop_duplicates().reset_index(drop=True)
+         st: dict = {}
+-        p = p.assign(l1_name=sw_l1_asof_with_gap_carry(self.sw, p, code_col, sess_col, stats=st).values)
++        p = p.assign(l1_name=sw_l1_asof_with_gap_carry(self.sw, p, code_col, sess_col, stats=st, cal=self.cal).values)
+         self.stats.update({f"by_session_{k}": v for k, v in st.items()})
+         p = p.dropna(subset=["l1_name"])
+         return {s: dict(zip(g[code_col], g["l1_name"])) for s, g in p.groupby(sess_col)}
+@@ -145,11 +231,12 @@ class IndustryAsOf:
+     def reclass_share(self, rows: pd.DataFrame, code_col: str = "instrument", sess_col: str = "session",
+                       weight_col: str | None = None) -> dict:
+         """Disclosure only: share of (session, holding) rows whose as-of l1 != static l1 (self.static);
+-        unknown-industry (_UNK_) rows reported separately (Arch P3-1)."""
++        unknown-industry (_UNK_) rows reported separately (Arch P3-1). Gap-carry disclosure includes
++        n_rows_gap_carry_no_successor (carried although the code has no later row; Arch c72f0856 P3-2b)."""
+         if rows.empty:
+             return {"n_rows": 0, "share_rows_diff": None}
+         st: dict = {}
+-        a = sw_l1_asof_with_gap_carry(self.sw, rows, code_col, sess_col, stats=st)
++        a = sw_l1_asof_with_gap_carry(self.sw, rows, code_col, sess_col, stats=st, cal=self.cal)
+         s = rows[code_col].astype(str).map(self.static)
+         diff = (a.fillna("_UNK_") != s.fillna("_UNK_"))
+         a_miss, s_miss = a.isna(), s.isna()
+diff --git a/research/tests_sw_pit/test_sw_members_asof.py b/research/tests_sw_pit/test_sw_members_asof.py
+index dcd7fd3..709b67c 100644
+--- a/research/tests_sw_pit/test_sw_members_asof.py
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -1,5 +1,8 @@
+-"""Synthetic tests for research/sw_members_asof.py (PIT fix, r2 per Arch 3f195231 + 主 Agent 10-18 ~05:45 ET gap ruling).
+-In-memory frames / tmp ROOT only; no real data."""
++"""Synthetic tests for research/sw_members_asof.py (PIT fix, r2 per Arch 3f195231 + 主 Agent 10-18 ~05:45 ET gap ruling;
++DIFF C: d-1 = previous SSE open day per 主 Agent 06:01 ET / Arch c72f0856 P3-1/P3-2/P3-5).
++In-memory frames / tmp ROOT only; no real data (every gap-carry call passes the synthetic CAL explicitly)."""
++import hashlib
++import os
+ import sys
+ from pathlib import Path
+ 
+@@ -18,25 +21,39 @@ def intel_sw_members_asof(sw: pd.DataFrame, d) -> pd.DataFrame:
+     return sw[(sw.in_date < d) & (sw.out_date.isna() | (sw.out_date >= d))]
+ 
+ 
++# Synthetic SSE calendar 2018-01-01..2026-12-31: Mon-Fri open, Sat/Sun closed (no holidays needed here).
++_DAYS = pd.date_range("2018-01-01", "2026-12-31", freq="D")
++CAL_DF = pd.DataFrame({"cal_date": _DAYS.strftime("%Y%m%d"), "is_open": (_DAYS.dayofweek < 5).astype(int)})
++CAL = A.TradeCal(CAL_DF, sha256="synthetic")
++
+ SW = pd.DataFrame({
+     # X: 电子 -> 计算机 (old out 03-10, new in 03-10); Y: 银行 open; Z: out 03-10, no successor
+     # O: overlap — stale open 钢铁 row (in 2018) listed AFTER the newer open 农林牧渔 row (in 2021) -> latest in_date wins
+     # T: equal in_date, both open; is_new=Y row must win regardless of file order
+     # G: gap — old 电子 out 2025-03-10 (Mon), new 计算机 in 2025-03-11 (Tue): 03-11 carries 电子
+-    # H: no gap carry — old 电子 out 2025-03-09, new 计算机 in 2025-03-11 (out == d-2)
+-    "ts_code": ["X.SZ", "X.SZ", "Y.SH", "Z.SH", "O.SZ", "O.SZ", "T.SZ", "T.SZ", "G.SZ", "G.SZ", "H.SZ", "H.SZ"],
+-    "l1_name": ["电子", "计算机", "银行", "医药生物", "农林牧渔", "钢铁", "通信", "传媒", "电子", "计算机", "电子", "计算机"],
++    # H: no gap carry — old 电子 out 2025-03-09 (Sun), new 计算机 in 2025-03-11 (out == d-2)
++    # W (DIFF C): cross-weekend — old 电子 out 2025-03-07 (Fri), new 计算机 in 2025-03-10 (Mon): Mon carries 电子
++    "ts_code": ["X.SZ", "X.SZ", "Y.SH", "Z.SH", "O.SZ", "O.SZ", "T.SZ", "T.SZ", "G.SZ", "G.SZ", "H.SZ", "H.SZ",
++                "W.SZ", "W.SZ"],
++    "l1_name": ["电子", "计算机", "银行", "医药生物", "农林牧渔", "钢铁", "通信", "传媒", "电子", "计算机", "电子", "计算机",
++                "电子", "计算机"],
+     "in_date": ["20200101", "20250310", "20190101", "20200101", "20210730", "20180101", "20200803", "20200803",
+-                "20200101", "20250311", "20200101", "20250311"],
+-    "out_date": ["20250310", None, None, "20250310", None, None, None, None, "20250310", None, "20250309", None],
+-    "is_new": ["N", "Y", "Y", "N", "Y", "N", "Y", "N", "N", "Y", "N", "Y"],
++                "20200101", "20250311", "20200101", "20250311", "20200101", "20250310"],
++    "out_date": ["20250310", None, None, "20250310", None, None, None, None, "20250310", None, "20250309", None,
++                 "20250307", None],
++    "is_new": ["N", "Y", "Y", "N", "Y", "N", "Y", "N", "N", "Y", "N", "Y", "N", "Y"],
+ })
+ 
+ 
+-def _q(pairs, carry=False):
+-    k = pd.DataFrame(pairs, columns=["instrument", "session"])
+-    f = A.sw_l1_asof_with_gap_carry if carry else A.l1_asof
+-    return f(A.prep_sw(SW), k).tolist()
++def _k(pairs):
++    return pd.DataFrame(pairs, columns=["instrument", "session"])
++
++
++def _q(pairs, carry=False, sw=None, stats=None):
++    sw = A.prep_sw(SW if sw is None else sw)
++    if carry:
++        return A.sw_l1_asof_with_gap_carry(sw, _k(pairs), stats=stats, cal=CAL).tolist()
++    return A.l1_asof(sw, _k(pairs), stats=stats).tolist()
+ 
+ 
+ def test_reclassification_mid_period():
+@@ -76,7 +93,7 @@ def test_rowfilter_matches_intel_verbatim_and_vectorized():
+ def test_gap_day_carries_old_then_new_active():
+     st = {}
+     k = pd.DataFrame([("G.SZ", "2025-03-11"), ("G.SZ", "2025-03-12")], columns=["instrument", "session"])
+-    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st).tolist() == ["电子", "计算机"]
++    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st, cal=CAL).tolist() == ["电子", "计算机"]
+     assert st["n_rows_gap_carry"] == 1 and st["n_rows_unknown"] == 0
+     assert _q([("G.SZ", "2025-03-11")], carry=False) == [None]  # pure rule leaves the gap unknown
+ 
+@@ -84,7 +101,7 @@ def test_gap_day_carries_old_then_new_active():
+ def test_no_carry_when_out_date_is_d_minus_2():
+     st = {}
+     k = pd.DataFrame([("H.SZ", "2025-03-11"), ("Z.SH", "2025-03-12")], columns=["instrument", "session"])
+-    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st).tolist() == [None, None]
++    assert A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), k, stats=st, cal=CAL).tolist() == [None, None]
+     assert st["n_rows_gap_carry"] == 0 and st["n_rows_unknown"] == 2
+     assert A.prep_sw(SW).attrs["prep_stats"]["n_reclass_gap_rows"] >= 1
+ 
+@@ -93,7 +110,8 @@ def test_gap_with_out_date_parse_failure_raises():
+     bad = SW.copy()
+     bad.loc[bad.index[8], "out_date"] = "2025-13-45"  # G.SZ old row (the gap row) unparseable
+     with pytest.raises(SwPitIntegrityError):
+-        A.sw_l1_asof_with_gap_carry(bad, pd.DataFrame([("G.SZ", "2025-03-11")], columns=["instrument", "session"]))
++        A.sw_l1_asof_with_gap_carry(bad, pd.DataFrame([("G.SZ", "2025-03-11")], columns=["instrument", "session"]),
++                                    cal=CAL)
+ 
+ 
+ def test_in_date_parse_failure_counted_never_matches():
+@@ -105,7 +123,7 @@ def test_in_date_parse_failure_counted_never_matches():
+ 
+ 
+ def test_by_session_and_reclass_share():
+-    ia = A.IndustryAsOf(SW, static_map={"X.SZ": "计算机", "Y.SH": "银行", "G.SZ": "计算机"})
++    ia = A.IndustryAsOf(SW, static_map={"X.SZ": "计算机", "Y.SH": "银行", "G.SZ": "计算机"}, cal=CAL)
+     rows = pd.DataFrame({"instrument": ["X.SZ", "X.SZ", "Y.SH", "G.SZ"],
+                          "session": ["2025-03-07", "2025-03-11", "2025-03-07", "2025-03-11"],
+                          "weight": [0.4, 0.2, 0.2, 0.2]})
+@@ -126,3 +144,72 @@ def test_pitfix_out_dir_guard(tmp_path):
+                 "output/strategy_hiliq/FROZEN_y", "output/strategy_hiliq/../strategy_fulla/z", "/tmp/x"):
+         with pytest.raises(SystemExit):
+             A.pitfix_out_dir_guard(tmp_path, bad)
++
++
++# ---- DIFF C (主 Agent 2026-10-18 06:01 ET: d-1 = previous SSE open day; Arch c72f0856 P3-2 / P3-5) ----
++
++def test_cross_weekend_friday_out_monday_in_carries_monday():
++    st = {}
++    assert _q([("W.SZ", "2025-03-10"), ("W.SZ", "2025-03-11"), ("W.SZ", "2025-03-07")], carry=True,
++              stats=st) == ["电子", "计算机", "电子"]
++    assert st["n_rows_gap_carry"] == 1 and st["n_rows_gap_carry_no_successor"] == 0 and st["n_rows_unknown"] == 0
++    assert st["trade_cal_sha256"] == "synthetic"
++    assert _q([("W.SZ", "2025-03-10")]) == [None]  # pure rule leaves Monday unknown
++
++
++def test_natural_day_cases_under_tradeday_rule():
++    st = {}
++    got = _q([("G.SZ", "2025-03-11"), ("H.SZ", "2025-03-11"), ("H.SZ", "2025-03-10"), ("Z.SH", "2025-03-11"),
++              ("Z.SH", "2025-03-12"), ("X.SZ", "2025-03-11")], carry=True, stats=st)
++    # G: Mon out / Tue in -> carried (same as calendar-day rule); H 03-11: out 03-09 != prev open 03-10 -> None (same);
++    # H 03-10: out 03-09 (Sun) != prev open 03-07 -> None (calendar-day rule would carry; literal ruling, disclosed);
++    # Z 03-11: out 03-10, no successor -> carried 1 day; Z 03-12 -> None; X: new row active -> 计算机 (no carry)
++    assert got == ["电子", None, None, "医药生物", None, "计算机"]
++    assert st["n_rows_gap_carry"] == 2 and st["n_rows_gap_carry_no_successor"] == 1
++    assert st["n_rows_gap_out_closed_day_not_carried"] == 1 and st["n_rows_unknown"] == 3
++
++
++def test_gap_carry_excludes_unparsed_in_date():
++    bad = SW.copy()
++    bad.loc[bad.index[8], "in_date"] = "garbage"  # G.SZ old row (out 2025-03-10) with unparseable in_date
++    st = {}
++    assert _q([("G.SZ", "2025-03-11")], carry=True, sw=bad, stats=st) == [None]
++    assert st["n_rows_gap_carry"] == 0 and A.prep_sw(bad).attrs["prep_stats"]["n_in_unparsed"] == 1
++    assert _q([("G.SZ", "2025-03-11")], carry=True) == ["电子"]  # control: parsed in_date is carried
++
++
++def test_session_outside_calendar_raises():
++    short = A.TradeCal(CAL_DF[CAL_DF["cal_date"] <= "20251231"], sha256="short")
++    sw = A.prep_sw(SW)
++    for sess, cal in (("2027-01-04", CAL), ("2026-01-02", short), ("2017-12-29", CAL), ("2018-01-01", CAL)):
++        with pytest.raises(SwPitIntegrityError):  # past end / before start / no open day before d (start day)
++            A.sw_l1_asof_with_gap_carry(sw, _k([("Y.SH", "2025-01-02"), ("Y.SH", sess)]), cal=cal)
++    assert A.l1_asof(sw, _k([("Y.SH", "2027-01-04")])).tolist() == ["银行"]  # pure rule does not use the calendar
++    assert _q([("Y.SH", "2018-01-02")], carry=True) == [None]  # first day with an open day before it: no raise
++
++
++def test_trade_cal_load_sha_pin_and_validation(tmp_path):
++    fp = tmp_path / A.TRADE_CAL_REL
++    fp.parent.mkdir(parents=True)
++    CAL_DF.to_parquet(fp, index=False)
++    sha = hashlib.sha256(fp.read_bytes()).hexdigest()
++    with pytest.raises(SwPitIntegrityError):  # default pin fa4260b8... != synthetic file
++        A.load_trade_cal(tmp_path)
++    cal = A.load_trade_cal(tmp_path, sha_pin=sha)
++    assert cal.sha256 == sha and cal.end == pd.Timestamp("2026-12-31") and cal.start == pd.Timestamp("2018-01-01")
++    assert str(pd.Timestamp(cal.prev_open(["2025-03-10"])[0]).date()) == "2025-03-07"
++    for bad in (CAL_DF.drop(index=5), CAL_DF.assign(is_open=2), CAL_DF.assign(cal_date="2025-03-10"),
++                pd.concat([CAL_DF, CAL_DF.tail(1)]), CAL_DF.iloc[0:0]):
++        with pytest.raises(SwPitIntegrityError):  # gap / bad is_open / not YYYYMMDD / duplicate / empty
++            A.TradeCal(bad)
++
++
++def test_pitfix_out_dir_guard_symlink_capadv_legs(tmp_path):
++    base = tmp_path / "output/strategy_hiliq"
++    (base / "b4").mkdir(parents=True)
++    os.symlink(base / "b4", base / "lnk_b4")
++    for bad, why in (("output/strategy_hiliq/lnk_b4", "inside b4/"), ("output/strategy_hiliq/lnk_b4/new", "inside b4/"),
++                     ("output/strategy_hiliq/capadv_x2/new", "inside capadv_x2/"),
++                     ("output/strategy_hiliq/legs/new", "inside legs/")):
++        with pytest.raises(SystemExit, match=why):
++            A.pitfix_out_dir_guard(tmp_path, bad)
+diff --git a/research/strategy_hiliq_capadv_b4_x2.py b/research/strategy_hiliq_capadv_b4_x2.py
+index 600192a..6105cc7 100644
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -23,7 +23,8 @@ sys.path.insert(0, str(ROOT))
+ from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
+ from research.sw_pit_freshness import SwPitIntegrityError
+ from research.sw_members_asof import (IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry,  # PIT fix (Arch 3f195231 r2)
+-                                      pitfix_out_dir_guard, SW_L1_REL)
++                                      pitfix_out_dir_guard, SW_L1_REL,
++                                      load_trade_cal)  # DIFF C: d-1 = prev SSE open day (主 Agent 10-18 06:01 ET)
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -90,10 +91,10 @@ def load_industry_map(as_of: str | None = None) -> dict:
+ 
+ 
+ def load_industry_asof(as_of: str | None = None, static_map: dict | None = None) -> IndustryAsOf:
+-    """PIT industry as-of each session (in_date < d, out_date null or >= d) + 主 Agent 10-18 ~05:45 ET gap carry.
+-    Integrity/stale check kept."""
++    """PIT industry as-of each session (in_date < d, out_date null or >= d) + 主 Agent 10-18 gap carry
++    (d-1 = previous SSE open day; calendar passed explicitly, sha pinned in sw_members_asof). Integrity/stale check kept."""
+     sw_pit_ensure_checked(ROOT, as_of=as_of or X2[1], as_of_defaulted=as_of is None)
+-    return IndustryAsOf(load_sw_l1(ROOT), static_map=static_map)
++    return IndustryAsOf(load_sw_l1(ROOT), static_map=static_map, cal=load_trade_cal(ROOT))
+ 
+ 
+ def check_sw_l1_pin() -> str:
+@@ -364,9 +365,9 @@ def smallcap_and_industry(W: pd.DataFrame, tag: str) -> dict:
+         include_groups=False,
+     )
+     sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])
+-    ia = IndustryAsOf(load_sw_l1(ROOT))
++    ia = IndustryAsOf(load_sw_l1(ROOT), cal=load_trade_cal(ROOT))
+     m2 = Wx.copy()
+-    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session").values  # as-of session (PIT)
++    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session", cal=ia.cal).values  # as-of (PIT)
+     reclass = ia.reclass_share(Wx, weight_col="weight")  # disclosure only
+     ind_share = (m2.groupby("l1_name")["weight"].sum() / m2["weight"].sum()).sort_values(ascending=False)
+     ind_share = ind_share[ind_share.index.notna()]
+@@ -799,7 +800,9 @@ def pitfix_compare(out_dir_arg: str) -> int:
+             res[f"{arm}_{aum // 10000}w"] = row
+     fr = sw_pit_last_result() or {}
+     summ = {"prereg": "docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md", "all_ok": bool(all_ok), "window": list(X2),
+-            "gap_carry_rule": "主 Agent 2026-10-18 ~05:45 ET：无有效行且旧行 out_date==d-1 时沿用旧行业当天",
++            "gap_carry_rule": ("主 Agent 2026-10-18 ~05:45/06:01 ET：无有效行且旧行（in_date 可解析）out_date == d 之前最近的"
++                               "SSE 开市日时沿用旧行业当天；不要求有后继行（无后继沿用次数见 n_rows_gap_carry_no_successor）"),
++            "trade_cal_sha256": asof.cal.sha256,
+             "sw_l1_sha256_pin_check": sha_pin, "sw_l1_sha256_asof_load": asof.sha256,
+             "results": res, "sw_pit_freshness": fr, "disclosure_zh": fr.get("disclosure_zh", ""),
+             "industry_cap_on_stale_sw_pit": bool(fr.get("stale")), "live": False, "promotion": False,
+@@ -823,4 +826,3 @@ if __name__ == "__main__":
+             raise SystemExit("usage: --pitfix-compare <out_dir under output/strategy_hiliq/>")
+         raise SystemExit(pitfix_compare(sys.argv[2]))
+     raise SystemExit(main())
+-
+diff --git a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+index 9390867..81846dc 100644
+--- a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -31,7 +31,7 @@ hx2 合成 B4 时，行业 25% 上限用的是“每只股票最后一次出现
+ - **只作披露**：
+   - 受改分类影响的持仓日占比：X2 内 (session, 持仓股票) 行中，as-of l1_name 与旧静态映射不同的占比，按行数和按权重各报一个（reclass_share_x2）；
+   - 未知行业单独报：n_rows_asof_missing、n_rows_static_missing、n_rows_asof_missing_static_known（Arch 实测 X2 约 477 个代码日，约 1.4%），以及 n_unk_over_cap_sessions_x2（_UNK_ 桶单独超过 25% 的 session 数）；
+-  - 空档沿用：n_rows_gap_carry、share_rows_gap_carry（占 X2 持仓行的比例），n_rows_unknown，以及全表 n_reclass_gap_rows（Arch 实测 1545 次变更中有 1109 次 new in_date = old out_date + 1）；
++  - 空档沿用：n_rows_gap_carry、share_rows_gap_carry（占 X2 持仓行的比例），n_rows_unknown，以及全表 n_reclass_gap_rows（以 summary.json 中代码算出的值为准；Arch c72f0856 按 prep_sw 口径预期为 1088。原写的“1545 次变更中有 1109 次 new in_date = old out_date + 1”是 r1 审查口径，仅供参考）；
+   - 重叠：n_rows_multi_match、n_codes_overlap_on_d；
+   - before 组与现有 output/strategy_hiliq/b4/B4_50_25_25_topN_{60w,100w}.parquet（ca77bc8c… / f75ace33…）对比 sha 和最大权重差。不作门槛。
+ 

@@ -1,0 +1,164 @@
+--- a/research/sw_pit_freshness.py
++++ b/research/sw_pit_freshness.py
+@@ -1,4 +1,4 @@
+-"""SW PIT (data/v2/sw_pit) freshness self-check — 主 Agent 2026-10-18 05:06 ET ruling; Arch ccc7546f + 05:18 unified rules (Intel bc9ef8a1) (r3).
++"""SW PIT (data/v2/sw_pit) freshness self-check — 主 Agent 2026-10-18 05:06 ET ruling; Arch ccc7546f + 05:18 unified rules (Intel bc9ef8a1) (r5: Arch 8d5bc796 P3 x3 + calendar guard).
+ 
+ Consumers of sw_pit must check the table themselves; freshness overall=ok does NOT cover sw_pit.
+ Freshness is judged by manifest `built` only (directory mtimes are unreliable).
+@@ -7,7 +7,8 @@
+ - ref_day = latest completed SSE session as of now (SH date if open and SH time >= 18:00, else last open day before).
+ - lag_tdays = open SSE days in (coverage_day, ref_day]; stale (warn) if lag_tdays >= STALE_LAG_TDAYS.
+ - coverage_gap (warn) if as_of (last rebalance day) > coverage_day.
+-- Integrity failures RAISE (stop): manifest unreadable, parquet missing, sha256 != manifest, built missing.
++- Integrity failures RAISE (stop): manifest unreadable, parquet missing, sha256 != manifest, built missing/unparseable,
++  in_date_range missing/invalid (same as Intel), SH date of built/now beyond calendar end (r5).
+ Calendar: data/v2/calendar/trade_cal_sse_pit.parquet (is_open). Read-only; cached per level per process.
+ """
+ from __future__ import annotations
+@@ -31,10 +32,27 @@
+     pass
+ 
+ 
+-def _open_days(root: Path) -> list:
++def _ymd(x: str) -> _dt.date:
++    return _dt.date(int(x[:4]), int(x[4:6]), int(x[6:8]))
++
++
++def _calendar(root: Path) -> tuple[list, _dt.date]:
++    """(sorted open days, last cal_date incl. closed days)."""
+     cal = pd.read_parquet(root / "data/v2/calendar/trade_cal_sse_pit.parquet", columns=["cal_date", "is_open"])
+-    return sorted(_dt.date(int(x[:4]), int(x[4:6]), int(x[6:8]))
+-                  for x in cal.loc[cal["is_open"] == 1, "cal_date"].astype(str))
++    if cal.empty:
++        raise SwPitIntegrityError("trade_cal_sse_pit is empty")
++    days = sorted(_ymd(x) for x in cal.loc[cal["is_open"] == 1, "cal_date"].astype(str))
++    return days, max(_ymd(x) for x in cal["cal_date"].astype(str))
++
++
++def _open_days(root: Path) -> list:
++    return _calendar(root)[0]
++
++
++def _guard_cal(sh_dt: _dt.datetime, cal_end: _dt.date, what: str) -> None:
++    # r5 (Arch 8d5bc796): calendar ends 20261231; beyond it lag would be undercounted -> hard stop
++    if sh_dt.date() > cal_end:
++        raise SwPitIntegrityError(f"trade calendar ends {cal_end.isoformat()} < SH date of {what} {sh_dt.date().isoformat()}; extend trade_cal_sse_pit")
+ 
+ 
+ def _completed_session(sh_dt: _dt.datetime, open_days: list) -> _dt.date:
+@@ -64,20 +82,33 @@
+     built = man.get("built")
+     if not built:
+         raise SwPitIntegrityError("sw_pit manifest has no 'built'")
+-    b = _dt.datetime.fromisoformat(str(built))
++    try:
++        b = _dt.datetime.fromisoformat(str(built))
++    except (TypeError, ValueError) as e:
++        raise SwPitIntegrityError(f"sw_pit manifest 'built' unparseable: {built!r} ({e})")
+     # naive -> ET (queue_chain datetime.now()); tz-aware -> convert, never overwrite (Arch 5a64a6f1 P3)
+     built_et = b.replace(tzinfo=_ET) if b.tzinfo is None else b.astimezone(_ET)
+     built_sh = built_et.astimezone(_SH)
+-    days = _open_days(root)
+-    rng = (man.get(level) or {}).get("in_date_range") or [None, None]
+-    return {"level": level, "days": days, "built_et": built_et, "built_sh": built_sh,
++    rng = (man.get(level) or {}).get("in_date_range")
++    if not isinstance(rng, (list, tuple)) or len(rng) != 2:
++        raise SwPitIntegrityError(f"sw_pit manifest[{level!r}].in_date_range missing/invalid: {rng!r}")
++    try:
++        [_dt.date.fromisoformat(str(x)[:10]) for x in rng]
++    except (TypeError, ValueError) as e:
++        raise SwPitIntegrityError(f"sw_pit manifest[{level!r}].in_date_range unparseable: {rng!r} ({e})")
++    rng = list(rng)
++    days, cal_end = _calendar(root)
++    _guard_cal(built_sh, cal_end, "built")
++    return {"level": level, "days": days, "cal_end": cal_end, "built_et": built_et, "built_sh": built_sh,
+             "coverage": _completed_session(built_sh, days), "in_date_range": rng, "sha256": actual,
+             "promotion_approved": man.get("promotion_approved")}
+ 
+ 
+ def _evaluate(base: dict, as_of: _dt.date | None, as_of_defaulted: bool, now_et: _dt.datetime) -> dict:
+     days, coverage = base["days"], base["coverage"]
+-    ref = _completed_session(now_et.astimezone(_SH), days)
++    now_sh = now_et.astimezone(_SH)
++    _guard_cal(now_sh, base["cal_end"], "now")
++    ref = _completed_session(now_sh, days)
+     lag = sum(1 for x in days if coverage < x <= ref)
+     warns = []
+     if lag >= STALE_LAG_TDAYS:
+@@ -100,9 +131,14 @@
+ def _finalize(r: dict) -> dict:
+     blocking = [w for w in r["warns"] if not w.startswith("as_of 取默认值")]
+     r["stale"] = bool(blocking)
+-    r["disclosure_zh"] = ("【披露】申万 sw_pit 表可能过期：" + "；".join(r["warns"]) +
+-                          f"（built 上海 {r['built_sh'][:16].replace('T', ' ')}，覆盖至 {r['coverage_day']}，"
+-                          f"in_date 最大 {r['in_date_max']}）。行业相关结果仅作带披露参考。") if r["warns"] else ""
++    tail = (f"（built 上海 {r['built_sh'][:16].replace('T', ' ')}，覆盖至 {r['coverage_day']}，"
++            f"in_date 最大 {r['in_date_max']}）")
++    if blocking:
++        r["disclosure_zh"] = "【披露】申万 sw_pit 表可能过期：" + "；".join(r["warns"]) + tail + "。行业相关结果仅作带披露参考。"
++    elif r["warns"]:  # only "as_of 取默认值" -> neutral prefix (Arch 8d5bc796 P3)
++        r["disclosure_zh"] = "【披露】sw_pit 检查：as_of 取默认值（调用方未传），未判过期" + tail + "。"
++    else:
++        r["disclosure_zh"] = ""
+     return r
+ 
+ 
+--- a/research/tests_sw_pit/test_sw_pit_freshness.py
++++ b/research/tests_sw_pit/test_sw_pit_freshness.py
+@@ -1,4 +1,4 @@
+-"""Minimal synthetic tests for research/sw_pit_freshness.py (Arch c432c912 P3). tmp ROOT only; no real data."""
++"""Minimal synthetic tests for research/sw_pit_freshness.py (Arch c432c912 P3; r5 adds Arch 8d5bc796 P3 cases). tmp ROOT only; no real data."""
+ import datetime as dt
+ import hashlib
+ import json
+@@ -19,7 +19,7 @@
+        "20261016", "20261017", "20261018", "20261019"]
+ 
+ 
+-def _root(tmp_path, built="2026-10-14T04:00:19", bad_sha=False):
++def _root(tmp_path, built="2026-10-14T04:00:19", bad_sha=False, in_date_range=("2020-01-01", "2026-09-24")):
+     (tmp_path / "data/v2/calendar").mkdir(parents=True)
+     (tmp_path / "data/v2/sw_pit").mkdir(parents=True)
+     pd.DataFrame({"cal_date": ALL, "is_open": [1 if d in OPEN else 0 for d in ALL]}).to_parquet(
+@@ -28,7 +28,7 @@
+     pd.DataFrame({"ts_code": ["000001.SZ"], "l1_name": ["银行"], "in_date": ["20200101"],
+                   "out_date": [None]}).to_parquet(fp, index=False)
+     sha = hashlib.sha256(fp.read_bytes()).hexdigest()
+-    man = {"l1": {"in_date_range": ["2020-01-01", "2026-09-24"]},
++    man = {"l1": {} if in_date_range is None else {"in_date_range": list(in_date_range)},
+            "sha256": {"sw_pit/industry_members_sw_l1_pit.parquet": "0" * 64 if bad_sha else sha}}
+     if built is not None:
+         man["built"] = built
+@@ -77,3 +77,31 @@
+     # 2026-10-14T10:30+08:00 (SH) must stay SH 10:30 -> < 18:00 -> coverage 10-13; replace() would give ET 10:30 = SH 22:30 -> 10-14
+     r = m.check_sw_pit(_root(tmp_path, built="2026-10-14T10:30:00+08:00"), now_et=NOW)
+     assert r["built_sh"].startswith("2026-10-14T10:30") and r["coverage_day"] == "2026-10-13"
++
++
++# ---- r5 (Arch 8d5bc796) ----
++@pytest.mark.parametrize("rng", [None, ("2020-01-01",), ("2020-01-01", "not-a-date")])
++def test_in_date_range_missing_or_invalid_raises(tmp_path, rng):
++    with pytest.raises(m.SwPitIntegrityError):
++        m.check_sw_pit(_root(tmp_path, in_date_range=rng), now_et=NOW)
++
++
++def test_built_unparseable_raises(tmp_path):
++    with pytest.raises(m.SwPitIntegrityError):
++        m.check_sw_pit(_root(tmp_path, built="14/10/2026 04:00"), now_et=NOW)
++
++
++def test_as_of_default_only_neutral_disclosure(tmp_path):
++    root = _root(tmp_path, built="2026-10-16T07:00:00")  # lag 0, no gap
++    r = m.ensure_checked(root, as_of="2026-10-16", as_of_defaulted=True, now_et=NOW)
++    assert not r["stale"] and r["warns"] == ["as_of 取默认值（调用方未传）"]
++    assert r["disclosure_zh"].startswith("【披露】sw_pit 检查：as_of 取默认值") and "可能过期" not in r["disclosure_zh"]
++    s = m.check_sw_pit(_root(tmp_path / "s"), now_et=NOW, as_of_defaulted=True)  # stale keeps old prefix
++    assert s["stale"] and s["disclosure_zh"].startswith("【披露】申万 sw_pit 表可能过期")
++
++
++def test_calendar_end_guard_raises(tmp_path):
++    with pytest.raises(m.SwPitIntegrityError):  # now SH 2026-10-20 > cal end 2026-10-19
++        m.check_sw_pit(_root(tmp_path), now_et=dt.datetime(2026, 10, 20, 9, 0, tzinfo=ET))
++    with pytest.raises(m.SwPitIntegrityError):  # built SH 2026-10-20 > cal end
++        m.check_sw_pit(_root(tmp_path / "b", built="2026-10-20T01:00:00"), now_et=NOW)
