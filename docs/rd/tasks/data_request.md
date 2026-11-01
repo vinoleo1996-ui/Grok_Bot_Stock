@@ -9,5 +9,5 @@
 - `data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet`：`instrument_id`、`sw_code`、`sw_name`、`in_date`、`out_date`、`available_at`。`available_at` 不允许整列为空。
 - `data/v2/financials_pit/financials_pit_tushare.parquet`：`instrument_id`、`metric`、`value`、`available_at`。
 - `data/v2/ep/ep_pit_daily_tushare.parquet`：`instrument_id`、`ep`、`available_at`。上海日期不早于决策日的行会被丢掉。
-- `data/v2/float_mktcap/float_mktcap_daily_tushare.parquet`：`instrument_id`、`float_mktcap`、`available_at`。文件不在时 D1 得到空查找并注明缺失，不用面板反推去冒充这张表。
+- `data/v2/float_mktcap/float_mktcap_daily_tushare.parquet`：原表有 `instrument_id`、`float_mktcap`、`trade_date`，没有 `available_at`。研究代理在另一张 `float_mktcap_daily_tushare_pit.parquet`，规则见 `docs/rd/tasks/float_mktcap_pit_20261101.md`。原表缺列时读取仍失败。
 - `output/d1/ENG_PING_PATHS.json` 只记录数据验收。它不能把 `strategy_promotion_approved` 设成 true。
