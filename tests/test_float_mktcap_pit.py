@@ -59,3 +59,14 @@ def test_raw_file_without_available_at_still_fails(tmp_path):
 
 def test_default_pit_name_is_not_the_raw_file():
     assert DEFAULT_FLOAT_MKTCAP_PIT.name != "float_mktcap_daily_tushare.parquet"
+
+
+def test_missing_pit_does_not_fall_back_to_the_raw_table(tmp_path, monkeypatch):
+    import quantlab.data.v2_readers as readers
+
+    raw = tmp_path / "float_mktcap_daily_tushare.parquet"
+    _raw(raw)
+    monkeypatch.setattr(readers, "DEFAULT_FLOAT_MKTCAP", raw)
+    monkeypatch.setattr(readers, "DEFAULT_FLOAT_MKTCAP_PIT", tmp_path / "float_mktcap_daily_tushare_pit.parquet")
+    with pytest.raises(FileNotFoundError, match="float_mktcap_daily_tushare_pit"):
+        readers.float_mktcap_lookup_for_session(date(2024, 6, 4))

@@ -16,3 +16,4 @@
 - 收盘决策（本仓 `decision_time`，当日 18:00）可以看见当日这一行，因为 `available_at` 不晚于截止。
 - 开盘决策只看见前一会话及更早的行。调用时传 `known_by="open"`。
 - 原文件没有 `available_at`。把它直接交给 `float_mktcap_lookup_for_session` 仍然失败。
+- 不传路径时默认读 `float_mktcap_daily_tushare_pit.parquet`。这张新表不在就 `FileNotFoundError`，不退回原表。

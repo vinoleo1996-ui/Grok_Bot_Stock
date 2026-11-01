@@ -585,16 +585,9 @@ def _filter_float_visible(frame: pd.DataFrame, session: date, known_by: str) -> 
 
 
 def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = None, instrument_ids=None, prefer_daily: bool = True, known_by: str = "close") -> FloatMktcapLookup:
-    if asof_path is not None:
-        path = Path(asof_path)
-    elif DEFAULT_FLOAT_MKTCAP_PIT.is_file():
-        path = DEFAULT_FLOAT_MKTCAP_PIT
-    else:
-        path = DEFAULT_FLOAT_MKTCAP
+    path = Path(asof_path) if asof_path is not None else DEFAULT_FLOAT_MKTCAP_PIT
     if not path.is_file():
-        if asof_path is not None or path == DEFAULT_FLOAT_MKTCAP_PIT:
-            raise FileNotFoundError(str(path))
-        return FloatMktcapLookup(notes=(f"float_mktcap_file_missing:{path}",))
+        raise FileNotFoundError(str(path))
     frame = _filter_float_visible(pd.read_parquet(path), session, known_by)
     wanted = None if instrument_ids is None else {str(item) for item in instrument_ids}
     values: dict[str, float] = {}
