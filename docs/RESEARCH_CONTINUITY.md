@@ -1,6 +1,12 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:45 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:50 CST。本次检出在 `/workspace`，分支 `cursor/missing-assets-docs-e0b7`。
+
+## 补挂缺失资产到现有 Release（2026-11-01 19:50，无账户）
+
+四个文件已挂到现有 tag [`quantlab-data-2026-11-01`](https://github.com/vinoleo1996-ui/Grok_Bot_Stock/releases/tag/quantlab-data-2026-11-01)，没有新建 Release，没有把二进制写进 git。资产名：`stock_patches_2026-11-01.tgz`、`ENG_PING_PATHS.json`、`dividends_corporate_actions_2026-11-01.tgz`、`README_MISSING_ASSETS.md`。说明在 `docs/rd/tasks/missing_assets_20261101.md`。
+
+规范分红表是 `data/v2/corporate_actions/dividend_tushare.parquet`，不是 `data/v2/dividends/dividends.parquet`。当前 `v2_readers.DEFAULT_DIVIDENDS` 仍指后者；本轮只记，不改读取器。ENG_PING 这份里全部 `promotion_approved*` 为 false。Stock-patches 解压到 `third_party/Stock-patches/`；上传前去掉了 `secrets.env` 里的真实 key。流通市值日频仍无 on-disk `available_at`，`_drop_unpublished` 缺列即失败，不用 `trade_date` 冒充 PIT。没有改选股公式，`strategy_promotion_approved` 仍为 false。
 
 ## 北交所账作废（2026-11-01 19:45，无账户）
 
