@@ -1,6 +1,10 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 17:13 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 17:20 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## 接线审阅写回台账（2026-11-01 17:20，无账户）
+
+架构和测试的逐行结论已核对当前源码后写入 `docs/rd/messages.jsonl`。`resolve_sw_l1_research_path`、`DEFAULT_ASOF_EXTEND_DIR`、`dividend_path` 和申万空 `out_date` 的比较已经在当前代码里，对应意见标成 answered。仍开放的是：extend 目录不按标的回退、缺面板会中断调用方、显式流通市值路径缺失不会落到面板推算、申万整表空 `available_at` 会在 as-of 之前抛错、`describe_strategy_feed` 读了日历视图和 `sw_l1_path` 上不存在的字段、510300 的模块图路径与 `etf_daily_adj.parquet` 不一致、多袖套 `Data` 在可转债文件缺失时停掉、D1 没有按 `asset_type` 过滤。`quantlab/v2_schemas.py` 第 68 行的决策时点与 `sw_l1_asof` 的按日过滤不一致。`quantlab/promotion_gate.py` 第 32 行的总闸是 `None`，会跟随 ENG_PING。没有改选股公式，没有把缺文件改成空表。
 
 ## 研发台账与下一阶段设计（2026-11-01 17:13，无账户）
 
