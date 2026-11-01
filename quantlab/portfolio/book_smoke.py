@@ -98,6 +98,37 @@ def run(argv=None):
     }
 
     if a.skip_run:
+        # Validate a supplied weight table without opening ETF panels or writing NAV.
+        from quantlab.platform.weight_long_table import validate_weight_path
+
+        def _path_note(path):
+            if not path:
+                return {
+                    "status": "not_book_consumable",
+                    "n_rows": 0,
+                    "n_sessions": 0,
+                    "not_book_consumable": True,
+                    "path": None,
+                    "error": "no_path",
+                }
+            meta = validate_weight_path(path, require_rows=True)
+            readable = meta.get("status") == "ok" and int(meta.get("n_rows") or 0) > 0
+            return {
+                "status": "book_consumable" if readable else "not_book_consumable",
+                "n_rows": int(meta.get("n_rows") or 0),
+                "n_sessions": int(meta.get("n_sessions") or 0),
+                "not_book_consumable": not readable,
+                "path": str(path),
+                "error": meta.get("error"),
+                "promotion_approved": False,
+            }
+
+        result["consumable"] = {
+            "stock": _path_note(a.stock_path),
+            "alpha_event": _path_note(a.alpha_event_path),
+        }
+        result["nav_ran"] = False
+        result["strategy_promotion_approved"] = False
         (out / "book_smoke_summary.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         _write_receipt(ROOT / a.receipt, result, ran=False)
         return result
