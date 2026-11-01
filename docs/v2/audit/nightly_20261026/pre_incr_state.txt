@@ -1,0 +1,7 @@
+pre_dest_sha f6bbf9e51af78dfab2c021fa8809c58ad0d36df7293f8a488200b9dd5ceaf948
+pre_manifest_build {"mode": "baseline_seed", "prev_sha256": null, "new_sha256": "f6bbf9e51af78dfab2c021fa8809c58ad0d36df7293f8a488200b9dd5ceaf948", "transform_sha": "308b5054c39801116fd0eb19b4e4bd10bdccd4b4d40bfb67dd06a58fa67ab974", "runtime_versions": {"python": "3.13.5", "pandas": "3.0.6", "pyarrow": "26.0.0", "numpy": "2.5.4"}, "raw_inventory": "91b1b0694f9f1345489d31f48ae9c1d7daf4c056876c57a7e56ac3a45b9519d6", "rows_by_year": {"2014": 570677, "2015": 570310, "2016": 642209, "2017": 743941, "2018": 817637, "201
+pre_num_rows 12309945
+columns_sample ['ts_code', 'instrument_id', 'trade_date', 'close', 'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm', 'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv', 'float_mktcap', 'available_at', 'source']
+trade_date_col trade_date
+pre_trade_date_min 2014-01-02 00:00:00
+pre_trade_date_max 2026-10-16 00:00:00

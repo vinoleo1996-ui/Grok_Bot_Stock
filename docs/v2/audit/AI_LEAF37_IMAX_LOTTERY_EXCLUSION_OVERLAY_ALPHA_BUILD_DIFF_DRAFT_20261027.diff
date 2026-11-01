@@ -1,0 +1,1838 @@
+--- /dev/null	2026-10-20 12:34:32.181793385 +0800
++++ research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py	2026-10-28 05:20:54.745886748 +0800
+@@ -0,0 +1,1835 @@
++#!/usr/bin/env python3
++"""Leaf37 IMAX/lottery exclusion overlay build — HILIQ×x2 (NOT authorized).
++
++NEW file (2026-10-27). Nails PREREG_FROZEN sha8 c5927f1b;
++Arch FROZEN review a5a9336d PASS_WITH_CONDITIONS (C2 formal script).
++who_pays review 4a074f0a / WHO_PAYS 0ed8e9d8 / COVER 847245f8 / COUNT 154bc157 /
++SCRIPT c10b735f / JSON 2217f580 / PIN e01be34c / FROZEN RECEIPT 3992f0fa / dig 74234fca.
++Skeleton morphology from leaf34 build (read-only 482009dc; ban edit).
++leaf33 afbbe7e7 UNCHANGED; leaf35 434ff42c UNCHANGED; leaf32 HOLD 45dd87dc;
++leaf36 HOLD CLOSED WHO feaa5dbb / JSON 575e8276 — no reopen / no rollback.
++
++Mechanism (FROZEN; mechanism_tag=g1g5_ashare_imax_lottery_exclusion_overlay_v1):
++  r_id = (1+ret)/(1+ret_on)-1
++  IMAX_proxy = mean(largest 5 finite r_id in [t-19,t]), min_valid>=15
++  full_residual_e_id=false; continuous APPROX; ban silent upgrade to full e_id
++  PRIMARY = mask-only: top_q=0.20 high IMAX -> mask=0; other computable -> mask=1;
++            non-computable names excluded (no fake 0); overlay on backbone
++  soft-penalty: OFF by default (non PRIMARY); enable needs SW+logmv+style; else PIN_GAP
++  Ban full leaf24 g1g5_ashare_imax_intraday_v1 ranking main alpha (C11)
++  Ban leaf18/18v/27/24 alpha as main input; ban post-hoc q/sign flip (C5)
++
++PRIMARY: --universe HILIQ --window x2 (FULLA only --also-fulla-research)
++X2: 2024-06-03 -> 2026-10-09; rebal 20td; cost eval 30bp
++Coverage: computable median>=300; excl median>=30; zero_frac<=0.05
++C7: hard Jaccard>=0.7 vs leaf18/18v/27; disclose leaf24/34/35/36
++--dry-compile-only: pins; ZERO big-table load
++rss 1500 hard ABORT + peak_proof; sampler /tmp/quantlab_leaf37_imax_lottery_
++out: output/ai_factory/_leaf37_imax_lottery/
++forbid: eb70eef4+00eec671+10927bd9+25ae4572+178e90e9+c1b71e64+prior+twenty
++C12 count_approx_not_x2_accept; C13 KEEP pin only, KEEP does not unblock
++live=false; !=X2 ACCEPT; no Book-Smoke/selfcheck entry.
++"""
++from __future__ import annotations
++
++import argparse
++import gc
++import hashlib
++import json
++import resource
++import sys
++from datetime import datetime
++from pathlib import Path
++from zoneinfo import ZoneInfo
++
++ET = ZoneInfo("America/New_York")
++ROOT = Path(__file__).resolve().parents[1]
++_HERE = Path(__file__).resolve().parent
++if str(_HERE) not in sys.path:
++    sys.path.insert(0, str(_HERE))
++
++MECHANISM_TAG = "g1g5_ashare_imax_lottery_exclusion_overlay_v1"
++SCRIPT_REL = "research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py"
++FROZEN_REL = (
++    "docs/v2/audit/AI_LEAF37_IMAX_LOTTERY_EXCLUSION_OVERLAY_PREREG_FROZEN_20261027_ZH.md"
++)
++FROZEN_SHA8 = "c5927f1b"
++FROZEN_RECEIPT_SHA8 = "3992f0fa"
++ARCH_FROZEN_REVIEW_SHA8 = "a5a9336d"
++ARCH_WHO_PAYS_REVIEW_SHA8 = "4a074f0a"
++WHO_PAYS_SHA8 = "0ed8e9d8"
++COVER_SHA8 = "847245f8"
++COUNT_RECEIPT_SHA8 = "154bc157"
++COUNT_SCRIPT_SHA8 = "c10b735f"
++COUNT_JSON_SHA8 = "2217f580"
++PIN_SHA8 = "e01be34c"
++DIG_SHA8 = "74234fca"
++LEAF34_SKELETON_SHA8 = "482009dc"
++LEAF33_FORMAL_SHA8_READONLY = "afbbe7e7"
++LEAF35_FORMAL_SHA8_READONLY = "434ff42c"
++LEAF32_HOLD_SHA8 = "45dd87dc"
++LEAF36_HOLD_WHO_SHA8 = "feaa5dbb"
++LEAF36_HOLD_JSON_SHA8 = "575e8276"
++HI_LIQ_MASK_SHA8_PIN = "c5433e80"
++
++RSS_LIMIT_MB = 1500
++C4_KB = 1331200
++STOP_KB = 1484800
++HARD_KB = 1536000
++SPLIT_THRESH_KB = int(0.85 * C4_KB)
++
++X2_START = "2024-06-03"
++X2_END = "2026-10-09"
++X2_END_TRADE_DATE = "20261009"
++WARM_START = "2023-10-01"
++REBAL_EVERY = 20
++TOP_Q = 0.20
++PRIMARY_DELIVERY = "mask_only"
++SOFT_PENALTY_DEFAULT = False
++ALPHA_SIGN = "high_imax_mask0_exclusion"
++IC_SIGN_EXPECTED = "n/a_overlay_mask"
++FULL_RESIDUAL_E_ID = False
++IMAX_WIN = 20
++IMAX_K_MAX = 5
++IMAX_MIN_VALID = 15
++LEAF24_MECHANISM_BAN = "g1g5_ashare_imax_intraday_v1"
++
++C3_FORMULA_PIN = (
++    "IMAX_proxy=mean(largest_5_finite_r_id_in_[t-19,t]); "
++    "min_valid>=15; r_id=(1+ret)/(1+ret_on)-1; "
++    "full_residual_e_id=false; continuous_APPROX; "
++    "ban_silent_upgrade_to_full_e_id; C3=B PIN e01be34c"
++)
++PANEL_SHA8_PIN = {
++    "2023": "6588573a",
++    "2024": "bbbfe95a",
++    "2025": "164cde98",
++    "2026": "8df4afec",
++}
++
++STYLE_COLS_PINNED = ("mom20", "vol20", "logADV20")
++STYLE_SOURCE_PINNED = "derived_from_daily_bars_W20"
++COST_BP_EVAL = 30
++
++DECAY_KEEP_PIN = {
++    "latest_resid_alpha_gt_0": True,
++    "not_five_quarter_decline": True,
++    "H2_net_cagr_gt_510300": True,
++    "near_window_td": 252,
++    "keep_does_not_unblock_x2_accept": True,
++    "note": (
++        "KEEP = conjunction of three gates; script does not execute decay gate; "
++        "KEEP does NOT unblock X2 ACCEPT (leaf32 HOLD 45dd87dc; leaf36 HOLD CLOSED)"
++    ),
++}
++
++FORBID_OK_SHA8 = (
++    "eb70eef4", "00eec671", "10927bd9", "25ae4572", "178e90e9", "c1b71e64",
++    "245df63f", "c5ed13df", "5774bb6e", "81521fb5", "02426b73", "4bb141c9",
++    "fdbaa512", "aa25e989", "7e239487", "5af20222", "5ae077fa", "3c297052",
++    "e107383f", "2be59acd", "a7d98ac9", "8e51de63", "3a6caa4f", "8bcd79dc",
++    "725be3e0", "0f50daf7", "3c19dd7d", "1c32ab1e", "6054b3bf", "6de02e74",
++)
++
++PANEL_DIR_DEFAULT = ROOT / "output/ai_factory/panel_cache_v2_resumefix"
++DAILY_DIR_DEFAULT = ROOT / "data/v2/tushare_raw/daily"
++ADJ_FACTOR_DEFAULT = ROOT / "data/v2/adj/adj_factor_2023h2plus.parquet"
++HI_LIQ_MASK_DEFAULT = ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
++FULLA_MASK_DEFAULT = ROOT / "output/strategy_fulla/universe_mask_fulla_v1.parquet"
++SW_L1_DEFAULT = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
++FLOAT_MKTCAP_DEFAULT = (
++    ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
++)
++CAL_DEFAULT = ROOT / "data/v2/calendar/trade_cal_sse_pit.parquet"
++OUT_DEFAULT = ROOT / "output/ai_factory/_leaf37_imax_lottery"
++
++LEAF18_ALPHA_DEFAULT = ROOT / (
++    "output/ai_factory/leaf18_overnight_idio_ivol/alpha_HILIQ_x2_20261014_205327.parquet"
++)
++LEAF18V_ALPHA_DEFAULT = ROOT / (
++    "output/ai_factory/leaf18v_overnight_idio_ivol_lowto/"
++    "alpha_HILIQ_x2_20261014_212630.parquet"
++)
++LEAF27_ALPHA_DEFAULT = ROOT / (
++    "output/ai_factory/leaf27_on_minus_id_idio_ivol/alpha_HILIQ_x2_20261025_224033.parquet"
++)
++LEAF24_DIR_DEFAULT = ROOT / "output/ai_factory/leaf24_imax_intraday"
++LEAF34_MASK_DEFAULT = ROOT / (
++    "output/ai_factory/_leaf34_high_accrual/20261027_105941/"
++    "exclusion_mask_HILIQ_x2_20261027_105958.parquet"
++)
++LEAF35_MASK_DEFAULT = ROOT / (
++    "output/ai_factory/_leaf35_etf_passive_flow_pressure/20261027_152756/"
++    "exclusion_mask_HILIQ_x2_20261027_152844.parquet"
++)
++LEAF36_COUNT_JSON_DEFAULT = ROOT / (
++    "output/ai_factory/leaf36_inquiry_letter_exclusion_count_20261027.json"
++)
++
++SAMPLER_PREFIX = "/tmp/quantlab_leaf37_imax_lottery_"
++
++KNOWN_PANEL_COLS = ["date", "instrument", "hiliq", "ret", "ret_on"]
++KNOWN_MASK_COLS = ["date", "instrument", "in_universe"]
++KNOWN_MASK_OUT_COLS = ["trade_date", "ts_code", "mask", "alpha", "imax_proxy"]
++KNOWN_SW_COLS = [
++    "instrument_id", "sw_code", "sw_name", "in_date", "out_date", "available_at",
++]
++KNOWN_FLOAT_COLS = ["instrument_id", "trade_date", "float_mktcap"]
++KNOWN_DAILY_COLS = ["ts_code", "trade_date", "close", "pre_close", "amount", "vol"]
++JACCARD_HARD = 0.7
++RHO_STRENGTH = 0.5
++COVERAGE_MEDIAN_HILIQ = 300
++COVERAGE_EXCL_MEDIAN_MIN = 30
++ZERO_FRAC_MAX = 0.05
++COVERAGE_MEDIAN_FULLA = 800
++HARD_OVERLAP_TAGS = ("leaf18", "leaf18v", "leaf27")
++DISCLOSE_OVERLAP_TAGS = ("leaf24", "leaf34", "leaf35", "leaf36")
++COUNT_RHO_DISCLOSE = {"rho18_approx": 0.505, "rho27_approx": 0.665}
++
++def stage(name: str) -> None:
++    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    print(f"STAGE {name} ru_maxrss={rss}", file=sys.stderr, flush=True)
++
++
++def vmhwm_kb() -> int | None:
++    try:
++        with open("/proc/self/status") as f:
++            for line in f:
++                if line.startswith("VmHWM:"):
++                    return int(line.split()[1])
++    except OSError:
++        return None
++    return None
++
++
++def vmrss_kb() -> int | None:
++    try:
++        with open("/proc/self/status") as f:
++            for line in f:
++                if line.startswith("VmRSS:"):
++                    return int(line.split()[1])
++    except OSError:
++        return None
++    return None
++
++
++def peak_kb() -> int:
++    ru = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    hw = vmhwm_kb()
++    return max(ru, hw) if hw is not None else ru
++
++
++def check_rss(label: str, *, rss_limit_mb: int, c4_kb: int, hard_kb: int, split_kb: int) -> int:
++    pk = peak_kb()
++    soft_kb = int(rss_limit_mb) * 1024
++    vr = vmrss_kb()
++    print(
++        f"RSS_CHECK {label} peak_kb={pk} vmrss_kb={vr} "
++        f"soft={soft_kb} split={split_kb} c4={c4_kb} hard={hard_kb}",
++        flush=True,
++    )
++    if pk >= hard_kb or (vr is not None and vr >= hard_kb):
++        print(
++            f"STOP: RSS hard breached peak_kb={pk} vmrss={vr} >= hard={hard_kb}",
++            file=sys.stderr,
++        )
++        raise SystemExit(95)
++    if (vr is not None and vr >= soft_kb) or pk >= soft_kb:
++        print(
++            f"STOP: RSS soft 1500MB breached peak_kb={pk} vmrss={vr} >= soft={soft_kb}; "
++            f"ABORT no self-retry",
++            file=sys.stderr,
++        )
++        raise SystemExit(94)
++    if pk >= split_kb:
++        print(
++            f"STOP: RSS >= 0.85*C4 peak_kb={pk} >= split={split_kb}; "
++            f"split further — ban raise cap",
++            file=sys.stderr,
++        )
++        raise SystemExit(94)
++    return pk
++
++
++def assert_tmp_quantlab(path: Path, what: str) -> None:
++    resolved = path.resolve()
++    parts = resolved.parts
++    ok = False
++    if len(parts) >= 3 and parts[1] == "tmp":
++        name = parts[2]
++        if name.startswith("quantlab"):
++            ok = True
++    if not ok:
++        raise SystemExit(f"STOP: {what} must be under /tmp/quantlab_* got={resolved}")
++
++
++def sha256_file(p: Path) -> str:
++    h = hashlib.sha256()
++    with open(p, "rb") as f:
++        for b in iter(lambda: f.read(1 << 20), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
++def script_sha256() -> str:
++    return sha256_file(Path(__file__).resolve())
++
++
++def to_ts(x) -> str:
++    s = str(x)
++    if s.startswith(("sh.", "sz.", "bj.")):
++        mkt, code = s.split(".", 1)
++        return f"{code}.{mkt.upper()}"
++    return s
++
++
++def normalize_universe(u: str) -> str:
++    u = (u or "").strip()
++    if u in ("HILIQ", "HI_LIQ"):
++        return "HILIQ"
++    if u == "FULLA":
++        return "FULLA"
++    raise SystemExit(f"STOP: unknown --universe={u!r}; PRIMARY is HILIQ")
++
++
++def _as_naive_norm_ts(x):
++    import pandas as pd
++
++    if x is None:
++        return pd.NaT
++    try:
++        if pd.isna(x):
++            return pd.NaT
++    except (TypeError, ValueError):
++        pass
++    ts = pd.Timestamp(x)
++    if pd.isna(ts):
++        return pd.NaT
++    if ts.tzinfo is not None:
++        ts = ts.tz_convert("Asia/Shanghai").tz_localize(None)
++    return ts.normalize()
++
++
++def _as_naive_norm_series(s):
++    import pandas as pd
++
++    s = pd.Series(s)
++    if isinstance(s.dtype, pd.DatetimeTZDtype):
++        return s.dt.tz_convert("Asia/Shanghai").dt.tz_localize(None).dt.normalize()
++    if pd.api.types.is_datetime64_dtype(s.dtype):
++        return pd.to_datetime(s, errors="coerce").dt.normalize()
++    return pd.to_datetime(s.map(_as_naive_norm_ts), errors="coerce")
++
++def dry_compile_only_print(args) -> int:
++    """Zero big-table load; print hard pins for Arch/Main precheck."""
++    uni = normalize_universe(args.universe) if args.universe != "FULLA" else "FULLA"
++    try:
++        scr = script_sha256()
++    except OSError:
++        scr = "<unreadable>"
++    also_fulla = bool(getattr(args, "also_fulla_research", False))
++    soft_pen = bool(getattr(args, "enable_soft_penalty", False))
++    payload = {
++        "live": False,
++        "ok_requested": False,
++        "promotion_approved": False,
++        "executed": False,
++        "x2_accept": False,
++        "approx": True,
++        "count_approx_not_x2_accept": True,
++        "full_residual_e_id": FULL_RESIDUAL_E_ID,
++        "c3_option": "B",
++        "rss_limit_mb": RSS_LIMIT_MB,
++        "c4_kb": C4_KB,
++        "stop_kb": STOP_KB,
++        "hard_kb": HARD_KB,
++        "universe_cli": uni,
++        "primary_universe": "HILIQ",
++        "also_fulla_research": also_fulla,
++        "ban_silent_fulla_as_primary": True,
++        "window": args.window,
++        "x2_end": args.x2_end,
++        "x2_window": f"{X2_START} → {X2_END}",
++        "rebal_every_td": REBAL_EVERY,
++        "top_q": TOP_Q,
++        "primary_delivery": PRIMARY_DELIVERY,
++        "soft_penalty_enabled": soft_pen,
++        "soft_penalty_default": SOFT_PENALTY_DEFAULT,
++        "soft_penalty_is_primary": False,
++        "alpha_sign": ALPHA_SIGN,
++        "ic_sign_expected": IC_SIGN_EXPECTED,
++        "mechanism_tag": MECHANISM_TAG,
++        "ban_leaf24_mechanism_main": LEAF24_MECHANISM_BAN,
++        "script": SCRIPT_REL,
++        "script_sha256": scr,
++        "script_sha8": scr[:8] if isinstance(scr, str) and len(scr) >= 8 else None,
++        "frozen_rel": FROZEN_REL,
++        "frozen_sha8": FROZEN_SHA8,
++        "frozen_receipt_sha8": FROZEN_RECEIPT_SHA8,
++        "arch_frozen_review_sha8": ARCH_FROZEN_REVIEW_SHA8,
++        "arch_who_pays_review_sha8": ARCH_WHO_PAYS_REVIEW_SHA8,
++        "who_pays_sha8": WHO_PAYS_SHA8,
++        "cover_sha8": COVER_SHA8,
++        "count_receipt_sha8": COUNT_RECEIPT_SHA8,
++        "count_script_sha8": COUNT_SCRIPT_SHA8,
++        "count_json_sha8": COUNT_JSON_SHA8,
++        "pin_sha8": PIN_SHA8,
++        "dig_sha8": DIG_SHA8,
++        "leaf34_skeleton_sha8_readonly": LEAF34_SKELETON_SHA8,
++        "leaf33_formal_sha8_readonly": LEAF33_FORMAL_SHA8_READONLY,
++        "leaf35_formal_sha8_readonly": LEAF35_FORMAL_SHA8_READONLY,
++        "leaf32_hold_sha8_no_rollback": LEAF32_HOLD_SHA8,
++        "leaf36_hold_who_sha8": LEAF36_HOLD_WHO_SHA8,
++        "leaf36_hold_json_sha8": LEAF36_HOLD_JSON_SHA8,
++        "hi_liq_mask_sha8_pin": HI_LIQ_MASK_SHA8_PIN,
++        "forbid_ok_sha8": list(FORBID_OK_SHA8),
++        "sampler_prefix": SAMPLER_PREFIX,
++        "out_intent": str(OUT_DEFAULT.relative_to(ROOT)),
++        "panel_dir": str(PANEL_DIR_DEFAULT.relative_to(ROOT)),
++        "panel_sha8_pin": PANEL_SHA8_PIN,
++        "c3_formula_pin": C3_FORMULA_PIN,
++        "imax_win": IMAX_WIN,
++        "imax_k_max": IMAX_K_MAX,
++        "imax_min_valid": IMAX_MIN_VALID,
++        "style_cols_pinned": list(STYLE_COLS_PINNED),
++        "style_source_pinned": STYLE_SOURCE_PINNED,
++        "cost_bp_eval": COST_BP_EVAL,
++        "decay_keep_pin": DECAY_KEEP_PIN,
++        "mask_pipeline": [
++            "panel: ret/ret_on -> r_id",
++            "IMAX_proxy = mean(largest 5 finite r_id in [t-19,t]) min_valid>=15",
++            "HI_LIQ ∩ computable",
++            f"cross_section_quantile q={TOP_Q}",
++            "mask=0 if IMAX_proxy>=Q_(1-q) else 1 (computable only)",
++            "non_computable excluded (no fake 0)",
++            "PRIMARY=mask-only overlay on backbone",
++            "optional soft-penalty OFF by default (non PRIMARY)",
++            "full_residual_e_id=false continuous APPROX",
++        ],
++        "overlap_hard_targets": list(HARD_OVERLAP_TAGS),
++        "overlap_disclose_targets": list(DISCLOSE_OVERLAP_TAGS),
++        "jaccard_hard": JACCARD_HARD,
++        "rho_strength_filter": RHO_STRENGTH,
++        "count_rho_disclose": COUNT_RHO_DISCLOSE,
++        "coverage_median_hiliq": COVERAGE_MEDIAN_HILIQ,
++        "coverage_excl_median_min": COVERAGE_EXCL_MEDIAN_MIN,
++        "zero_frac_max": ZERO_FRAC_MAX,
++        "coverage_median_fulla_research": COVERAGE_MEDIAN_FULLA,
++        "leaf18_alpha": str(LEAF18_ALPHA_DEFAULT.relative_to(ROOT)),
++        "leaf18v_alpha": str(LEAF18V_ALPHA_DEFAULT.relative_to(ROOT)),
++        "leaf27_alpha": str(LEAF27_ALPHA_DEFAULT.relative_to(ROOT)),
++        "leaf24_dir": str(LEAF24_DIR_DEFAULT.relative_to(ROOT)),
++        "leaf34_mask": str(LEAF34_MASK_DEFAULT.relative_to(ROOT)),
++        "leaf35_mask": str(LEAF35_MASK_DEFAULT.relative_to(ROOT)),
++        "leaf36_count_json": str(LEAF36_COUNT_JSON_DEFAULT.relative_to(ROOT)),
++        "primary_cli": (
++            f"PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python {SCRIPT_REL} "
++            f"--universe HILIQ --window x2 --x2-end {X2_END_TRADE_DATE} "
++            f"--allow-real-data --arch-ok-path <OK> --out <OUT>"
++        ),
++        "dry_cli": (
++            f"PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python {SCRIPT_REL} "
++            f"--dry-compile-only"
++        ),
++        "ban_book_smoke": True,
++        "ban_selfcheck": True,
++        "ban_leaf24_imax_intraday_main_alpha": True,
++        "ban_leaf18_27_24_alpha_as_main_input": True,
++        "ban_silent_full_e_id_upgrade": True,
++        "ban_reopen_leaf36_inquiry": True,
++        "ban_posthoc_q_or_sign_flip": True,
++        "keep_does_not_unblock_x2_accept": True,
++        "primary_load": "panel_imax_proxy_rebal_cs",
++        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_v1",
++        "known_schema_static": {
++            "panel_cols": KNOWN_PANEL_COLS,
++            "mask_cols": KNOWN_MASK_COLS,
++            "mask_out_cols": KNOWN_MASK_OUT_COLS,
++            "sw_cols": KNOWN_SW_COLS,
++            "float_cols": KNOWN_FLOAT_COLS,
++            "daily_cols": KNOWN_DAILY_COLS,
++        },
++        "sign_notes": {
++            "ban_no_overlap_report_bypass_on_real": True,
++            "peak_proof_required": [
++                "after_mask",
++                "after_panel_imax",
++                "after_mask_cs_rebal_*",
++                "after_daily_concat",
++            ],
++            "rss_limit_mb": 1500,
++            "jaccard_ge_0_7_hard_reject_vs_leaf18_18v_27": True,
++            "rho_gt_0_5_strength_filter_only": True,
++            "ban_restored_ok": list(FORBID_OK_SHA8),
++            "ban_raise_rss": True,
++            "ban_posthoc_q_or_sign_flip": True,
++            "c10_leaf36_hold_closed_no_reopen": True,
++            "c11_overlay_not_leaf24_imax_main": True,
++            "c12_approx_not_x2_accept": True,
++            "arch_ok_path_required_for_real": True,
++            "process_gate_note": (
++                "Real build requires existing --arch-ok-path (file must exist; "
++                "sha8 not in forbid). Process gate = that .ok + Main window; "
++                "ban inventing / self-opening a fake .ok."
++            ),
++        },
++        "arch_conditions": {
++            "C1": "FROZEN_prereg_complete",
++            "C2": "formal_script_this_ticket",
++            "C3": "IMAX_proxy_PIN_e01be34c_option_B",
++            "C4": "mask_only_PRIMARY_soft_penalty_non_PRIMARY",
++            "C5": "top_q_0_20_sign_frozen_high_IMAX_exclude",
++            "C6": "HILIQ_primary_FULLA_research_optional",
++            "C7": "overlap_hard_18_18v_27_disclose_24_34_35_36",
++            "C8": "forbid_eb70eef4_00eec671_10927bd9_25ae4572_plus_prior",
++            "C9": "rss_1500_peak_proof",
++            "C10": "leaf36_HOLD_CLOSED_no_reopen",
++            "C11": "overlay_not_leaf24_imax_main_leaf",
++            "C12": "APPROX_not_X2_ACCEPT",
++            "C13": "decay_KEEP_three_gates_KEEP_does_not_unblock",
++        },
++        "note": (
++            "dry-compile-only; ZERO big-table load; "
++            "NOT authorized to execute; wait Arch script review -> new X2 .ok "
++            f"(ban RESTORED {'+'.join(FORBID_OK_SHA8[:10])}…); "
++            "peak_proof REQUIRED; rss=1500 ban raise; "
++            "PRIMARY=HILIQ mask-only top_q=0.20; FULLA only --also-fulla-research; "
++            f"FROZEN={FROZEN_SHA8}; PIN={PIN_SHA8}; ArchFROZEN={ARCH_FROZEN_REVIEW_SHA8}; "
++            "C3=B IMAX_proxy continuous APPROX; C11≠leaf24 main; "
++            "KEEP does NOT unblock X2 ACCEPT; COUNT APPROX != X2 ACCEPT"
++        ),
++    }
++    print(json.dumps(payload, indent=2, ensure_ascii=False))
++    if uni == "FULLA":
++        print(
++            "STOP: --universe FULLA forbidden as PRIMARY; "
++            "use --universe HILIQ and optional --also-fulla-research",
++            file=sys.stderr,
++        )
++        return 2
++    if getattr(args, "window", "x2") != "x2":
++        print(
++            f"STOP: --window must be x2 this ticket (got {args.window})",
++            file=sys.stderr,
++        )
++        return 2
++    return 0
++
++
++def ols_resid(y, X):
++    import numpy as np
++
++    b, *_ = np.linalg.lstsq(X, y, rcond=None)
++    return y - X @ b
++
++
++def spearman_rho(a, b) -> float:
++    import numpy as np
++    import pandas as pd
++
++    if len(a) < 5:
++        return float("nan")
++    ra = pd.Series(a).rank().to_numpy()
++    rb = pd.Series(b).rank().to_numpy()
++    if np.nanstd(ra) == 0 or np.nanstd(rb) == 0:
++        return float("nan")
++    return float(np.corrcoef(ra, rb)[0, 1])
++
++
++def exclusion_jaccard(excl_a: set, excl_b: set) -> float:
++    u = excl_a | excl_b
++    if not u:
++        return float("nan")
++    return float(len(excl_a & excl_b) / len(u))
++
++
++def rolling_imax(arr, win: int = IMAX_WIN, k: int = IMAX_K_MAX, min_valid: int = IMAX_MIN_VALID):
++    """IMAX_proxy = mean(largest k finite in trailing win); NaN if <min_valid."""
++    import numpy as np
++
++    n = len(arr)
++    out = np.full(n, np.nan)
++    for i in range(n):
++        s = max(0, i - win + 1)
++        w = arr[s : i + 1]
++        w = w[np.isfinite(w)]
++        if len(w) < min_valid:
++            continue
++        out[i] = (
++            float(np.mean(np.partition(w, -k)[-k:])) if len(w) >= k else float(np.mean(w))
++        )
++    return out
++
++def _load_mask_members(mask_path: Path, start: str, end: str, *, label: str):
++    import pandas as pd
++    import pyarrow.parquet as pq
++
++    if not mask_path.is_file():
++        raise SystemExit(
++            f"STOP: {label} mask missing at {mask_path}; refuse silent empty-universe"
++        )
++    start_ts = pd.Timestamp(start)
++    end_ts = pd.Timestamp(end)
++    tab = pq.read_table(
++        mask_path,
++        columns=["date", "instrument", "in_universe"],
++        filters=[
++            ("date", ">=", start_ts),
++            ("date", "<=", end_ts),
++            ("in_universe", "==", True),
++        ],
++    )
++    df = tab.to_pandas()
++    if df.empty:
++        raise SystemExit(
++            f"STOP: {label} mask empty for [{start}, {end}] at {mask_path}"
++        )
++    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
++    df["instrument"] = df["instrument"].map(to_ts)
++    by_day: dict = {}
++    for d, g in df.groupby("date", sort=True):
++        by_day[pd.Timestamp(d)] = sorted(set(g["instrument"].tolist()))
++    codes = sorted({c for v in by_day.values() for c in v})
++    meta = {
++        "mask_path": str(
++            mask_path.relative_to(ROOT) if mask_path.is_relative_to(ROOT) else mask_path
++        ),
++        "mask_sha256": sha256_file(mask_path),
++        "mask_sha8": sha256_file(mask_path)[:8],
++        "n_codes_union": len(codes),
++        "n_days_with_members": len(by_day),
++        "label": label,
++    }
++    if label == "HILIQ" and meta["mask_sha8"] != HI_LIQ_MASK_SHA8_PIN:
++        print(
++            f"WARN: HI_LIQ mask sha8={meta['mask_sha8']} != pin {HI_LIQ_MASK_SHA8_PIN}",
++            file=sys.stderr,
++        )
++    return by_day, codes, meta
++
++
++def _load_trade_cal(cal_path: Path, start: str, end: str) -> list:
++    import pandas as pd
++    import pyarrow.parquet as pq
++
++    if not cal_path.is_file():
++        raise SystemExit(f"STOP: trade calendar missing {cal_path}")
++    t = pq.read_table(cal_path, columns=["cal_date", "is_open"])
++    df = t.to_pandas()
++    df = df[df["is_open"] == 1].copy()
++    df["d"] = pd.to_datetime(df["cal_date"].astype(str), format="%Y%m%d", errors="coerce")
++    df = df.dropna(subset=["d"])
++    lo = pd.Timestamp(start)
++    hi = pd.Timestamp(end)
++    days = sorted(df.loc[(df["d"] >= lo) & (df["d"] <= hi), "d"].tolist())
++    return [pd.Timestamp(d).normalize() for d in days]
++
++
++def _load_panel_imax(panel_dir: Path, by_day: dict, *, rss_cb=None):
++    """Load panel ret/ret_on; compute r_id + IMAX_proxy on HI_LIQ members."""
++    import numpy as np
++    import pandas as pd
++    import pyarrow.parquet as pq
++
++    cols = ["date", "instrument", "hiliq", "ret", "ret_on"]
++    frames = []
++    panel_sha = {}
++    for y in (2023, 2024, 2025, 2026):
++        p = panel_dir / f"cs_panel_{y}.parquet"
++        if not p.is_file():
++            raise SystemExit(f"STOP: PIN_GAP panel missing {p}")
++        panel_sha[str(y)] = sha256_file(p)[:8]
++        pin = PANEL_SHA8_PIN.get(str(y))
++        if pin and panel_sha[str(y)] != pin:
++            print(
++                f"WARN: panel {y} sha8={panel_sha[str(y)]} != pin {pin}",
++                file=sys.stderr,
++            )
++        frames.append(pq.read_table(p, columns=cols).to_pandas())
++    panel = pd.concat(frames, ignore_index=True)
++    del frames
++    gc.collect()
++    if rss_cb:
++        rss_cb("after_panel_concat")
++    panel["date"] = pd.to_datetime(panel["date"]).dt.normalize()
++    panel["instrument"] = panel["instrument"].map(to_ts)
++    warm_lo = pd.Timestamp(WARM_START)
++    x2_hi = pd.Timestamp(X2_END)
++    panel = panel[(panel["date"] >= warm_lo) & (panel["date"] <= x2_hi)].copy()
++    key = (
++        pd.DataFrame(
++            [(d, c) for d, mems in by_day.items() for c in mems],
++            columns=["date", "instrument"],
++        )
++        .drop_duplicates()
++        .assign(in_hiliq=True)
++    )
++    key["date"] = pd.to_datetime(key["date"]).dt.normalize()
++    panel = panel.merge(key, on=["date", "instrument"], how="left")
++    panel["in_hiliq"] = panel["in_hiliq"].fillna(False)
++    if panel["hiliq"].dtype == bool:
++        panel["in_hiliq"] = panel["in_hiliq"] & panel["hiliq"].fillna(False)
++    ret = panel["ret"].astype(float)
++    ron = panel["ret_on"].astype(float)
++    panel["r_id"] = (1.0 + ret) / (1.0 + ron) - 1.0
++    panel.loc[ret.isna() | ron.isna() | ~np.isfinite(panel["r_id"]), "r_id"] = np.nan
++    sub = panel.loc[
++        panel["in_hiliq"] & panel["r_id"].notna(), ["date", "instrument", "r_id"]
++    ]
++    del panel
++    gc.collect()
++    if rss_cb:
++        rss_cb("after_r_id")
++    piv = sub.pivot_table(
++        index="date", columns="instrument", values="r_id", aggfunc="last"
++    ).sort_index()
++    del sub
++    gc.collect()
++    imax_cols = {c: rolling_imax(piv[c].to_numpy(dtype=float)) for c in piv.columns}
++    imax = pd.DataFrame(imax_cols, index=piv.index)
++    del piv, imax_cols
++    gc.collect()
++    if rss_cb:
++        rss_cb("after_panel_imax")
++    long = imax.stack(future_stack=True).rename("imax_proxy").reset_index()
++    long.columns = ["date", "instrument", "imax_proxy"]
++    long["date"] = pd.to_datetime(long["date"]).dt.normalize()
++    long["instrument"] = long["instrument"].map(to_ts)
++    return long, panel_sha
++
++
++def _cross_section_mask_imax(cs, top_q: float = TOP_Q):
++    import numpy as np
++
++    df = cs.copy()
++    if df.empty:
++        return df
++    q = float(top_q)
++    if not (0.0 < q < 1.0):
++        raise SystemExit(f"STOP: top_q must be in (0,1); got {q}")
++    thr = float(df["imax_proxy"].quantile(1.0 - q))
++    df["mask"] = np.where(df["imax_proxy"] >= thr, 0.0, 1.0)
++    df["alpha"] = -df["imax_proxy"].astype(float)
++    df["mask_threshold"] = thr
++    return df
++
++def _load_sw_table(sw_path: Path):
++    import pyarrow.parquet as pq
++
++    if not sw_path.is_file():
++        raise SystemExit(f"STOP: SW L1 missing {sw_path}; PIN_GAP refuse silent skip")
++    t = pq.read_table(
++        sw_path,
++        columns=[
++            "instrument_id", "sw_code", "sw_name", "in_date", "out_date", "available_at",
++        ],
++    )
++    sw = t.to_pandas()
++    sw["ts_code"] = sw["instrument_id"].map(to_ts)
++    sw["in_date"] = _as_naive_norm_series(sw["in_date"])
++    sw["out_date"] = _as_naive_norm_series(sw["out_date"])
++    sw["available_at"] = _as_naive_norm_series(sw["available_at"])
++    return sw
++
++
++def _sw_asof_codes(sw, asof, codes: list[str]) -> dict[str, str]:
++    import pandas as pd
++
++    asof = pd.Timestamp(asof).normalize()
++    out = {}
++    sub = sw[sw["ts_code"].isin(codes)].copy()
++    if sub.empty:
++        return out
++    ok = (sub["available_at"].isna() | (sub["available_at"] <= asof)) & (
++        sub["in_date"].isna() | (sub["in_date"] <= asof)
++    )
++    ok = ok & (sub["out_date"].isna() | (sub["out_date"] > asof))
++    sub = sub[ok]
++    for c, g in sub.groupby("ts_code"):
++        g2 = g.sort_values("available_at")
++        out[str(c)] = str(g2.iloc[-1]["sw_code"])
++    return out
++
++
++def _load_logmv_t1(float_path: Path, dates: list, codes: list[str]):
++    import numpy as np
++    import pandas as pd
++    import pyarrow.parquet as pq
++
++    if not float_path.is_file():
++        raise SystemExit(f"STOP: PIN_GAP float_mktcap missing {float_path}")
++    dmin = min(pd.Timestamp(d) for d in dates) - pd.Timedelta(days=10)
++    dmax = max(pd.Timestamp(d) for d in dates)
++    t = pq.read_table(
++        float_path,
++        columns=["instrument_id", "trade_date", "float_mktcap"],
++        filters=[
++            ("trade_date", ">=", dmin.to_datetime64()),
++            ("trade_date", "<=", dmax.to_datetime64()),
++        ],
++    )
++    df = t.to_pandas()
++    df["ts_code"] = df["instrument_id"].map(to_ts)
++    df = df[df["ts_code"].isin(set(codes))].copy()
++    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.normalize()
++    df["float_mktcap"] = df["float_mktcap"].astype(float)
++    df = df[df["float_mktcap"] > 0]
++    df["logmv"] = np.log(df["float_mktcap"])
++    out = {}
++    by_code = {c: g.sort_values("trade_date") for c, g in df.groupby("ts_code")}
++    for d in dates:
++        d = pd.Timestamp(d).normalize()
++        for c in codes:
++            g = by_code.get(c)
++            if g is None or g.empty:
++                continue
++            prev = g[g["trade_date"] < d]
++            if prev.empty:
++                continue
++            out[(d, c)] = float(prev.iloc[-1]["logmv"])
++    return out
++
++
++def _load_style_from_bars(daily_dir: Path, adj_path: Path, day, codes: list[str], cal_days: list):
++    import numpy as np
++    import pandas as pd
++    import pyarrow.parquet as pq
++
++    d = pd.Timestamp(day).normalize()
++    if d not in set(cal_days):
++        return {}
++    i = cal_days.index(d)
++    win = cal_days[max(0, i - 19) : i + 1]
++    if len(win) < 15:
++        return {}
++    frames = []
++    for wd in win:
++        ds = pd.Timestamp(wd).strftime("%Y%m%d")
++        p = daily_dir / f"{ds}.parquet"
++        if not p.is_file():
++            continue
++        df = pd.read_parquet(p, columns=["ts_code", "trade_date", "close", "amount"])
++        df["ts_code"] = df["ts_code"].map(to_ts)
++        df = df[df["ts_code"].isin(set(codes))]
++        frames.append(df)
++    if not frames:
++        return {}
++    bars = pd.concat(frames, ignore_index=True)
++    bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
++    if adj_path.is_file():
++        at = pq.read_table(
++            adj_path,
++            columns=["ts_code", "trade_date", "adj_factor"],
++            filters=[
++                ("trade_date", ">=", min(win).strftime("%Y%m%d")),
++                ("trade_date", "<=", max(win).strftime("%Y%m%d")),
++            ],
++        )
++        adj = at.to_pandas()
++        adj["ts_code"] = adj["ts_code"].map(to_ts)
++        adj["trade_date"] = pd.to_datetime(
++            adj["trade_date"].astype(str), errors="coerce"
++        ).dt.normalize()
++        bars = bars.merge(adj, on=["ts_code", "trade_date"], how="left")
++    else:
++        bars["adj_factor"] = np.nan
++    bars["hfq"] = bars["close"].astype(float) * bars["adj_factor"].astype(float)
++    bars["amount_cny"] = bars["amount"].astype(float) * 1000.0
++    out = {}
++    for c, g in bars.groupby("ts_code"):
++        g = g.sort_values("trade_date")
++        if len(g) < 15:
++            continue
++        hfq = g["hfq"].astype(float)
++        if hfq.isna().all():
++            continue
++        r = hfq.pct_change()
++        mom = (
++            float(hfq.iloc[-1] / hfq.iloc[0] - 1.0)
++            if hfq.iloc[0] == hfq.iloc[0]
++            else np.nan
++        )
++        vol = float(r.std()) if r.notna().sum() >= 10 else np.nan
++        adv = g["amount_cny"].astype(float)
++        adv = adv[adv > 0]
++        logadv = float(np.log(adv.mean())) if len(adv) else np.nan
++        if not np.isfinite(mom) or not np.isfinite(vol) or not np.isfinite(logadv):
++            continue
++        out[str(c)] = {"mom20": mom, "vol20": vol, "logADV20": logadv}
++    return out
++
++
++def _soft_penalty_resid(df):
++    """Soft-penalty on -IMAX_proxy (NON PRIMARY). Requires SW+logmv+style."""
++    import numpy as np
++    import pandas as pd
++
++    df = df.copy()
++    df["y"] = -df["imax_proxy"].astype(float)
++    out_rows = []
++    for sw, g in df.groupby("sw_code"):
++        g = g.copy()
++        if len(g) < 5:
++            g["soft_penalty"] = g["y"] - g["y"].mean()
++            out_rows.append(g)
++            continue
++        g["y"] = g["y"] - g["y"].mean()
++        X = np.column_stack(
++            [
++                np.ones(len(g)),
++                g["logmv"].to_numpy(float),
++                g["mom20"].to_numpy(float),
++                g["vol20"].to_numpy(float),
++                g["logADV20"].to_numpy(float),
++            ]
++        )
++        if not np.isfinite(X).all() or not np.isfinite(g["y"].to_numpy(float)).all():
++            continue
++        resid = ols_resid(g["y"].to_numpy(float), X)
++        g["soft_penalty"] = resid
++        out_rows.append(g)
++    if not out_rows:
++        return df.iloc[0:0]
++    return pd.concat(out_rows, ignore_index=True)
++
++def _load_other_alpha(path: Path, sample_dates: list):
++    """Load alpha/score on sample dates. Supports alpha parquet or exclusion mask."""
++    import numpy as np
++    import pandas as pd
++    import pyarrow as pa
++    import pyarrow.parquet as pq
++
++    if not path.is_file():
++        return None
++    schema = pq.read_schema(path)
++    names = set(schema.names)
++    if "trade_date" in names and "ts_code" in names:
++        date_col, inst_col = "trade_date", "ts_code"
++    elif "date" in names and "instrument" in names:
++        date_col, inst_col = "date", "instrument"
++    else:
++        return None
++    field = schema.field(date_col)
++    is_str = pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
++    if "mask" in names and "alpha" not in names:
++        cols = [date_col, inst_col, "mask"]
++        if is_str:
++            dmin = min(sample_dates).strftime("%Y-%m-%d")
++            dmax = max(sample_dates).strftime("%Y-%m-%d")
++            t = pq.read_table(
++                path, columns=cols,
++                filters=[(date_col, ">=", dmin), (date_col, "<=", dmax)],
++            )
++        else:
++            t = pq.read_table(
++                path, columns=cols,
++                filters=[
++                    (date_col, ">=", min(sample_dates).to_datetime64()),
++                    (date_col, "<=", max(sample_dates).to_datetime64()),
++                ],
++            )
++        df = t.to_pandas()
++        df[date_col] = pd.to_datetime(df[date_col])
++        want = set(pd.Timestamp(d) for d in sample_dates)
++        df = df[df[date_col].isin(want)].copy()
++        df.rename(columns={date_col: "date", inst_col: "instrument"}, inplace=True)
++        df["instrument"] = df["instrument"].map(to_ts)
++        df["score"] = -df["mask"].astype(float)
++        df["excl_flag"] = (df["mask"].astype(float) == 0.0).astype(int)
++        return df
++    if "alpha" not in names:
++        return None
++    cols = [date_col, inst_col, "alpha"]
++    if is_str:
++        dmin = min(sample_dates).strftime("%Y-%m-%d")
++        dmax = max(sample_dates).strftime("%Y-%m-%d")
++        t = pq.read_table(
++            path, columns=cols,
++            filters=[(date_col, ">=", dmin), (date_col, "<=", dmax)],
++        )
++    else:
++        t = pq.read_table(
++            path, columns=cols,
++            filters=[
++                (date_col, ">=", min(sample_dates).to_datetime64()),
++                (date_col, "<=", max(sample_dates).to_datetime64()),
++            ],
++        )
++    df = t.to_pandas()
++    df[date_col] = pd.to_datetime(df[date_col])
++    want = set(pd.Timestamp(d) for d in sample_dates)
++    df = df[df[date_col].isin(want)].copy()
++    df.rename(
++        columns={date_col: "date", inst_col: "instrument", "alpha": "score"},
++        inplace=True,
++    )
++    df["instrument"] = df["instrument"].map(to_ts)
++    df["excl_flag"] = np.nan
++    return df
++
++
++def _load_leaf24_alpha(leaf24_dir: Path, sample_dates: list):
++    import pandas as pd
++
++    frames = []
++    years = sorted({pd.Timestamp(d).year for d in sample_dates})
++    for y in years:
++        p = leaf24_dir / f"alpha_HILIQ_{y}.parquet"
++        if p.is_file():
++            o = _load_other_alpha(p, sample_dates)
++            if o is not None:
++                frames.append(o)
++    if not frames:
++        return None
++    return pd.concat(frames, ignore_index=True)
++
++
++def write_overlap_report(
++    alpha_df,
++    out_path: Path,
++    paths: dict[str, Path],
++    leaf24_dir: Path,
++    sample_n: int = 6,
++) -> dict:
++    """C7: exclusion-set Jaccard + Spearman rho vs hard/disclose targets."""
++    import numpy as np
++    import pandas as pd
++
++    alpha_df = alpha_df.copy()
++    alpha_df["trade_date"] = pd.to_datetime(alpha_df["trade_date"])
++    days = sorted(alpha_df["trade_date"].unique())
++    if not days:
++        payload = {
++            "error": "empty_alpha",
++            "schema": "leaf37_overlap_vs_leaf18_18v_27_hard_24_34_35_36_disclose",
++        }
++        out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
++        return payload
++    rebal = days[::REBAL_EVERY]
++    if rebal[-1] != days[-1]:
++        rebal = list(rebal) + [days[-1]]
++    if len(rebal) <= sample_n:
++        sample = list(rebal)
++    else:
++        idxs = np.linspace(0, len(rebal) - 1, sample_n)
++        sample = []
++        seen = set()
++        for i in idxs:
++            d = rebal[int(round(i))]
++            if d not in seen:
++                sample.append(d)
++                seen.add(d)
++    sample = sorted(sample)
++
++    pin_gaps_ov = []
++    others = {}
++    score_meta = {}
++    for tag, path in paths.items():
++        if tag == "leaf24":
++            o = _load_leaf24_alpha(leaf24_dir, sample)
++            score_meta[tag] = "alpha_yearly_HILIQ" if o is not None else None
++            if o is None:
++                pin_gaps_ov.append(
++                    {
++                        "tag": tag,
++                        "gap": "PIN_GAP_missing_or_unreadable_leaf24",
++                        "path": str(
++                            leaf24_dir.relative_to(ROOT)
++                            if leaf24_dir.is_relative_to(ROOT)
++                            else leaf24_dir
++                        ),
++                        "role": "disclose",
++                    }
++                )
++            others[tag] = o
++            continue
++        if tag == "leaf36":
++            pin_gaps_ov.append(
++                {
++                    "tag": tag,
++                    "gap": "DISCLOSE_leaf36_HOLD_CLOSED_no_formal_mask",
++                    "path": str(
++                        path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
++                    ),
++                    "role": "disclose",
++                    "hold_who": LEAF36_HOLD_WHO_SHA8,
++                    "hold_json": LEAF36_HOLD_JSON_SHA8,
++                    "file_exists": bool(path.is_file()),
++                }
++            )
++            others[tag] = None
++            score_meta[tag] = "HOLD_CLOSED_count_json_only"
++            continue
++        o = _load_other_alpha(path, sample)
++        score_meta[tag] = "alpha_or_mask" if o is not None else None
++        if o is None:
++            role = "hard" if tag in HARD_OVERLAP_TAGS else "disclose"
++            pin_gaps_ov.append(
++                {
++                    "tag": tag,
++                    "gap": "PIN_GAP_missing_file",
++                    "path": str(
++                        path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
++                    ),
++                    "role": role,
++                }
++            )
++        others[tag] = o
++
++    rows = []
++    any_hard = False
++    for d in sample:
++        a = alpha_df[alpha_df["trade_date"] == pd.Timestamp(d)]
++        if a.empty:
++            continue
++        codes = a["ts_code"].astype(str).map(to_ts).tolist()
++        scores = a["alpha"].to_numpy(float)
++        excl_us = set(
++            a.loc[a["mask"].astype(float) == 0.0, "ts_code"].astype(str).map(to_ts)
++        )
++        ent = {
++            "date": str(pd.Timestamp(d).date()),
++            "n_alpha": len(codes),
++            "n_excl_us": len(excl_us),
++        }
++        for tag, other in others.items():
++            if other is None:
++                ent[f"rho_{tag}"] = None
++                ent[f"j_excl_{tag}"] = None
++                ent[f"n_common_excl_{tag}"] = 0
++                ent[f"missing_{tag}"] = True
++                continue
++            o = other[other["date"] == pd.Timestamp(d)]
++            if o.empty:
++                ent[f"rho_{tag}"] = None
++                ent[f"j_excl_{tag}"] = None
++                ent[f"n_common_excl_{tag}"] = 0
++                continue
++            o = o.copy()
++            o["instrument"] = o["instrument"].map(to_ts)
++            m = pd.DataFrame({"instrument": codes, "a": scores}).merge(
++                o.rename(columns={"score": "b"})[["instrument", "b"]],
++                on="instrument",
++                how="inner",
++            )
++            ent[f"n_common_{tag}"] = int(len(m))
++            ent[f"rho_{tag}"] = spearman_rho(m["a"].to_numpy(), m["b"].to_numpy())
++            if "excl_flag" in o.columns and o["excl_flag"].notna().any():
++                excl_other = set(
++                    o.loc[o["excl_flag"].astype(float) == 1.0, "instrument"].astype(str)
++                )
++            else:
++                k = max(1, int(round(len(o) * TOP_Q)))
++                excl_other = set(
++                    o.nsmallest(k, "score")["instrument"].astype(str).tolist()
++                )
++            j = exclusion_jaccard(excl_us, excl_other)
++            ent[f"j_excl_{tag}"] = j
++            ent[f"n_common_excl_{tag}"] = int(len(excl_us & excl_other))
++            jhard = bool(j is not None and np.isfinite(j) and j >= JACCARD_HARD)
++            ent[f"jaccard_hard_reject_{tag}"] = bool(
++                jhard and tag in HARD_OVERLAP_TAGS
++            )
++            if jhard and tag in HARD_OVERLAP_TAGS:
++                any_hard = True
++            ent[f"strength_filter_{tag}"] = bool(
++                ent[f"rho_{tag}"] is not None
++                and np.isfinite(ent[f"rho_{tag}"])
++                and ent[f"rho_{tag}"] > RHO_STRENGTH
++            )
++        rows.append(ent)
++
++    hard_missing = [
++        g
++        for g in pin_gaps_ov
++        if g.get("role") == "hard"
++        or (
++            g.get("tag") in HARD_OVERLAP_TAGS
++            and str(g.get("gap", "")).startswith("PIN_GAP")
++        )
++    ]
++    payload = {
++        "schema": "leaf37_overlap_vs_leaf18_18v_27_hard_24_34_35_36_disclose",
++        "note": (
++            "C7 formal overlap on IMAX lottery exclusion overlay. "
++            "Score for rho = -IMAX_proxy (COUNT continuity); PRIMARY delivery = mask. "
++            "Jaccard = exclusion-set vs other high-risk tail (bottom-q alpha or mask=0). "
++            "Hard reject Jaccard>=0.7 vs leaf18/18v/27 only; "
++            "leaf24/34/35/36 disclose. rho>0.5 strength filter only. "
++            "COUNT rho18≈0.505 / rho27≈0.665 continuous disclose. "
++            "missing hard file -> PIN_GAP. COUNT APPROX cannot replace this file. "
++            "!=X2 ACCEPT. C11: NOT leaf24 g1g5_ashare_imax_intraday_v1 main alpha."
++        ),
++        "mechanism_tag": MECHANISM_TAG,
++        "sample_dates": [str(pd.Timestamp(d).date()) for d in sample],
++        "paths": {
++            k: str(v.relative_to(ROOT) if v.is_relative_to(ROOT) else v)
++            for k, v in paths.items()
++        },
++        "leaf24_dir": str(
++            leaf24_dir.relative_to(ROOT) if leaf24_dir.is_relative_to(ROOT) else leaf24_dir
++        ),
++        "score_col_meta": score_meta,
++        "hard_overlap_tags": list(HARD_OVERLAP_TAGS),
++        "disclose_overlap_tags": list(DISCLOSE_OVERLAP_TAGS),
++        "count_rho_disclose": COUNT_RHO_DISCLOSE,
++        "rows": rows,
++        "any_jaccard_hard_reject": any_hard,
++        "jaccard_hard": JACCARD_HARD,
++        "rho_strength": RHO_STRENGTH,
++        "pin_gaps": pin_gaps_ov,
++        "any_required_pin_gap": bool(hard_missing),
++        "live": False,
++    }
++    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
++    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++    tmp.replace(out_path)
++    return payload
++
++
++def _month_chunks(start: str, end: str) -> list[dict]:
++    import pandas as pd
++
++    s = pd.Timestamp(start)
++    e = pd.Timestamp(end)
++    chunks = []
++    cur = pd.Timestamp(s.year, s.month, 1)
++    cid = 0
++    while cur <= e:
++        nxt = (cur + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
++        c0 = max(cur, s)
++        c1 = min(nxt, e)
++        if c0 <= c1:
++            chunks.append(
++                {
++                    "chunk_id": cid,
++                    "start": c0.strftime("%Y-%m-%d"),
++                    "end": c1.strftime("%Y-%m-%d"),
++                }
++            )
++            cid += 1
++        cur = cur + pd.offsets.MonthBegin(1)
++    return chunks
++
++def build_mask_for_window(args, *, universe_label: str = "HILIQ") -> tuple:
++    """Build daily exclusion mask from panel IMAX_proxy (C3=B)."""
++    import numpy as np
++    import pandas as pd
++
++    stage("build_start")
++    split_kb = int(0.85 * args.c4_kb)
++
++    def _rss(label: str) -> int:
++        return check_rss(
++            label,
++            rss_limit_mb=args.rss_limit_mb,
++            c4_kb=args.c4_kb,
++            hard_kb=args.hard_kb,
++            split_kb=split_kb,
++        )
++
++    _rss("build_start")
++
++    mask_path = (
++        Path(args.hi_liq_mask)
++        if universe_label == "HILIQ"
++        else Path(args.fulla_mask)
++    )
++    by_day, codes, mask_meta = _load_mask_members(
++        mask_path, WARM_START, X2_END, label=universe_label
++    )
++    _rss("after_mask")
++
++    soft_pen = bool(getattr(args, "enable_soft_penalty", False))
++    sw = None
++    cal_days = _load_trade_cal(Path(args.calendar), WARM_START, X2_END)
++    if soft_pen:
++        sw = _load_sw_table(Path(args.sw_l1))
++        _rss("after_sw_soft_penalty")
++
++    imax_long, panel_sha = _load_panel_imax(Path(args.panel_dir), by_day, rss_cb=_rss)
++
++    x2_lo = pd.Timestamp(X2_START)
++    x2_hi = pd.Timestamp(X2_END)
++    all_days = sorted(d for d in by_day.keys() if x2_lo <= pd.Timestamp(d) <= x2_hi)
++    rebal_idx = list(range(0, len(all_days), REBAL_EVERY))
++    if rebal_idx and rebal_idx[-1] != len(all_days) - 1:
++        rebal_idx.append(len(all_days) - 1)
++    rebal_days = [all_days[i] for i in rebal_idx]
++
++    rebal_rows = []
++    coverage = []
++    pin_gaps = []
++    thr_hist = []
++    zero_days = 0
++
++    for d in rebal_days:
++        d = pd.Timestamp(d).normalize()
++        members = set(by_day.get(d, []))
++        if not members:
++            coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
++            zero_days += 1
++            continue
++        day_imax = imax_long[
++            (imax_long["date"] == d) & (imax_long["instrument"].isin(members))
++        ].copy()
++        day_imax = day_imax[day_imax["imax_proxy"].notna()]
++        day_imax = day_imax.rename(columns={"instrument": "ts_code"})
++        if day_imax.empty:
++            pin_gaps.append({"date": str(d.date()), "gap": "imax_empty_or_no_valid"})
++            coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
++            zero_days += 1
++            continue
++        cs = _cross_section_mask_imax(day_imax, TOP_Q)
++        _rss(f"after_mask_cs_rebal_{d.strftime('%Y%m%d')}")
++
++        if soft_pen:
++            sw_map = _sw_asof_codes(sw, d, cs["ts_code"].tolist())
++            logmv = _load_logmv_t1(Path(args.float_mktcap), [d], cs["ts_code"].tolist())
++            styles = _load_style_from_bars(
++                Path(args.daily_dir),
++                Path(args.adj_factor),
++                d,
++                cs["ts_code"].tolist(),
++                cal_days,
++            )
++            rows = []
++            for _, r in cs.iterrows():
++                c = str(r["ts_code"])
++                if c not in sw_map:
++                    continue
++                lm = logmv.get((d, c))
++                st = styles.get(c)
++                if lm is None or st is None:
++                    continue
++                rows.append(
++                    {
++                        "ts_code": c,
++                        "imax_proxy": float(r["imax_proxy"]),
++                        "mask": float(r["mask"]),
++                        "alpha": float(r["alpha"]),
++                        "logmv": lm,
++                        "mom20": st["mom20"],
++                        "vol20": st["vol20"],
++                        "logADV20": st["logADV20"],
++                        "sw_code": sw_map[c],
++                    }
++                )
++            if not rows:
++                pin_gaps.append({"date": str(d.date()), "gap": "soft_penalty_no_rows"})
++                coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
++                zero_days += 1
++                del cs, rows
++                gc.collect()
++                continue
++            for col in STYLE_COLS_PINNED:
++                if any(col not in r for r in rows):
++                    raise SystemExit(
++                        f"STOP: PIN_GAP missing style col {col} at {d.date()}; "
++                        f"refuse silent skip (FROZEN C4 soft-penalty)"
++                    )
++            sp = _soft_penalty_resid(pd.DataFrame(rows))
++            if sp.empty:
++                pin_gaps.append({"date": str(d.date()), "gap": "soft_penalty_empty"})
++                coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
++                zero_days += 1
++                continue
++            n_excl = int((sp["mask"] == 0).sum())
++            coverage.append({"date": str(d.date()), "n": int(len(sp)), "n_excl": n_excl})
++            thr_hist.append(float(cs["mask_threshold"].iloc[0]))
++            for _, r in sp.iterrows():
++                rebal_rows.append(
++                    {
++                        "rebal_date": d,
++                        "ts_code": r["ts_code"],
++                        "mask": float(r["mask"]),
++                        "alpha": float(r["alpha"]),
++                        "imax_proxy": float(r["imax_proxy"]),
++                        "soft_penalty": float(r["soft_penalty"]),
++                    }
++                )
++            del cs, sp, rows, logmv, styles
++            gc.collect()
++        else:
++            n_excl = int((cs["mask"] == 0).sum())
++            coverage.append({"date": str(d.date()), "n": int(len(cs)), "n_excl": n_excl})
++            thr_hist.append(float(cs["mask_threshold"].iloc[0]))
++            for _, r in cs.iterrows():
++                rebal_rows.append(
++                    {
++                        "rebal_date": d,
++                        "ts_code": r["ts_code"],
++                        "mask": float(r["mask"]),
++                        "alpha": float(r["alpha"]),
++                        "imax_proxy": float(r["imax_proxy"]),
++                    }
++                )
++            del cs
++            gc.collect()
++
++    del imax_long
++    gc.collect()
++
++    if not rebal_rows:
++        raise SystemExit(
++            "STOP: zero mask rows (check panel / HI_LIQ / IMAX_proxy / top_q)"
++        )
++
++    A = pd.DataFrame(rebal_rows)
++    del rebal_rows
++    gc.collect()
++    A = A.sort_values(["rebal_date", "ts_code"])
++    rebal_sorted = sorted(A["rebal_date"].unique())
++
++    import pyarrow as pa
++    import pyarrow.parquet as pq
++
++    month_chunks = _month_chunks(X2_START, X2_END)
++    ts_tag = datetime.now(ET).strftime("%Y%m%d_%H%M%S")
++    tmp_root = Path(f"{SAMPLER_PREFIX}chunk_{ts_tag}")
++    assert_tmp_quantlab(tmp_root, "leaf37-month-chunk-tmp")
++    tmp_root.mkdir(parents=True, exist_ok=True)
++    part_paths: list[Path] = []
++
++    for ch in month_chunks:
++        c0 = pd.Timestamp(ch["start"])
++        c1 = pd.Timestamp(ch["end"])
++        days_in = [dd for dd in all_days if c0 <= pd.Timestamp(dd) <= c1]
++        if not days_in:
++            continue
++        month_rows = []
++        for dd in days_in:
++            prev = [r for r in rebal_sorted if r <= dd]
++            if not prev:
++                continue
++            rd = prev[-1]
++            members = set(by_day.get(pd.Timestamp(dd), []))
++            g = A[A["rebal_date"] == rd]
++            g = g[g["ts_code"].isin(members)]
++            if g.empty:
++                continue
++            td = pd.Timestamp(dd).strftime("%Y-%m-%d")
++            rec = {
++                "trade_date": td,
++                "ts_code": g["ts_code"].astype(str).to_numpy(),
++                "mask": g["mask"].astype(float).to_numpy(),
++                "alpha": g["alpha"].astype(float).to_numpy(),
++                "imax_proxy": g["imax_proxy"].astype(float).to_numpy(),
++            }
++            if soft_pen and "soft_penalty" in g.columns:
++                rec["soft_penalty"] = g["soft_penalty"].astype(float).to_numpy()
++            month_rows.append(pd.DataFrame(rec))
++        if month_rows:
++            cdf = pd.concat(month_rows, ignore_index=True)
++            pth = tmp_root / f"chunk_{int(ch['chunk_id']):03d}.parquet"
++            table = pa.Table.from_pandas(cdf, preserve_index=False)
++            tmpf = pth.with_suffix(pth.suffix + ".tmp")
++            pq.write_table(table, tmpf, compression="zstd")
++            tmpf.replace(pth)
++            part_paths.append(pth)
++            del cdf, table, month_rows
++        else:
++            del month_rows
++        gc.collect()
++        _rss(f"month_chunk_{int(ch['chunk_id']):03d}_{ch['start'][:7]}")
++
++    if not part_paths:
++        raise SystemExit("STOP: zero daily mask rows after month-chunk expand")
++
++    frames = [pd.read_parquet(pth) for pth in part_paths]
++    out_df = pd.concat(frames, ignore_index=True)
++    del frames
++    gc.collect()
++    _rss("after_daily_concat")
++
++    if args.sample_dir is None:
++        for pth in part_paths:
++            try:
++                pth.unlink(missing_ok=True)
++            except OSError:
++                pass
++        try:
++            tmp_root.rmdir()
++        except OSError:
++            pass
++
++    n_vals = [c["n"] for c in coverage]
++    n_excls = [c["n_excl"] for c in coverage]
++    med_cov = float(np.median(n_vals)) if n_vals else 0.0
++    med_excl = float(np.median(n_excls)) if n_excls else 0.0
++    zero_frac = float(zero_days / len(rebal_days)) if rebal_days else 1.0
++    gate = (
++        COVERAGE_MEDIAN_HILIQ if universe_label == "HILIQ" else COVERAGE_MEDIAN_FULLA
++    )
++    cov_pass = bool(
++        med_cov >= gate
++        and med_excl >= COVERAGE_EXCL_MEDIAN_MIN
++        and zero_frac <= ZERO_FRAC_MAX
++    )
++    meta = {
++        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_v1",
++        "live": False,
++        "promotion_approved": False,
++        "ok_requested": False,
++        "x2_accept": False,
++        "approx": True,
++        "count_approx_not_x2_accept": True,
++        "full_residual_e_id": FULL_RESIDUAL_E_ID,
++        "c3_option": "B",
++        "mechanism_tag": MECHANISM_TAG,
++        "primary_delivery": PRIMARY_DELIVERY,
++        "top_q": TOP_Q,
++        "alpha_sign": ALPHA_SIGN,
++        "soft_penalty_enabled": soft_pen,
++        "soft_penalty_is_primary": False,
++        "rebal_every_td": REBAL_EVERY,
++        "c3_formula_pin": C3_FORMULA_PIN,
++        "panel_sha8": panel_sha,
++        "panel_sha8_pin": PANEL_SHA8_PIN,
++        "imax_win": IMAX_WIN,
++        "imax_k_max": IMAX_K_MAX,
++        "imax_min_valid": IMAX_MIN_VALID,
++        "style_cols_pinned": list(STYLE_COLS_PINNED),
++        "style_source_pinned": STYLE_SOURCE_PINNED,
++        "cost_bp_eval": COST_BP_EVAL,
++        "decay_keep_pin": DECAY_KEEP_PIN,
++        "universe": universe_label,
++        "primary_universe": "HILIQ",
++        "window": "x2",
++        "x2_start": X2_START,
++        "x2_end": X2_END,
++        "mask_meta": mask_meta,
++        "coverage_rebal": coverage,
++        "coverage_median": med_cov,
++        "coverage_excl_median": med_excl,
++        "zero_frac": zero_frac,
++        "coverage_gate": gate,
++        "coverage_excl_gate": COVERAGE_EXCL_MEDIAN_MIN,
++        "zero_frac_max": ZERO_FRAC_MAX,
++        "coverage_gate_pass": cov_pass,
++        "mask_threshold_median": float(np.median(thr_hist)) if thr_hist else None,
++        "pin_gaps": pin_gaps[:50],
++        "n_pin_gaps": len(pin_gaps),
++        "n_daily_rows": int(len(out_df)),
++        "n_month_chunks_written": int(len(part_paths)),
++        "frozen_sha8": FROZEN_SHA8,
++        "frozen_receipt_sha8": FROZEN_RECEIPT_SHA8,
++        "arch_frozen_review_sha8": ARCH_FROZEN_REVIEW_SHA8,
++        "pin_sha8": PIN_SHA8,
++        "dig_sha8": DIG_SHA8,
++        "forbid_ok_sha8": list(FORBID_OK_SHA8),
++        "leaf33_formal_sha8_readonly": LEAF33_FORMAL_SHA8_READONLY,
++        "leaf35_formal_sha8_readonly": LEAF35_FORMAL_SHA8_READONLY,
++        "leaf34_skeleton_sha8_readonly": LEAF34_SKELETON_SHA8,
++        "leaf32_hold_sha8_no_rollback": LEAF32_HOLD_SHA8,
++        "leaf36_hold_who_sha8": LEAF36_HOLD_WHO_SHA8,
++        "leaf36_hold_json_sha8": LEAF36_HOLD_JSON_SHA8,
++        "ban_leaf24_mechanism_main": LEAF24_MECHANISM_BAN,
++        "sampler_prefix": SAMPLER_PREFIX,
++        "rss_limit_mb": args.rss_limit_mb,
++        "peak_kb": peak_kb(),
++        "primary_load": "panel_imax_proxy_rebal_cs",
++        "created_et": datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z"),
++        "notes": [
++            "PRIMARY delivery = daily exclusion mask (mask-only); top_q=0.20",
++            "high IMAX_proxy mask=0; other computable mask=1; non-computable excluded",
++            "alpha col = -IMAX_proxy for overlap continuity with COUNT; NOT leaf24 main",
++            "C3=B: IMAX_proxy raw r_id 20d top-5 >=15; full_residual_e_id=false APPROX",
++            "soft-penalty non PRIMARY; default OFF; enable needs SW+logmv+style",
++            "PRIMARY=HILIQ; FULLA research only via --also-fulla-research",
++            "C7 hard overlap vs leaf18/18v/27; disclose leaf24/34/35/36",
++            "COUNT rho18≈0.505 / rho27≈0.665 continuous disclose",
++            "peak_proof REQUIRED; rss=1500 ban raise",
++            "C10 leaf36 HOLD CLOSED feaa5dbb/575e8276 — ban reopen",
++            "C11 overlay != leaf24 g1g5_ashare_imax_intraday_v1; C12 APPROX != ACCEPT",
++            "decay KEEP pin only (not run); KEEP does NOT unblock X2 ACCEPT",
++            "leaf33 afbbe7e7 / leaf35 434ff42c UNCHANGED; leaf32 HOLD 45dd87dc",
++        ],
++    }
++    return out_df, meta
++
++def run_build(args) -> int:
++    import pyarrow as pa
++    import pyarrow.parquet as pq
++
++    uni = normalize_universe(args.universe)
++    if uni == "FULLA":
++        print(
++            "STOP: --universe FULLA forbidden as PRIMARY; "
++            "use --universe HILIQ and optional --also-fulla-research",
++            file=sys.stderr,
++        )
++        return 2
++    if args.window != "x2":
++        print(f"STOP: --window must be x2 (got {args.window})", file=sys.stderr)
++        return 2
++    if not args.allow_real_data:
++        print(
++            "STOP: missing authorization flags "
++            "(need --allow-real-data + --arch-ok-path; or --dry-compile-only)",
++            file=sys.stderr,
++        )
++        return 2
++    if args.arch_ok_path is None or not Path(args.arch_ok_path).is_file():
++        print(
++            "STOP: --allow-real-data requires existing --arch-ok-path",
++            file=sys.stderr,
++        )
++        return 2
++    ok_sha = sha256_file(Path(args.arch_ok_path))
++    if ok_sha[:8] in FORBID_OK_SHA8:
++        print(
++            f"STOP: ban reuse forbid/CONSUMED/VOID .ok sha={ok_sha} sha8={ok_sha[:8]}",
++            file=sys.stderr,
++        )
++        return 2
++
++    if args.out is None:
++        print("STOP: --out is required for build", file=sys.stderr)
++        return 2
++    out = Path(args.out)
++    out.mkdir(parents=True, exist_ok=True)
++
++    hard_paths = {
++        "leaf18": Path(args.leaf18_alpha),
++        "leaf18v": Path(args.leaf18v_alpha),
++        "leaf27": Path(args.leaf27_alpha),
++    }
++    for label, pth in hard_paths.items():
++        if not pth.is_file():
++            print(
++                f"STOP: PIN_GAP {label} alpha missing {pth}; "
++                f"refuse silent skip (set --{label}-alpha or restore X2 product)",
++                file=sys.stderr,
++            )
++            return 3
++
++    mask_df, meta = build_mask_for_window(args, universe_label="HILIQ")
++    et_ts = datetime.now(ET).strftime("%Y%m%d_%H%M%S")
++    final_name = f"exclusion_mask_HILIQ_x2_{et_ts}.parquet"
++    final_path = out / final_name
++    table = pa.Table.from_pandas(mask_df, preserve_index=False)
++    tmpf = final_path.with_suffix(final_path.suffix + ".tmp")
++    pq.write_table(table, tmpf, compression="zstd")
++    tmpf.replace(final_path)
++
++    meta.update(
++        {
++            "script": SCRIPT_REL,
++            "script_sha256": script_sha256(),
++            "script_sha8": script_sha256()[:8],
++            "arch_ok_path": str(args.arch_ok_path),
++            "arch_ok_sha256": ok_sha,
++            "arch_ok_sha8": ok_sha[:8],
++            "exclusion_mask_path": str(final_path.name),
++            "exclusion_mask_sha256": sha256_file(final_path),
++            "peak_kb_final": peak_kb(),
++        }
++    )
++
++    hard_reject = False
++    pin_gap_fail = False
++    if args.no_overlap_report and not args.overlap_report:
++        print(
++            "STOP: --no-overlap-report banned on real path "
++            "(C7 overlap required; same spirit as leaf34 hard gate)",
++            file=sys.stderr,
++        )
++        return 2
++    ov_path = out / "overlap_vs_leaf18_18v_27_hard_24_34_35_36_disclose.json"
++    ov_paths = {
++        "leaf18": Path(args.leaf18_alpha),
++        "leaf18v": Path(args.leaf18v_alpha),
++        "leaf27": Path(args.leaf27_alpha),
++        "leaf24": Path(args.leaf24_dir),  # placeholder; write_overlap uses leaf24_dir
++        "leaf34": Path(args.leaf34_mask),
++        "leaf35": Path(args.leaf35_mask),
++        "leaf36": Path(args.leaf36_count_json),
++    }
++    try:
++        ov = write_overlap_report(
++            mask_df,
++            ov_path,
++            ov_paths,
++            leaf24_dir=Path(args.leaf24_dir),
++        )
++        meta["overlap_report"] = str(ov_path.name)
++        meta["overlap_any_jaccard_hard_reject"] = bool(ov.get("any_jaccard_hard_reject"))
++        meta["overlap_any_required_pin_gap"] = bool(ov.get("any_required_pin_gap"))
++        hard_reject = bool(ov.get("any_jaccard_hard_reject"))
++        pin_gap_fail = bool(ov.get("any_required_pin_gap"))
++    except Exception as e:
++        meta["overlap_report_error"] = repr(e)
++        print(f"STOP: overlap report failed: {e!r}", file=sys.stderr)
++        return 3
++
++    if args.also_fulla_research:
++        try:
++            a_f, m_f = build_mask_for_window(args, universe_label="FULLA")
++            fp = out / f"exclusion_mask_FULLA_x2_research_{et_ts}.parquet"
++            t2 = pa.Table.from_pandas(a_f, preserve_index=False)
++            tmp2 = fp.with_suffix(fp.suffix + ".tmp")
++            pq.write_table(t2, tmp2, compression="zstd")
++            tmp2.replace(fp)
++            meta["fulla_research_mask"] = str(fp.name)
++            meta["fulla_research_meta"] = {
++                "coverage_median": m_f.get("coverage_median"),
++                "coverage_gate_pass": m_f.get("coverage_gate_pass"),
++                "n_daily_rows": m_f.get("n_daily_rows"),
++                "note": "research only; NOT PRIMARY verdict",
++            }
++            del a_f, m_f
++            gc.collect()
++        except Exception as e:
++            meta["fulla_research_error"] = repr(e)
++            print(
++                f"WARN: FULLA research failed (PRIMARY HILIQ kept): {e!r}",
++                file=sys.stderr,
++            )
++
++    meta_path = out / "run_meta.json"
++    meta_path.write_text(
++        json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
++    )
++
++    print(
++        f"OK leaf37_imax_lottery_exclusion_overlay universe=HILIQ window=x2 "
++        f"final={final_path} peak_kb={peak_kb()} "
++        f"overlap_hard_reject={hard_reject} pin_gap={pin_gap_fail}",
++        flush=True,
++    )
++    if pin_gap_fail:
++        print(
++            "STOP: C7 PIN_GAP missing required hard overlap target "
++            "(leaf18/18v/27); see overlap JSON",
++            file=sys.stderr,
++        )
++        return 3
++    if hard_reject:
++        print(
++            "STOP: C7 Jaccard>=0.7 hard reject vs leaf18/18v/27 "
++            "(see overlap JSON)",
++            file=sys.stderr,
++        )
++        return 4
++    if not meta.get("coverage_gate_pass"):
++        print(
++            f"STOP: coverage gate fail median={meta.get('coverage_median')} "
++            f"excl_median={meta.get('coverage_excl_median')} "
++            f"zero_frac={meta.get('zero_frac')} "
++            f"(need >= {COVERAGE_MEDIAN_HILIQ}/"
++            f"{COVERAGE_EXCL_MEDIAN_MIN}/<={ZERO_FRAC_MAX})",
++            file=sys.stderr,
++        )
++        return 5
++    return 0
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(
++        description=(
++            "Leaf37 IMAX/lottery exclusion overlay build (HILIQ x x2); "
++            "NOT authorized without --allow-real-data + --arch-ok-path"
++        )
++    )
++    ap.add_argument(
++        "--universe",
++        default="HILIQ",
++        choices=("HILIQ", "HI_LIQ", "FULLA"),
++        help="PRIMARY must be HILIQ (FULLA as --universe → STOP; use --also-fulla-research)",
++    )
++    ap.add_argument("--window", default="x2", choices=("x2",))
++    ap.add_argument("--x2-end", default=X2_END_TRADE_DATE)
++    ap.add_argument("--out", type=Path, default=None, help="Required for real build")
++    ap.add_argument("--rss-limit-mb", type=int, default=RSS_LIMIT_MB)
++    ap.add_argument("--c4-kb", type=int, default=C4_KB)
++    ap.add_argument("--stop-kb", type=int, default=STOP_KB)
++    ap.add_argument("--hard-kb", type=int, default=HARD_KB)
++    ap.add_argument("--allow-real-data", action="store_true", default=False)
++    ap.add_argument(
++        "--arch-ok-path",
++        type=Path,
++        default=None,
++        help="Existing Arch .ok (sha8 not in forbid); process gate with Main window",
++    )
++    ap.add_argument(
++        "--execute",
++        action="store_true",
++        default=False,
++        help="Optional; still requires --allow-real-data + --arch-ok-path",
++    )
++    ap.add_argument("--hi-liq-mask", type=Path, default=HI_LIQ_MASK_DEFAULT)
++    ap.add_argument("--fulla-mask", type=Path, default=FULLA_MASK_DEFAULT)
++    ap.add_argument("--panel-dir", type=Path, default=PANEL_DIR_DEFAULT)
++    ap.add_argument("--sw-l1", type=Path, default=SW_L1_DEFAULT)
++    ap.add_argument("--float-mktcap", type=Path, default=FLOAT_MKTCAP_DEFAULT)
++    ap.add_argument("--daily-dir", type=Path, default=DAILY_DIR_DEFAULT)
++    ap.add_argument("--adj-factor", type=Path, default=ADJ_FACTOR_DEFAULT)
++    ap.add_argument("--calendar", type=Path, default=CAL_DEFAULT)
++    ap.add_argument("--leaf18-alpha", type=Path, default=LEAF18_ALPHA_DEFAULT)
++    ap.add_argument("--leaf18v-alpha", type=Path, default=LEAF18V_ALPHA_DEFAULT)
++    ap.add_argument("--leaf27-alpha", type=Path, default=LEAF27_ALPHA_DEFAULT)
++    ap.add_argument("--leaf24-dir", type=Path, default=LEAF24_DIR_DEFAULT)
++    ap.add_argument("--leaf34-mask", type=Path, default=LEAF34_MASK_DEFAULT)
++    ap.add_argument("--leaf35-mask", type=Path, default=LEAF35_MASK_DEFAULT)
++    ap.add_argument("--leaf36-count-json", type=Path, default=LEAF36_COUNT_JSON_DEFAULT)
++    ap.add_argument("--sample-dir", type=Path, default=None)
++    ap.add_argument(
++        "--also-fulla-research",
++        action="store_true",
++        default=False,
++        help="Optional FULLA research mask (never PRIMARY verdict)",
++    )
++    ap.add_argument(
++        "--enable-soft-penalty",
++        action="store_true",
++        default=False,
++        help="Optional soft-penalty path (NON PRIMARY; requires SW+style; default OFF)",
++    )
++    ap.add_argument(
++        "--overlap-report",
++        action="store_true",
++        default=False,
++        help="Force write overlap JSON (also default/required on real path)",
++    )
++    ap.add_argument(
++        "--no-overlap-report",
++        action="store_true",
++        default=False,
++        help="Banned on real path (C7); dry/dev only — real build STOPs if set",
++    )
++    ap.add_argument(
++        "--dry-compile-only",
++        action="store_true",
++        default=False,
++        help="Print pins; ZERO big-table load; exit 0",
++    )
++    args = ap.parse_args(argv)
++
++    if args.dry_compile_only:
++        return dry_compile_only_print(args)
++
++    if not args.allow_real_data and not args.execute:
++        print(
++            "STOP: missing authorization flags "
++            "(need --allow-real-data + --arch-ok-path; or --dry-compile-only)",
++            file=sys.stderr,
++        )
++        return 2
++    if args.execute and not args.allow_real_data:
++        print(
++            "STOP: --execute requires --allow-real-data + --arch-ok-path",
++            file=sys.stderr,
++        )
++        return 2
++    if args.out is None:
++        print(
++            "STOP: --out is required for build (or pass --dry-compile-only)",
++            file=sys.stderr,
++        )
++        return 2
++    return run_build(args)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

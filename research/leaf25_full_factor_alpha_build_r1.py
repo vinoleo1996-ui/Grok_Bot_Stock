@@ -1,0 +1,1110 @@
+#!/usr/bin/env python3
+"""Leaf25 full-factor alpha build r1 — HILIQ×x2 CFACC desens CS (DRAFT; not authorized).
+
+NEW file (2026-10-26). Does NOT reuse VOID/CONSUMED mem_probe r1/r2/r3 as build
+entry; may import leaf25_full_factor_chunk_plan_r1 for chunk boundaries and
+copies PIT end_date type-fix / HI_LIQ member load patterns from probe/r5.
+
+Mechanism (FROZEN r6 §1; mechanism_tag=g1g5_ashare_cfacc_desens_cs_v1):
+  CFACC = (n_income_ttm − n_cashflow_act_ttm) / avg(TA_E, TA_{E−1y})
+  α_raw = desensitize(winsor 1/99 → rank → normal score)(−CFACC)
+  Cross-section residual @ ~20 rebal days: SW L1 + logmv + β120 + mom + logADV20
+  + vol20 + leaf19 α (missing→0) → base-α. Fast gate NOT in α.
+
+PRIMARY: --universe HILIQ --window x2  (FULLA / --window both → STOP)
+X2: 2024-06-03 → 2026-10-09 (X2_END_TRADE_DATE=20261009)
+rss soft 1500 MB (ban raise); C4/stop/hard 1331200/1484800/1536000 kB hard lines.
+Real path: --allow-real-data + existing --arch-ok-path; ok sha ∉ forbid set.
+--dry-compile-only: print pins; ZERO big-table load.
+live=false; promotion_approved=false; ok_requested=false. No Book-Smoke / selfcheck.
+"""
+from __future__ import annotations
+
+import argparse
+import gc
+import hashlib
+import json
+import math
+import resource
+import sys
+from datetime import datetime
+from pathlib import Path
+from statistics import NormalDist
+from zoneinfo import ZoneInfo
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+try:
+    import leaf25_full_factor_chunk_plan_r1 as chunk_plan_mod
+except ImportError:  # pragma: no cover
+    chunk_plan_mod = None  # type: ignore
+
+ET = ZoneInfo("America/New_York")
+SH = ZoneInfo("Asia/Shanghai")
+ROOT = Path(__file__).resolve().parents[1]
+
+MECHANISM_TAG = "g1g5_ashare_cfacc_desens_cs_v1"
+SCRIPT_REL = "research/leaf25_full_factor_alpha_build_r1.py"
+
+# Soft cap (MB) — Main order; ban raise. Align C4/stop/hard kB as hard lines.
+RSS_LIMIT_MB = 1500
+C4_KB = 1331200
+STOP_KB = 1484800
+HARD_KB = 1536000
+SPLIT_THRESH_KB = int(0.85 * C4_KB)  # 1131520
+
+X2_START = "2024-06-03"
+X2_END = "2026-10-09"
+X2_END_TRADE_DATE = "20261009"
+
+# forbid sha8 (CONSUMED/VOID) — ban reuse as --arch-ok-path
+FORBID_OK_SHA8 = (
+    "1c32ab1e",  # step_m1 CONSUMED
+    "e107383f",
+    "2be59acd",
+    "a7d98ac9",
+    "8e51de63",
+    "3a6caa4f",
+    "8bcd79dc",
+    "725be3e0",
+    "0f50daf7",
+    "3c19dd7d",
+    "6054b3bf",  # probe ticket
+)
+
+FP = ROOT / "data/v2/financials_pit"
+PIT_INPUTS = {
+    "income": (
+        FP / "financials_pit_tushare.parquet",
+        "bc0f4c3d3cd70a11d17f44496861e21268806509656247400c64be2d3ae7fab3",
+    ),
+    "cashflow": (
+        FP / "cashflow_pit_tushare.parquet",
+        "71d5c3d39fbf2de05064ce7f21334e15c9b1d977c64494ffe699f7eeb0b95d79",
+    ),
+    "balance": (
+        FP / "balancesheet_pit_tushare.parquet",
+        "9ca054962e850cad7305262e978758c9e9f36613c4cca025efdd99276de8dbb5",
+    ),
+}
+CAL_REL = "data/v2/calendar/trade_cal_sse_pit.parquet"
+CAL_SHA_PIN = "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41"
+HI_LIQ_MASK_DEFAULT = ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
+LEAF19_ALPHA_DEFAULT = (
+    ROOT
+    / "output/ai_factory/leaf19_cfacc_rnoa/alpha_HILIQ_20261014_213132.parquet"
+)
+FLOAT_MKTCAP_DEFAULT = (
+    ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
+)
+FLOAT_MKTCAP_SHA_PIN = (
+    "346d0dda8a95e8d209fd388cfb1aad5425745fc0b5eb0a16dd4de3ab3d72a1ef"
+)
+SW_L1_DEFAULT = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
+SW_L1_SHA_PIN = (
+    "89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c"
+)
+
+KEY1 = ["ts_code", "end_date", "available_at", "update_flag", "report_type"]
+VAL = {"income": ["n_income"], "cashflow": ["n_cashflow_act"], "balance": ["total_assets"]}
+QEND = {"0331", "0630", "0930", "1231"}
+NULL = "<NULL>"
+SAMPLER_PREFIX = "/tmp/quantlab_leaf25_full_alpha_"
+
+# Known pinned column names (static schema checklist; do NOT open big parquet to verify)
+KNOWN_PIT_COLS = {
+    "income": KEY1 + VAL["income"],
+    "cashflow": KEY1 + VAL["cashflow"],
+    "balance": KEY1 + VAL["balance"],
+}
+KNOWN_MASK_COLS = ["date", "instrument", "in_universe"]
+KNOWN_ALPHA_OUT_COLS = ["trade_date", "ts_code", "alpha"]
+
+
+def stage(name: str) -> None:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    print(f"STAGE {name} ru_maxrss={rss}", file=sys.stderr, flush=True)
+
+
+def vmhwm_kb() -> int | None:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def vmrss_kb() -> int | None:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def peak_kb() -> int:
+    ru = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    hw = vmhwm_kb()
+    return max(ru, hw) if hw is not None else ru
+
+
+def check_rss(label: str, *, rss_limit_mb: int, c4_kb: int, hard_kb: int, split_kb: int) -> int:
+    pk = peak_kb()
+    soft_kb = int(rss_limit_mb) * 1024
+    vr = vmrss_kb()
+    print(
+        f"RSS_CHECK {label} peak_kb={pk} vmrss_kb={vr} "
+        f"soft={soft_kb} split={split_kb} c4={c4_kb} hard={hard_kb}",
+        flush=True,
+    )
+    if pk >= hard_kb or (vr is not None and vr >= hard_kb):
+        print(
+            f"STOP: RSS hard breached peak_kb={pk} vmrss={vr} >= hard={hard_kb}",
+            file=sys.stderr,
+        )
+        raise SystemExit(95)
+    # Soft 1500 MB: abort on VmRSS or peak ≥ soft (Main order; ban raise / no self-retry)
+    if (vr is not None and vr >= soft_kb) or pk >= soft_kb:
+        print(
+            f"STOP: RSS soft 1500MB breached peak_kb={pk} vmrss={vr} >= soft={soft_kb}; "
+            f"ABORT no self-retry",
+            file=sys.stderr,
+        )
+        raise SystemExit(94)
+    if pk >= split_kb:
+        print(
+            f"STOP: RSS >= 0.85*C4 peak_kb={pk} >= split={split_kb}; "
+            f"split further — ban raise cap",
+            file=sys.stderr,
+        )
+        raise SystemExit(94)
+    return pk
+
+
+def assert_tmp_quantlab(path: Path, what: str) -> None:
+    resolved = path.resolve()
+    parts = resolved.parts
+    ok = False
+    if len(parts) >= 3 and parts[1] == "tmp":
+        name = parts[2]
+        if name.startswith("quantlab"):
+            ok = True
+    if not ok:
+        raise SystemExit(f"STOP: {what} must be under /tmp/quantlab_* got={resolved}")
+
+
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def script_sha256() -> str:
+    return sha256_file(Path(__file__).resolve())
+
+
+def normalize_universe(u: str) -> str:
+    u = (u or "").strip()
+    if u in ("HILIQ", "HI_LIQ"):
+        return "HILIQ"
+    if u == "FULLA":
+        return "FULLA"
+    raise SystemExit(f"STOP: unknown --universe={u!r}; PRIMARY is HILIQ")
+
+
+def dry_compile_only_print(args) -> int:
+    """Zero big-table load; print hard pins for Arch/Main precheck."""
+    uni = normalize_universe(args.universe) if args.universe != "FULLA" else "FULLA"
+    # FULLA still prints then STOP below so dry-compile surfaces the forbid
+    try:
+        scr = script_sha256()
+    except OSError:
+        scr = "<unreadable>"
+    payload = {
+        "live": False,
+        "ok_requested": False,
+        "promotion_approved": False,
+        "rss_limit_mb": RSS_LIMIT_MB,
+        "c4_kb": C4_KB,
+        "stop_kb": STOP_KB,
+        "hard_kb": HARD_KB,
+        "universe": uni,
+        "window": args.window,
+        "x2_end": args.x2_end,
+        "x2_window": f"{X2_START} → {X2_END}",
+        "mechanism_tag": MECHANISM_TAG,
+        "script": SCRIPT_REL,
+        "script_sha256": scr,
+        "script_sha8": scr[:8] if isinstance(scr, str) and len(scr) >= 8 else None,
+        "chunk_mode": args.chunk_mode,
+        "forbid_ok_sha8": list(FORBID_OK_SHA8),
+        "sampler_prefix": SAMPLER_PREFIX,
+        "primary_cli": (
+            f"PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python {SCRIPT_REL} "
+            f"--universe HILIQ --window x2 --x2-end {X2_END_TRADE_DATE} "
+            f"--chunk-mode {args.chunk_mode} --out <OUT>"
+        ),
+        "ban_fulla": True,
+        "ban_window_both": True,
+        "claims": {
+            "cfacc_ttm_path": True,
+            "desensitize_winsor_rank_norm": True,
+            "residual_covars": "partial_or_pin_gap_see_meta",
+            "book_smoke": False,
+            "selfcheck": False,
+            "eval_weights": False,
+        },
+        "known_schema_static": {
+            "pit_cols": KNOWN_PIT_COLS,
+            "mask_cols": KNOWN_MASK_COLS,
+            "alpha_out_cols": KNOWN_ALPHA_OUT_COLS,
+        },
+        "note": "dry-compile-only; ZERO big-table load; DRAFT not authorized",
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if uni == "FULLA" or args.window == "both":
+        print(
+            "STOP: PRIMARY is HILIQ×x2; FULLA / --window both forbidden this ticket",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
+def _norm_pit(df):
+    """Normalize PIT keys (timestamp-aware; r3 filter fix pattern)."""
+    import pandas as pd
+
+    df = df.copy()
+    df["ts_code"] = df["ts_code"].astype(str)
+    end_dt = pd.to_datetime(df["end_date"], errors="coerce")
+    if end_dt.isna().all() and df["end_date"].notna().any():
+        end_dt = pd.to_datetime(
+            df["end_date"].astype(str).str.replace("-", "").str[:8],
+            format="%Y%m%d",
+            errors="coerce",
+        )
+    df["end_s"] = end_dt.dt.normalize()
+    for c in ("report_type", "update_flag"):
+        df[c] = df[c].astype(object).where(df[c].notna(), NULL).astype(str).str.strip()
+    av = pd.to_datetime(df["available_at"], errors="coerce", utc=True)
+    df["avail_sh_date"] = av.dt.tz_convert(SH).dt.tz_localize(None).dt.normalize()
+    df["qend_ok"] = df["end_s"].dt.strftime("%m%d").isin(QEND)
+    return df
+
+
+def _end_date_filter_value(end_type, end_lo: str):
+    import pandas as pd
+    import pyarrow as pa
+
+    if pa.types.is_timestamp(end_type) or pa.types.is_date(end_type):
+        return pd.Timestamp(end_lo)
+    if pa.types.is_string(end_type) or pa.types.is_large_string(end_type):
+        return end_lo.replace("-", "")[:8]
+    raise SystemExit(
+        f"STOP: unsupported end_date Arrow type {end_type!s}; "
+        f"expected timestamp/date or string"
+    )
+
+
+def _read_pit_projected(name: str, codes: list[str], end_lo: str, pin_sha: bool):
+    import pyarrow.parquet as pq
+
+    path, expect = PIT_INPUTS[name]
+    if not path.is_file():
+        raise SystemExit(f"STOP: PIT missing {path}")
+    if pin_sha:
+        actual = sha256_file(path)
+        if actual != expect:
+            raise SystemExit(
+                f"STOP: {name} sha mismatch actual={actual} pinned={expect}"
+            )
+    cols = KEY1 + VAL[name]
+    schema = pq.read_schema(path)
+    have = set(schema.names)
+    miss = [c for c in cols if c not in have]
+    if miss:
+        raise SystemExit(f"STOP: {name} missing columns {miss}")
+    end_lo_v = _end_date_filter_value(schema.field("end_date").type, end_lo)
+    filt = [
+        ("ts_code", "in", codes),
+        ("end_date", ">=", end_lo_v),
+    ]
+    df = pq.read_table(path, columns=cols, filters=filt).to_pandas()
+    df["row_ord"] = range(len(df))
+    return _norm_pit(df)
+
+
+def _load_hiliq_chunk_members(mask_path: Path, start: str, end: str):
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not mask_path.is_file():
+        raise SystemExit(
+            f"STOP: HI_LIQ mask missing at {mask_path}; "
+            f"refuse silent FULLA / empty-universe degradation"
+        )
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    tab = pq.read_table(
+        mask_path,
+        columns=["date", "instrument", "in_universe"],
+        filters=[
+            ("date", ">=", start_ts),
+            ("date", "<=", end_ts),
+            ("in_universe", "==", True),
+        ],
+    )
+    df = tab.to_pandas()
+    if df.empty:
+        raise SystemExit(
+            f"STOP: HI_LIQ mask empty for chunk [{start}, {end}] at {mask_path}"
+        )
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df["instrument"] = df["instrument"].astype(str)
+    by_day: dict = {}
+    for d, g in df.groupby("date", sort=True):
+        by_day[pd.Timestamp(d)] = sorted(set(g["instrument"].tolist()))
+    codes = sorted({c for v in by_day.values() for c in v})
+    return by_day, codes, {
+        "mask_path": str(
+            mask_path.relative_to(ROOT) if mask_path.is_relative_to(ROOT) else mask_path
+        ),
+        "mask_sha256": sha256_file(mask_path),
+        "n_codes_union": len(codes),
+        "n_days_with_members": len(by_day),
+    }
+
+
+def _pick_version(df, end, d, ties: list):
+    """report_type==1, avail_sh_date < d, latest avail; tie → update_flag 0 else earliest row."""
+    g = df[
+        (df["end_s"] == end)
+        & (df["report_type"] == "1")
+        & df["avail_sh_date"].notna()
+        & (df["avail_sh_date"] < d)
+    ]
+    if g.empty:
+        return None
+    top = g[g["avail_sh_date"] == g["avail_sh_date"].max()]
+    if len(top) > 1:
+        ties.append((str(top["ts_code"].iloc[0]), str(end.date()), len(top)))
+        orig = top[top["update_flag"] == "0"]
+        top = orig if not orig.empty else top
+        if "row_ord" in top.columns:
+            top = top.sort_values("row_ord")
+    return top.iloc[0]
+
+
+def ttm_cfacc_at(code: str, d, T: dict, ties: list) -> float | None:
+    """Full TTM CFACC for one name/day (step_m1_r5 rules). Returns CFACC or None."""
+    import pandas as pd
+
+    inc = T["income"][(T["income"]["ts_code"] == code) & T["income"]["qend_ok"]]
+    usable = inc[
+        (inc["report_type"] == "1")
+        & inc["avail_sh_date"].notna()
+        & (inc["avail_sh_date"] < d)
+    ]
+    if usable.empty:
+        return None
+    newest = usable["end_s"].max()
+    for E in sorted(usable["end_s"].unique(), reverse=True):
+        E = pd.Timestamp(E)
+        if E < newest - pd.DateOffset(months=3) or E < d - pd.DateOffset(months=15):
+            break
+        y1 = E - pd.DateOffset(years=1)
+        ann_prev = pd.Timestamp(year=E.year - 1, month=12, day=31)
+        comp, ok = {}, True
+        for tb, col in (("income", "n_income"), ("cashflow", "n_cashflow_act")):
+            src = T[tb][(T[tb]["ts_code"] == code) & T[tb]["qend_ok"]]
+            if E.month == 12:
+                r = _pick_version(src, E, d, ties)
+                ok &= r is not None
+                comp[tb] = {"E": r, "col": col}
+            else:
+                rs = {
+                    k: _pick_version(src, e, d, ties)
+                    for k, e in (("E", E), ("A", ann_prev), ("P", y1))
+                }
+                ok &= all(v is not None for v in rs.values())
+                comp[tb] = {**rs, "col": col}
+        bal = T["balance"][(T["balance"]["ts_code"] == code) & T["balance"]["qend_ok"]]
+        ta = {k: _pick_version(bal, e, d, ties) for k, e in (("E", E), ("P", y1))}
+        ok &= all(v is not None for v in ta.values())
+        if not ok:
+            continue
+        # TTM
+        ttm = {}
+        for tb in ("income", "cashflow"):
+            c = comp[tb]
+            col = c["col"]
+            if E.month == 12:
+                ttm[tb] = float(c["E"][col])
+            else:
+                ttm[tb] = float(c["E"][col]) + float(c["A"][col]) - float(c["P"][col])
+        ta_e = float(ta["E"]["total_assets"])
+        ta_p = float(ta["P"]["total_assets"])
+        avg_ta = (ta_e + ta_p) / 2.0
+        if avg_ta == 0.0 or math.isnan(avg_ta):
+            return None
+        return (ttm["income"] - ttm["cashflow"]) / avg_ta
+    return None
+
+
+def desensitize_cs(values: list[float]) -> list[float]:
+    """winsor 1/99 → rank → normal score (cross-section). NaN-safe; empty→[]."""
+    import numpy as np
+
+    n = len(values)
+    if n == 0:
+        return []
+    arr = np.asarray(values, dtype=float)
+    finite = np.isfinite(arr)
+    out = np.zeros(n, dtype=float)
+    if finite.sum() < 2:
+        return out.tolist()
+    x = arr[finite].copy()
+    lo, hi = np.nanpercentile(x, [1.0, 99.0])
+    if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+        x = np.clip(x, lo, hi)
+    # average ranks in (0,1)
+    order = np.argsort(x, kind="mergesort")
+    ranks = np.empty(len(x), dtype=float)
+    # handle ties via average rank
+    sx = x[order]
+    i = 0
+    while i < len(sx):
+        j = i + 1
+        while j < len(sx) and sx[j] == sx[i]:
+            j += 1
+        avg_r = 0.5 * (i + 1 + j)  # 1-based average
+        for k in range(i, j):
+            ranks[order[k]] = avg_r
+        i = j
+    u = (ranks - 0.5) / len(x)
+    u = np.clip(u, 1e-6, 1.0 - 1e-6)
+    nd = NormalDist()
+    z = np.array([nd.inv_cdf(float(v)) for v in u], dtype=float)
+    out[np.where(finite)[0]] = z
+    return out.tolist()
+
+
+def _chunk_trade_dates(chunk: dict):
+    import pandas as pd
+
+    if chunk.get("rebal_dates"):
+        return [pd.Timestamp(x) for x in chunk["rebal_dates"]]
+    if chunk.get("open_dates"):
+        return [pd.Timestamp(x) for x in chunk["open_dates"]]
+    return list(pd.bdate_range(start=chunk["start"], end=chunk["end"], freq="C"))
+
+
+def _try_load_leaf19_alpha(path: Path, start: str, end: str):
+    """Optional leaf19 α overlay; missing → empty map (residual uses 0)."""
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not path.is_file():
+        return {}, {
+            "status": "MISSING_FILE",
+            "path": str(path),
+            "note": "leaf19 α missing → 0 per FROZEN §1",
+        }
+    schema = pq.read_schema(path)
+    names = set(schema.names)
+    # accept trade_date/ts_code/alpha or date/instrument/alpha
+    cols = []
+    td_col = "trade_date" if "trade_date" in names else ("date" if "date" in names else None)
+    code_col = (
+        "ts_code"
+        if "ts_code" in names
+        else ("instrument" if "instrument" in names else None)
+    )
+    a_col = "alpha" if "alpha" in names else None
+    if not (td_col and code_col and a_col):
+        return {}, {
+            "status": "SCHEMA_GAP",
+            "path": str(path),
+            "names": sorted(names),
+        }
+    cols = [td_col, code_col, a_col]
+    # Prefer filter if trade_date is timestamp/date; else load projected + filter in pandas
+    try:
+        import pyarrow as pa
+
+        ftype = schema.field(td_col).type
+        if pa.types.is_timestamp(ftype) or pa.types.is_date(ftype):
+            filt = [
+                (td_col, ">=", pd.Timestamp(start)),
+                (td_col, "<=", pd.Timestamp(end)),
+            ]
+            df = pq.read_table(path, columns=cols, filters=filt).to_pandas()
+        else:
+            df = pq.read_table(path, columns=cols).to_pandas()
+    except Exception as e:  # noqa: BLE001 — disclose; residual→0
+        return {}, {"status": "READ_FAIL", "path": str(path), "error": str(e)[:200]}
+    df["_d"] = pd.to_datetime(df[td_col].astype(str).str.replace("-", "").str[:8], errors="coerce")
+    lo = pd.Timestamp(start)
+    hi = pd.Timestamp(end)
+    df = df[(df["_d"] >= lo) & (df["_d"] <= hi)]
+    m: dict[tuple[str, str], float] = {}
+    for _, r in df.iterrows():
+        if pd.isna(r["_d"]) or pd.isna(r[a_col]):
+            continue
+        key = (r["_d"].strftime("%Y%m%d"), str(r[code_col]))
+        m[key] = float(r[a_col])
+    return m, {
+        "status": "LOADED",
+        "path": str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path),
+        "sha256": sha256_file(path),
+        "n_rows": len(m),
+    }
+
+
+def _residual_covars_status() -> dict:
+    """Declare residual covariate reader readiness (no big-table open here)."""
+    return {
+        "sw_l1": {
+            "status": "PINNED_PATH",
+            "path": str(SW_L1_DEFAULT.relative_to(ROOT)),
+            "sha_pin": SW_L1_SHA_PIN,
+            "reader": "research/sw_members_asof.py::sw_l1_asof_with_gap_carry",
+            "note": "loaded on real path when import+table available; else residual skips SW",
+        },
+        "logmv": {
+            "status": "PINNED_PATH_PARTIAL",
+            "path": str(FLOAT_MKTCAP_DEFAULT.relative_to(ROOT)),
+            "sha_pin": FLOAT_MKTCAP_SHA_PIN,
+            "note": "float mktcap daily available; logmv = log(float_mv) T-1 on real path when columns MATCH",
+        },
+        "beta120": {
+            "status": "PIN_GAP",
+            "note": "no dedicated β120 reader pinned this ticket; residual skips; α_raw still emitted",
+        },
+        "mom": {
+            "status": "PIN_GAP",
+            "note": "mom t-120→t-20 reader not pinned this ticket; residual skips",
+        },
+        "logADV20": {
+            "status": "PIN_GAP",
+            "note": "logADV20 reader not pinned this ticket; residual skips",
+        },
+        "vol20": {
+            "status": "PIN_GAP",
+            "note": "vol20 reader not pinned this ticket; residual skips",
+        },
+        "leaf19_alpha": {
+            "status": "PINNED_PATH",
+            "path": str(LEAF19_ALPHA_DEFAULT.relative_to(ROOT)),
+            "note": "missing→0 per FROZEN §1",
+        },
+        "overall": "PARTIAL — CFACC+desens path REQUIRED; residual uses available covars only; PIN_GAP disclosed",
+    }
+
+
+def _try_sw_l1_map(codes: list[str], d):
+    """Best-effort SW L1 asof; returns dict code→l1 or {}."""
+    try:
+        import sw_members_asof as sw
+    except ImportError:
+        return {}, "IMPORT_FAIL"
+    try:
+        # Prefer gap-carry entry if present
+        if hasattr(sw, "sw_l1_asof_with_gap_carry"):
+            # Need calendar — optional; if hard, skip
+            try:
+                cal = sw.load_trade_cal(ROOT) if hasattr(sw, "load_trade_cal") else None
+            except Exception:  # noqa: BLE001
+                cal = None
+            if cal is None:
+                return {}, "NO_CAL"
+            out = {}
+            # chunked if available
+            keys = [(c, d) for c in codes]
+            if hasattr(sw, "sw_l1_asof_chunked"):
+                res = sw.sw_l1_asof_chunked(keys, cal=cal, on_overlap="count")
+            else:
+                res = sw.sw_l1_asof_with_gap_carry(keys, cal=cal, on_overlap="count")
+            if isinstance(res, dict):
+                out = {str(k[0]) if isinstance(k, tuple) else str(k): v for k, v in res.items()}
+            return out, "LOADED"
+        return {}, "NO_ENTRY"
+    except Exception as e:  # noqa: BLE001
+        return {}, f"FAIL:{type(e).__name__}:{str(e)[:120]}"
+
+
+def _ols_residual(y, X_cols: dict[str, list[float]]):
+    """Simple OLS residual y on columns (with intercept). Fallback y-mean if singular."""
+    import numpy as np
+
+    y_arr = np.asarray(y, dtype=float)
+    n = len(y_arr)
+    if n < 5:
+        return y_arr.tolist()
+    cols = [np.asarray(v, dtype=float) for v in X_cols.values() if len(v) == n]
+    if not cols:
+        return (y_arr - np.nanmean(y_arr)).tolist()
+    X = np.column_stack([np.ones(n)] + cols)
+    # drop rows with any nan
+    mask = np.isfinite(y_arr) & np.all(np.isfinite(X), axis=1)
+    resid = np.zeros(n, dtype=float)
+    if mask.sum() < 5:
+        return (y_arr - np.nanmean(y_arr)).tolist()
+    ym = y_arr[mask]
+    Xm = X[mask]
+    try:
+        beta, *_ = np.linalg.lstsq(Xm, ym, rcond=None)
+        pred = X @ beta
+        resid = y_arr - pred
+        resid[~mask] = 0.0
+    except Exception:  # noqa: BLE001
+        resid = y_arr - np.nanmean(ym)
+        resid[~mask] = 0.0
+    return resid.tolist()
+
+
+def build_chunk_alpha(
+    chunk: dict,
+    *,
+    hi_liq_mask: Path,
+    leaf19_path: Path,
+    pin_sha: bool,
+    rss_limit_mb: int,
+    c4_kb: int,
+    hard_kb: int,
+    split_kb: int,
+) -> tuple[object, dict]:
+    """CFACC TTM → desensitize(−CFACC) → optional residual → long parquet table rows."""
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+
+    stage(f"chunk_{chunk['chunk_id']}_begin")
+    check_rss(
+        f"chunk_{chunk['chunk_id']}_begin",
+        rss_limit_mb=rss_limit_mb,
+        c4_kb=c4_kb,
+        hard_kb=hard_kb,
+        split_kb=split_kb,
+    )
+
+    by_day, codes, mask_meta = _load_hiliq_chunk_members(
+        hi_liq_mask, chunk["start"], chunk["end"]
+    )
+    stage("hiliq_members_loaded")
+    check_rss(
+        "hiliq_members_loaded",
+        rss_limit_mb=rss_limit_mb,
+        c4_kb=c4_kb,
+        hard_kb=hard_kb,
+        split_kb=split_kb,
+    )
+
+    end_lo = (pd.Timestamp(chunk["start"]) - pd.Timedelta(days=800)).strftime("%Y-%m-%d")
+    pit = {}
+    for name in ("income", "cashflow", "balance"):
+        pit[name] = _read_pit_projected(name, codes, end_lo, pin_sha=pin_sha)
+        stage(f"pit_{name}_loaded")
+        check_rss(
+            f"pit_{name}_loaded",
+            rss_limit_mb=rss_limit_mb,
+            c4_kb=c4_kb,
+            hard_kb=hard_kb,
+            split_kb=split_kb,
+        )
+
+    leaf19_map, leaf19_meta = _try_load_leaf19_alpha(
+        leaf19_path, chunk["start"], chunk["end"]
+    )
+    covar_status = _residual_covars_status()
+    covar_status["leaf19_alpha_runtime"] = leaf19_meta
+
+    trade_dates = _chunk_trade_dates(chunk)
+    trade_dates = [d for d in trade_dates if d in by_day] or sorted(by_day.keys())
+    if not trade_dates:
+        raise SystemExit("STOP: no trade dates with HI_LIQ members in chunk")
+
+    # Subsample to ~20-session rebalance grid inside chunk when denser
+    if len(trade_dates) > 25:
+        step = max(1, len(trade_dates) // 20)
+        trade_dates = trade_dates[::step]
+        if trade_dates[-1] != sorted(by_day.keys())[-1]:
+            last = sorted(by_day.keys())[-1]
+            if last not in trade_dates:
+                trade_dates.append(last)
+
+    rows_td: list[str] = []
+    rows_code: list[str] = []
+    rows_alpha: list[float] = []
+    rows_cfacc: list[float] = []
+    n_valid_days = 0
+    ties: list = []
+    sw_status_last = "NOT_TRIED"
+
+    for d in trade_dates:
+        members = by_day.get(d) or []
+        raw: list[tuple[str, float]] = []
+        for code in members:
+            cfacc = ttm_cfacc_at(code, d, pit, ties)
+            if cfacc is None or not math.isfinite(cfacc):
+                continue
+            raw.append((code, cfacc))
+        if len(raw) < 5:
+            continue
+        # α_raw = desensitize(−CFACC)
+        neg = [-v for _, v in raw]
+        a_raw = desensitize_cs(neg)
+
+        # residual covariates available today
+        X: dict[str, list[float]] = {}
+        sw_map, sw_status_last = _try_sw_l1_map([c for c, _ in raw], d)
+        if sw_map:
+            # encode SW as frequency-rank proxy (stable numeric without full dummy explosion)
+            labs = [sw_map.get(c, "_UNK_") or "_UNK_" for c, _ in raw]
+            uniq = {lab: i for i, lab in enumerate(sorted(set(labs)))}
+            X["sw_l1_code"] = [float(uniq[lab]) for lab in labs]
+        # leaf19
+        td = d.strftime("%Y%m%d")
+        X["leaf19"] = [float(leaf19_map.get((td, c), 0.0)) for c, _ in raw]
+
+        if len(X) >= 1 and len(a_raw) >= 5:
+            a_base = _ols_residual(a_raw, X)
+        else:
+            a_base = a_raw
+
+        for (code, cf), a in zip(raw, a_base):
+            rows_td.append(td)
+            rows_code.append(code)
+            rows_alpha.append(float(a))
+            rows_cfacc.append(float(cf))
+        n_valid_days += 1
+        del raw, a_raw, a_base, X
+        if n_valid_days % 3 == 0:
+            gc.collect()
+            check_rss(
+                f"cs_day_{td}",
+                rss_limit_mb=rss_limit_mb,
+                c4_kb=c4_kb,
+                hard_kb=hard_kb,
+                split_kb=split_kb,
+            )
+
+    stage("cs_alpha_done")
+    check_rss(
+        "cs_alpha_done",
+        rss_limit_mb=rss_limit_mb,
+        c4_kb=c4_kb,
+        hard_kb=hard_kb,
+        split_kb=split_kb,
+    )
+    if not rows_alpha:
+        raise SystemExit(
+            "STOP: zero alpha rows (check PIT pins / HI_LIQ / TTM completeness)"
+        )
+
+    table = pa.table(
+        {
+            "trade_date": pa.array(rows_td, type=pa.string()),
+            "ts_code": pa.array(rows_code, type=pa.string()),
+            "alpha": pa.array(np.asarray(rows_alpha, dtype=np.float32), type=pa.float32()),
+            "cfacc": pa.array(np.asarray(rows_cfacc, dtype=np.float32), type=pa.float32()),
+            "chunk_id": pa.array(
+                [int(chunk["chunk_id"])] * len(rows_alpha), type=pa.int32()
+            ),
+            "universe": pa.array(["HILIQ"] * len(rows_alpha), type=pa.string()),
+        }
+    )
+    meta = {
+        "n_rows": len(rows_alpha),
+        "n_names": len(set(rows_code)),
+        "n_days": n_valid_days,
+        "hi_liq": mask_meta,
+        "pit_end_date_lo": end_lo,
+        "leaf19": leaf19_meta,
+        "residual_covars_status": covar_status,
+        "sw_status_last": sw_status_last,
+        "n_version_ties": len(ties),
+        "densify": False,
+        "float32": True,
+        "alpha_kind": "cfacc_ttm_desens_cs_residual_partial",
+        "mechanism_tag": MECHANISM_TAG,
+        "claims_full_cfacc_ttm": True,
+        "claims_full_residual_all_covars": False,
+    }
+    del rows_td, rows_code, rows_alpha, rows_cfacc, pit, by_day, codes
+    gc.collect()
+    return table, meta
+
+
+def run_build(args) -> int:
+    import pyarrow.parquet as pq
+
+    uni = normalize_universe(args.universe)
+    if uni == "FULLA":
+        print("STOP: FULLA forbidden this ticket (PRIMARY HILIQ×x2)", file=sys.stderr)
+        return 2
+    if args.window != "x2":
+        print(
+            f"STOP: --window must be x2 this ticket (got {args.window}); "
+            f"sealed / both forbidden",
+            file=sys.stderr,
+        )
+        return 2
+    if str(args.x2_end).replace("-", "") != X2_END_TRADE_DATE:
+        print(
+            f"STOP: --x2-end must be {X2_END_TRADE_DATE} (got {args.x2_end})",
+            file=sys.stderr,
+        )
+        return 2
+    if args.rss_limit_mb > RSS_LIMIT_MB:
+        print("STOP: ban raise rss_limit above 1500", file=sys.stderr)
+        return 2
+    if args.c4_kb > C4_KB or args.stop_kb > STOP_KB or args.hard_kb > HARD_KB:
+        print("STOP: ban raise C4/stop/hard above 1331200/1484800/1536000", file=sys.stderr)
+        return 2
+
+    if args.sample_dir is not None:
+        assert_tmp_quantlab(args.sample_dir, "sample-dir")
+        args.sample_dir.mkdir(parents=True, exist_ok=True)
+
+    # Real-path gate
+    if not args.allow_real_data:
+        print(
+            "STOP: real build requires --allow-real-data + --arch-ok-path "
+            "(use --dry-compile-only for static pins)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.arch_ok_path is None or not Path(args.arch_ok_path).is_file():
+        print("STOP: --allow-real-data requires existing --arch-ok-path", file=sys.stderr)
+        return 2
+    ok_sha = sha256_file(Path(args.arch_ok_path))
+    if ok_sha[:8] in FORBID_OK_SHA8 or ok_sha in {
+        # full-length known bans when available
+        "1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0",
+    }:
+        print(
+            f"STOP: ban reuse forbid/CONSUMED/VOID .ok sha={ok_sha} sha8={ok_sha[:8]}",
+            file=sys.stderr,
+        )
+        return 2
+
+    split_kb = int(0.85 * args.c4_kb)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    parts_dir = out / "alpha_parts" / "HI_LIQ"
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
+    stage("start")
+    check_rss(
+        "start",
+        rss_limit_mb=args.rss_limit_mb,
+        c4_kb=args.c4_kb,
+        hard_kb=args.hard_kb,
+        split_kb=split_kb,
+    )
+
+    mode = "month" if args.chunk_mode == "month" else "rebal_days"
+    if args.chunk_plan_json is not None:
+        plan = json.loads(Path(args.chunk_plan_json).read_text(encoding="utf-8"))
+    else:
+        if chunk_plan_mod is None:
+            print("STOP: chunk_plan module missing", file=sys.stderr)
+            return 2
+        plan = chunk_plan_mod.build_plan(
+            start=X2_START,
+            end=X2_END,
+            mode=mode,
+            max_rebaldays=args.max_rebaldays,
+            cal_path=None,
+            synthetic=False,
+            pin_sha=not args.no_pin_sha,
+        )
+
+    chunk_peaks = []
+    part_paths = []
+    chunk_metas = []
+    for chunk in plan["chunks"]:
+        if args.chunk_id is not None and int(chunk["chunk_id"]) != int(args.chunk_id):
+            continue
+        table, cmeta = build_chunk_alpha(
+            chunk,
+            hi_liq_mask=Path(args.hi_liq_mask),
+            leaf19_path=Path(args.leaf19_alpha),
+            pin_sha=not args.no_pin_sha,
+            rss_limit_mb=args.rss_limit_mb,
+            c4_kb=args.c4_kb,
+            hard_kb=args.hard_kb,
+            split_kb=split_kb,
+        )
+        part = parts_dir / (
+            f"part_{int(chunk['chunk_id']):04d}_"
+            f"{chunk['start'].replace('-', '')}_{chunk['end'].replace('-', '')}.parquet"
+        )
+        tmp = part.with_suffix(part.suffix + ".tmp")
+        pq.write_table(table, tmp, compression="zstd")
+        tmp.replace(part)
+        pk = check_rss(
+            f"after_chunk_{chunk['chunk_id']}",
+            rss_limit_mb=args.rss_limit_mb,
+            c4_kb=args.c4_kb,
+            hard_kb=args.hard_kb,
+            split_kb=split_kb,
+        )
+        chunk_peaks.append({"chunk_id": chunk["chunk_id"], "peak_kb": pk})
+        part_paths.append(str(part.relative_to(out) if part.is_relative_to(out) else part))
+        chunk_metas.append(cmeta)
+        del table
+        gc.collect()
+
+    if not part_paths:
+        print("STOP: no parts written (chunk filter empty?)", file=sys.stderr)
+        return 2
+
+    # Final concat (column-projected parts only; already chunked)
+    import pyarrow as pa
+
+    tables = [pq.read_table(out / p) for p in part_paths]
+    final = pa.concat_tables(tables)
+    et_ts = datetime.now(ET).strftime("%Y%m%d_%H%M%S")
+    final_name = f"alpha_HILIQ_x2_{et_ts}.parquet"
+    final_path = out / final_name
+    tmpf = final_path.with_suffix(final_path.suffix + ".tmp")
+    pq.write_table(final, tmpf, compression="zstd")
+    tmpf.replace(final_path)
+    del tables, final
+    gc.collect()
+    pk_final = check_rss(
+        "after_concat",
+        rss_limit_mb=args.rss_limit_mb,
+        c4_kb=args.c4_kb,
+        hard_kb=args.hard_kb,
+        split_kb=split_kb,
+    )
+
+    scr = script_sha256()
+    input_shas = {}
+    for name, (path, expect) in PIT_INPUTS.items():
+        if path.is_file():
+            input_shas[name] = sha256_file(path) if not args.no_pin_sha else expect
+    meta = {
+        "schema": "leaf25_full_factor_alpha_build_r1",
+        "live": False,
+        "promotion_approved": False,
+        "ok_requested": False,
+        "mechanism_tag": MECHANISM_TAG,
+        "universe": "HILIQ",
+        "window": "x2",
+        "x2_start": X2_START,
+        "x2_end": X2_END,
+        "x2_end_trade_date": X2_END_TRADE_DATE,
+        "script": SCRIPT_REL,
+        "script_sha256": scr,
+        "arch_ok_path": str(args.arch_ok_path),
+        "arch_ok_sha256": ok_sha,
+        "rss_limit_mb": args.rss_limit_mb,
+        "c4_kb": args.c4_kb,
+        "stop_kb": args.stop_kb,
+        "hard_kb": args.hard_kb,
+        "chunk_mode": args.chunk_mode,
+        "n_chunks_in_plan": plan.get("n_chunks"),
+        "chunk_peaks": chunk_peaks,
+        "peak_kb_final": pk_final,
+        "part_paths": part_paths,
+        "final_alpha": final_name,
+        "input_shas": input_shas,
+        "forbid_ok_sha8": list(FORBID_OK_SHA8),
+        "residual_covars_status": _residual_covars_status(),
+        "chunk_metas_tail": chunk_metas[-1] if chunk_metas else None,
+        "sampler_prefix": SAMPLER_PREFIX,
+        "created_et": datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "notes": [
+            "CFACC TTM path implemented (step_m1_r5 rules)",
+            "desensitize = winsor1/99 → rank → normal score of −CFACC",
+            "residual: available covars only; PIN_GAP for β120/mom/logADV20/vol20 disclosed",
+            "Ban FULLA / window both / raise rss / reuse forbid .ok",
+            "Not Book-Smoke / selfcheck / eval_weights",
+        ],
+    }
+    meta_path = out / "run_meta.json"
+    tmpm = meta_path.with_suffix(".json.tmp")
+    tmpm.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmpm.replace(meta_path)
+    (out / "chunk_plan_used.json").write_text(
+        json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(
+        f"OK alpha_build_r1 universe=HILIQ window=x2 parts={len(part_paths)} "
+        f"final={final_path} peak_kb={pk_final} meta={meta_path}",
+        flush=True,
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="Leaf25 full-factor alpha build r1 (HILIQ×x2 CFACC desens)"
+    )
+    ap.add_argument(
+        "--universe",
+        default="HILIQ",
+        choices=("HILIQ", "HI_LIQ"),  # FULLA intentionally absent → argparse reject
+        help="PRIMARY HILIQ (alias HI_LIQ accepted)",
+    )
+    ap.add_argument(
+        "--window",
+        default="x2",
+        choices=("x2",),  # both/sealed absent
+        help="PRIMARY x2 only this ticket",
+    )
+    ap.add_argument("--x2-end", default=X2_END_TRADE_DATE)
+    ap.add_argument("--out", type=Path, default=None, help="Required for real build")
+    ap.add_argument(
+        "--chunk-mode",
+        choices=("month", "rebal"),
+        default="month",
+        help="MEM-forced chunking; ban whole-window densify",
+    )
+    ap.add_argument("--max-rebaldays", type=int, default=20)
+    ap.add_argument("--chunk-id", type=int, default=None, help="Optional single chunk")
+    ap.add_argument("--chunk-plan-json", type=Path, default=None)
+    ap.add_argument("--rss-limit-mb", type=int, default=RSS_LIMIT_MB)
+    ap.add_argument("--c4-kb", type=int, default=C4_KB)
+    ap.add_argument("--stop-kb", type=int, default=STOP_KB)
+    ap.add_argument("--hard-kb", type=int, default=HARD_KB)
+    ap.add_argument("--allow-real-data", action="store_true", default=False)
+    ap.add_argument("--arch-ok-path", type=Path, default=None)
+    ap.add_argument("--hi-liq-mask", type=Path, default=HI_LIQ_MASK_DEFAULT)
+    ap.add_argument("--leaf19-alpha", type=Path, default=LEAF19_ALPHA_DEFAULT)
+    ap.add_argument("--sample-dir", type=Path, default=None)
+    ap.add_argument("--no-pin-sha", action="store_true")
+    ap.add_argument(
+        "--dry-compile-only",
+        action="store_true",
+        help="Print pins; ZERO big-table load; exit",
+    )
+    args = ap.parse_args(argv)
+
+    if args.dry_compile_only:
+        return dry_compile_only_print(args)
+
+    if args.out is None:
+        print("STOP: --out is required for build (or pass --dry-compile-only)", file=sys.stderr)
+        return 2
+
+    return run_build(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

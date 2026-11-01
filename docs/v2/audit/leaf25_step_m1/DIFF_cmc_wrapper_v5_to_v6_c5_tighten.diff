@@ -1,0 +1,96 @@
+--- docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh
++++ docs/v2/audit/leaf25_step_m1/cmc_wrapper_v6_c5_tighten_DRAFT.sh
+@@ -1,10 +1,18 @@
+ #!/bin/bash
+-# cmc_wrapper_v5: successor of cmc_wrapper_v4 (6174eacb). Arch 2026-10-25 P2 (leaf25 CONSUMED_PASS open item): DEFAULT sampler path MUST be under /tmp (NOT log_dir/output*). Hard-refuse sampler under /workspace/QuantLab/output* or /workspace/QuantLab/data*. Optional --sampler-dir DIR | --sampler-file PATH (both must resolve under /tmp). Other artifacts (exit/c5/log/marker/ps_*) stay in --logdir. C5/C4/STOP/guard semantics unchanged from v4.
+-# (v4 header:) successor of cmc_wrapper_v3 (61676a3c). Arch 09:44: P1-W1 vm_peak_kb excluded from peak (VmPeak = virtual, runguard L114-122); P2-W2 C4 vs 1331200 + STAGE ru_maxrss (kB, Linux getrusage) in peak; P2-W3 C5 adds scripts_eng/, python -c "import research", -m quantlab; P3 assert default alpha_combo_marginal_v1_2, PGID mismatch also kills children.
+-# (v3 header:) successor of cmc_wrapper_v2 (dcfef770). Arch 09:28 rulings: guard default-on (94322, pass iff state T or exited);
+-#   --no-guard only with allow_no_guard=true in --arch-ok; --c5-ignore only in synthetic selftests (refused for real runs unless allow_c5_ignore=true);
+-#   pre-launch ps snapshot incl. guard pid state. Selftest-only hooks: --test-stopkb N, --test-force-pgid-mismatch, --selftest-assert.
+-# usage: cmc_wrapper_v5.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID] --tag TAG --logdir DIR --outdir DIR
++# cmc_wrapper_v6_c5_tighten DRAFT (AI proposal) — successor of cmc_wrapper_v5 (4240ce82).
++# Arch VOID_FAIL_C5_FALSE_POSITIVE 2026-10-25 (43fe482e…): C5 false positive on pure `sleep 0.2`
++# holding fd→this-run logdir/wrapper_stdout.log. Tighten: (1) skip pure sleep argv0;
++# (2) whitelist fd/cwd under this-run --logdir ($L); (3) child stdout/stderr LOG under
++# /tmp/quantlab_wrapper_<tag>/ (C5/exit/ps_*/marker stay in --logdir). Sampler /tmp rule unchanged.
++# *** DRAFT — Eng 未签字前禁用于实跑；非 .ok；禁 --c5-ignore 实跑解法；禁抬帽 ***
++# (v5 header:) successor of cmc_wrapper_v4 (6174eacb). Arch 2026-10-25 P2: DEFAULT sampler under /tmp;
++#   hard-refuse sampler under output*/data*. Optional --sampler-dir|--sampler-file (under /tmp).
++# (v4 header:) successor of cmc_wrapper_v3 (61676a3c). Arch 09:44: P1-W1 vm_peak_kb excluded from peak;
++#   P2-W2 C4 vs 1331200 + STAGE ru_maxrss; P2-W3 C5 scripts_eng/; P3 assert default alpha_combo_marginal_v1_2.
++# (v3 header:) successor of cmc_wrapper_v2 (dcfef770). Arch 09:28: guard default-on; --c5-ignore only synthetic
++#   selftests unless allow_c5_ignore=true; pre-launch ps snapshot.
++# usage: cmc_wrapper_v6_c5_tighten_DRAFT.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID]
++#                          --tag TAG --logdir DIR --outdir DIR
+ #                          [--sampler-dir DIR|--sampler-file PATH] [--meta JSON] [--assert STR] [--cwd DIR] -- CMD [ARGS...]
+ # rc: child rc | 89 guard pid not T at launch | 90 --no-guard refused | 91 --c5-ignore refused | 92 test hook outside --selftest
+ #     | 95 stopline | 96 C5 hit | 97 PGID_MISMATCH | 98 cmdline assert failed | 2 usage / sampler path refused
+@@ -31,13 +39,22 @@
+ case "$_SABS" in /workspace/QuantLab/output*|/workspace/QuantLab/data*) echo "usage error: sampler resolves under output*/data*: $_SABS" >&2; exit 2;; esac
+ case "$_SABS" in /tmp/*) ;; *) echo "usage error: sampler abs must be under /tmp: $_SABS" >&2; exit 2;; esac
+ mkdir -p "$(dirname "$S")"
+-X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; LOG="$L/${TAG}.log"; MK="$L/${TAG}_start.marker"
++# v6 C5-tighten (3): child stdout/stderr under /tmp (NOT research logdir/output*); artifacts stay in --logdir
++WLOGDIR="/tmp/quantlab_wrapper_${TAG}"
++mkdir -p "$WLOGDIR"
++case "$WLOGDIR" in /tmp/*) ;; *) echo "usage error: wrapper stdout dir must be under /tmp: $WLOGDIR" >&2; exit 2;; esac
++X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; LOG="$WLOGDIR/${TAG}.log"; MK="$L/${TAG}_start.marker"
++printf '%s\n' "$LOG" > "$L/${TAG}_stdout.path"
++# abs logdir for C5 whitelist (2)
++LABS=$(readlink -f "$L" 2>/dev/null || python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$L" 2>/dev/null || echo "$L")
+ log() { echo "$(date +%H:%M:%S.%N) $*" >> "$S"; }
+ refuse() { log "REFUSED rc=$1 $2"; echo "exit=$1 refused=1 reason=$2 launched=0" >> "$X"; echo "WRAPPER_REFUSED tag=$TAG rc=$1 $2"; exit "$1"; }
+ okkey() { [ -n "$OK" ] && [ -f "$OK" ] && grep -qxE "$1=true" "$OK"; }
+ REAL=0; [ -n "$OK" ] && REAL=1
+ [ -n "$OK" ] && { [ -f "$OK" ] || refuse 2 "arch-ok not found: $OK"; log "ARCH_OK $OK sha256=$(sha256sum "$OK" | cut -c1-64)"; }
+ log "SAMPLER_PATH $S"
++log "WRAPPER_STDOUT_PATH $LOG (v6: under /tmp; pointer $L/${TAG}_stdout.path)"
++log "C5_LOGDIR_WHITELIST $LABS"
+ # --- policy checks before anything is launched ---
+ if [ "$SELFTEST" = 0 ] && { [ -n "$TSTOP" ] || [ "$TMISMATCH" = 1 ] || [ "$SELFASSERT" = 1 ]; }; then refuse 92 "test hook given without --selftest"; fi
+ if [ "$NOGUARD" = 1 ]; then okkey allow_no_guard || refuse 90 "--no-guard requires allow_no_guard=true in --arch-ok"; GUARDPID=""; log "NO_GUARD allowed by .ok allow_no_guard=true"; fi
+@@ -60,19 +77,41 @@
+ killmis() { local all; all=$(desc "$PID"); log "KILLMIS targets: pgid=$PGID pids=$all"; kill -TERM -- "-$PGID" 2>/dev/null; kill -TERM $all 2>/dev/null; sleep 5; kill -KILL -- "-$PGID" 2>/dev/null; kill -KILL $all 2>/dev/null; sleep 0.5; local left=""; for q in $all; do [ -e /proc/$q ] && [ "$(awk '{print $3}' /proc/$q/stat 2>/dev/null)" != Z ] && left="$left $q"; done; pgrep -g "$PGID" >/dev/null && left="$left pg:$PGID"; if [ -n "$left" ]; then log "KILLMIS_ALIVE$left"; else log "KILLMIS_EMPTY pgid=$PGID pids=$all"; fi; }
+ mytree() { local t=" $$ " n p c pp; n=1; while [ $n = 1 ]; do n=0; for p in /proc/[0-9]*; do c=${p#/proc/}; case "$t" in *" $c "*) continue;; esac
+     pp=$(awk '{print $4}' "$p/stat" 2>/dev/null); case "$t" in *" $pp "*) t="$t$c "; n=1;; esac; done; done; echo "$t"; }
++# v6: pure-sleep helper — argv0 basename == sleep; optional single numeric duration; no further args.
++# Does NOT match `python … sleep`, `bash -c 'sleep 1'`, `sleep 1; evil` (extra argv), etc.
++is_pure_sleep() {
++  local a0="" a1="" a2="" base
++  {
++    IFS= read -r -d '' a0 || true
++    IFS= read -r -d '' a1 || true
++    IFS= read -r -d '' a2 || true
++  } < "$1/cmdline" 2>/dev/null
++  base=${a0##*/}
++  [ "$base" = sleep ] || return 1
++  [ -n "$a2" ] && return 1
++  if [ -z "$a1" ]; then return 0; fi
++  [[ "$a1" =~ ^[0-9]+([.][0-9]*)?$ ]]
++}
+ c5watch() { while kill -0 "$PID" 2>/dev/null; do T=$(mytree); for d in /proc/[0-9]*; do p=${d#/proc/}
+     case "$T" in *" $p "*) continue;; esac
+     [ -n "$GUARDPID" ] && [ "$p" = "$GUARDPID" ] && continue; [ -n "$C5IGN" ] && [ "$p" = "$C5IGN" ] && continue
+     g=$(awk '{print $5}' "$d/stat" 2>/dev/null); [ -z "$g" ] && continue; [ "$g" = "$PGID" ] && continue
++    # v6 C5-tighten (1): ignore pure sleep (false-positive class from r3)
++    if is_pure_sleep "$d"; then continue; fi
+     hit=""; cw=$(readlink "$d/cwd" 2>/dev/null)
+-    case "$cw" in /workspace/QuantLab/data*|/workspace/QuantLab/output*) hit="cwd:$cw";; esac
+-    if [ -z "$hit" ]; then for fd in "$d"/fd/*; do t=$(readlink "$fd" 2>/dev/null); case "$t" in /workspace/QuantLab/data/*|/workspace/QuantLab/output/*) hit="fd:$t"; break;; esac; done; fi
++    case "$cw" in /workspace/QuantLab/data*|/workspace/QuantLab/output*)
++      case "$cw" in "$LABS"|"$LABS"/*) ;; *) hit="cwd:$cw";; esac
++      ;;
++    esac
++    if [ -z "$hit" ]; then for fd in "$d"/fd/*; do t=$(readlink "$fd" 2>/dev/null); case "$t" in /workspace/QuantLab/data/*|/workspace/QuantLab/output/*)
++      case "$t" in "$LABS"|"$LABS"/*) continue;; esac
++      hit="fd:$t"; break;; esac; done; fi
+     if [ -z "$hit" ]; then m=$(grep -m1 -oE '/workspace/QuantLab/(research|scripts|scripts_eng)/[^ ]+' "$d/maps" 2>/dev/null); [ -n "$m" ] && hit="map:$m"; fi
+     if [ -z "$hit" ]; then c=$(tr '\0' ' ' 2>/dev/null < "$d/cmdline"); case "$c" in *python*research/*|*python*scripts/*|*python*scripts_eng/*|*python*import\ research*|*python*-m\ quantlab*|*/workspace/QuantLab/scripts_eng/*|*/workspace/QuantLab/research/*.py*|*/workspace/QuantLab/scripts/*.py*) hit="cmd";; esac; fi
+     if [ -n "$hit" ]; then echo "$(date +%H:%M:%S.%N) C5_HIT pid=$p pgid=$g $hit cmd=$(tr '\0' ' ' 2>/dev/null < "$d/cmdline")" >> "$C5F"; killgrp; return; fi
+   done; sleep 0.5; done; }
+ cd "$RUNCWD" || exit 2                                   # (a)
+-setsid "$@" > "$LOG" 2>&1 &                              # (b) only the command is backgrounded; $! is the command
++setsid "$@" > "$LOG" 2>&1 &                              # (b) child stdout/stderr → /tmp (v6); $! is the command
+ PID=$!; PGID=$PID; STOPPED=0; AT=0; RC_OVR=""
+ sleep 0.2
+ G=$(awk '{print $5}' /proc/$PID/stat 2>/dev/null)

@@ -1,0 +1,31 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+.venv*/
+qlvenv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# large local artifacts (upload later / never)
+data/
+output/
+backups/
+_recovery/
+logs/
+*.parquet
+*.feather
+*.h5
+*.pkl
+*.joblib
+*.sqlite
+*.sqlite.bak
+
+# OS
+.DS_Store
+**/._*

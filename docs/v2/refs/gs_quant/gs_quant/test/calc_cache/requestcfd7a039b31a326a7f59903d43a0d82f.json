@@ -1,0 +1,9 @@
+{
+    "request_id": "2_Action1_swap_2021-12-09Price2021Dec09_Action1_swap_2021-12-07Price2021Dec07",
+    "request_hash": "cfd7a039b31a326a7f59903d43a0d82f",
+    "type": "MockCalc",
+    "tests": [
+        "test_exit_action_noarg"
+    ],
+    "mocked_data": "[[[[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":0.0}]]],[[[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":0.0}]]]]"
+}

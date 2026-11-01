@@ -1,0 +1,9 @@
+ran_et=2026-10-18T05:30:55-04:00 (serial, once)
+ok=output/data/ARCH_RUN_AUTH_SELFTEST_STRATEGY_SW_PIT_R4.ok sha256=4de5054d298074ab693597f1454fb0012ebf1e754b9f86fe3fe13aebe128d21a
+code_change_ok sha256=3648d61f95089cb49096bdc770c1184d9dc4df1337019466e0540c73aa358a89
+command=cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/ql-enrich-venv/bin/python -m pytest -q -p no:cacheprovider --basetemp=/tmp/arch_sw_pit_r4_selftest research/tests_sw_pit/test_sw_pit_freshness.py
+result=6 passed, exit 0
+a9b5c3e9825110d0e88e446d7dedd599b1acad023c5de7d3f4fead1be1041ec2  research/tests_sw_pit/test_sw_pit_freshness.py
+3116e4f697c887dc2dce27c747fde38691afe0fe2b3c27e6b87c183aa34dbf31  research/sw_pit_freshness.py
+7bd657ed936d7adf382e0c30a8537aa3d628dc6eb3e2e65d27b8972abff52316  research/strategy_fulla_b4_x2.py
+1c51531a12fd720788105d413264f8d00e6598caf075d96184ba30b5d3c69b45  research/strategy_hiliq_capadv_b4_x2.py

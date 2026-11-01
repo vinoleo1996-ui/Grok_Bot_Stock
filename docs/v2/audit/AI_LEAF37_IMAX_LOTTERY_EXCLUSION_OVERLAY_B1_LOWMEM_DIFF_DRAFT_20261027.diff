@@ -1,0 +1,324 @@
+# Leaf37 B1 LOW_MEM DIFF DRAFT vs base formal script 108aba8f
+# NEW FILE: research/leaf37_imax_lottery_exclusion_overlay_alpha_build_b1_lowmem.py
+# BASE UNCHANGED: research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py sha8=108aba8f
+# Generated: 2026-10-27 18:09 ET (America/New_York)
+# Note: parallel file (align leaf30 r3_peakcut); ban edit base.
+#
+--- a/research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py (sha8=108aba8f UNCHANGED)
++++ b/research/leaf37_imax_lottery_exclusion_overlay_alpha_build_b1_lowmem.py (NEW B1/LOW_MEM sha8=32605aca)
+@@ -1,15 +1,13 @@
+ #!/usr/bin/env python3
+-"""Leaf37 IMAX/lottery exclusion overlay build — HILIQ×x2 (NOT authorized).
++"""Leaf37 IMAX/lottery exclusion overlay build -- B1 / LOW_MEM (NOT authorized).
+ 
+-NEW file (2026-10-27). Nails PREREG_FROZEN sha8 c5927f1b;
+-Arch FROZEN review a5a9336d PASS_WITH_CONDITIONS (C2 formal script).
+-who_pays review 4a074f0a / WHO_PAYS 0ed8e9d8 / COVER 847245f8 / COUNT 154bc157 /
+-SCRIPT c10b735f / JSON 2217f580 / PIN e01be34c / FROZEN RECEIPT 3992f0fa / dig 74234fca.
+-Skeleton morphology from leaf34 build (read-only 482009dc; ban edit).
+-leaf33 afbbe7e7 UNCHANGED; leaf35 434ff42c UNCHANGED; leaf32 HOLD 45dd87dc;
+-leaf36 HOLD CLOSED WHO feaa5dbb / JSON 575e8276 — no reopen / no rollback.
++NEW parallel file (2026-10-27). B1/LOW_MEM vs base formal script sha8 108aba8f
++(UNCHANGED; ban edit). prev_script_sha8=108aba8f; b1_lowmem=true.
++Nails PREREG_FROZEN sha8 c5927f1b; PIN e01be34c; Arch FROZEN a5a9336d;
++script review 8d8ae2f3; VOID.ABORT_PEAK 998171e1; RUN_RECEIPT c2a120f7;
++ACK dd8a7d2e; VOID .ok 4096d401 (forbid first).
+ 
+-Mechanism (FROZEN; mechanism_tag=g1g5_ashare_imax_lottery_exclusion_overlay_v1):
++Mechanism UNCHANGED (FROZEN; mechanism_tag=g1g5_ashare_imax_lottery_exclusion_overlay_v1):
+   r_id = (1+ret)/(1+ret_on)-1
+   IMAX_proxy = mean(largest 5 finite r_id in [t-19,t]), min_valid>=15
+   full_residual_e_id=false; continuous APPROX; ban silent upgrade to full e_id
+@@ -19,17 +17,28 @@
+   Ban full leaf24 g1g5_ashare_imax_intraday_v1 ranking main alpha (C11)
+   Ban leaf18/18v/27/24 alpha as main input; ban post-hoc q/sign flip (C5)
+ 
++B1 LOW_MEM peak path (PRIMARY engineering; rss=1500 ban raise; ban relax split):
++  - Ban one-shot full-window panel concat peak at after_r_id
++  - Per-year read cs_panel_YYYY.parquet cols date,instrument,hiliq,ret,ret_on
++    with date filter warm..x2; merge HI_LIQ key; compute r_id in-chunk;
++    keep only lean (in_hiliq & r_id.notna) rows; del chunk + gc.collect();
++    _rss(after_panel_year_YYYY) / after_r_id_year_YYYY
++  - Concat lean parts then pivot; rolling_imax by instrument column chunks
++    with drop+gc; _rss(after_panel_imax) after controllable peak
++  - check_rss / Exit 94/95 / peak_proof REQUIRED retained
++
+ PRIMARY: --universe HILIQ --window x2 (FULLA only --also-fulla-research)
+ X2: 2024-06-03 -> 2026-10-09; rebal 20td; cost eval 30bp
+ Coverage: computable median>=300; excl median>=30; zero_frac<=0.05
+ C7: hard Jaccard>=0.7 vs leaf18/18v/27; disclose leaf24/34/35/36
+ --dry-compile-only: pins; ZERO big-table load
+-rss 1500 hard ABORT + peak_proof; sampler /tmp/quantlab_leaf37_imax_lottery_
++rss 1500 hard ABORT + peak_proof; sampler /tmp/quantlab_leaf37_imax_lottery_b1_
+ out: output/ai_factory/_leaf37_imax_lottery/
+-forbid: eb70eef4+00eec671+10927bd9+25ae4572+178e90e9+c1b71e64+prior+twenty
++forbid: 4096d401+eb70eef4+00eec671+10927bd9+25ae4572+178e90e9+c1b71e64+prior (>=31)
+ C12 count_approx_not_x2_accept; C13 KEEP pin only, KEEP does not unblock
+ live=false; !=X2 ACCEPT; no Book-Smoke/selfcheck entry.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+@@ -49,7 +58,7 @@
+     sys.path.insert(0, str(_HERE))
+ 
+ MECHANISM_TAG = "g1g5_ashare_imax_lottery_exclusion_overlay_v1"
+-SCRIPT_REL = "research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py"
++SCRIPT_REL = "research/leaf37_imax_lottery_exclusion_overlay_alpha_build_b1_lowmem.py"
+ FROZEN_REL = (
+     "docs/v2/audit/AI_LEAF37_IMAX_LOTTERY_EXCLUSION_OVERLAY_PREREG_FROZEN_20261027_ZH.md"
+ )
+@@ -64,6 +73,13 @@
+ COUNT_JSON_SHA8 = "2217f580"
+ PIN_SHA8 = "e01be34c"
+ DIG_SHA8 = "74234fca"
++PREV_SCRIPT_SHA8 = "108aba8f"
++B1_LOWMEM = True
++ARCH_SCRIPT_REVIEW_SHA8 = "8d8ae2f3"
++VOID_ABORT_PEAK_SHA8 = "998171e1"
++X2_RUN_RECEIPT_SHA8 = "c2a120f7"
++X2_RUNNING_ACK_SHA8 = "dd8a7d2e"
++VOID_OK_SHA8 = "4096d401"
+ LEAF34_SKELETON_SHA8 = "482009dc"
+ LEAF33_FORMAL_SHA8_READONLY = "afbbe7e7"
+ LEAF35_FORMAL_SHA8_READONLY = "434ff42c"
+@@ -124,6 +140,7 @@
+ }
+ 
+ FORBID_OK_SHA8 = (
++    "4096d401",  # leaf37 X2 VOID.ABORT_PEAK 20261027T1757ET -- ban RESTORED
+     "eb70eef4", "00eec671", "10927bd9", "25ae4572", "178e90e9", "c1b71e64",
+     "245df63f", "c5ed13df", "5774bb6e", "81521fb5", "02426b73", "4bb141c9",
+     "fdbaa512", "aa25e989", "7e239487", "5af20222", "5ae077fa", "3c297052",
+@@ -166,7 +183,7 @@
+     "output/ai_factory/leaf36_inquiry_letter_exclusion_count_20261027.json"
+ )
+ 
+-SAMPLER_PREFIX = "/tmp/quantlab_leaf37_imax_lottery_"
++SAMPLER_PREFIX = "/tmp/quantlab_leaf37_imax_lottery_b1_"
+ 
+ KNOWN_PANEL_COLS = ["date", "instrument", "hiliq", "ret", "ret_on"]
+ KNOWN_MASK_COLS = ["date", "instrument", "in_universe"]
+@@ -337,6 +354,13 @@
+         "x2_accept": False,
+         "approx": True,
+         "count_approx_not_x2_accept": True,
++        "b1_lowmem": B1_LOWMEM,
++        "prev_script_sha8": PREV_SCRIPT_SHA8,
++        "arch_script_review_sha8": ARCH_SCRIPT_REVIEW_SHA8,
++        "void_abort_peak_sha8": VOID_ABORT_PEAK_SHA8,
++        "x2_run_receipt_sha8": X2_RUN_RECEIPT_SHA8,
++        "x2_running_ack_sha8": X2_RUNNING_ACK_SHA8,
++        "void_ok_sha8": VOID_OK_SHA8,
+         "full_residual_e_id": FULL_RESIDUAL_E_ID,
+         "c3_option": "B",
+         "rss_limit_mb": RSS_LIMIT_MB,
+@@ -439,8 +463,8 @@
+         "ban_reopen_leaf36_inquiry": True,
+         "ban_posthoc_q_or_sign_flip": True,
+         "keep_does_not_unblock_x2_accept": True,
+-        "primary_load": "panel_imax_proxy_rebal_cs",
+-        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_v1",
++        "primary_load": "panel_year_chunk_r_id_instr_chunk_imax",
++        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_b1_lowmem_v1",
+         "known_schema_static": {
+             "panel_cols": KNOWN_PANEL_COLS,
+             "mask_cols": KNOWN_MASK_COLS,
+@@ -453,6 +477,10 @@
+             "ban_no_overlap_report_bypass_on_real": True,
+             "peak_proof_required": [
+                 "after_mask",
++                "after_panel_year_*",
++                "after_r_id_year_*",
++                "after_r_id",
++                "after_imax_instr_chunk_*",
+                 "after_panel_imax",
+                 "after_mask_cs_rebal_*",
+                 "after_daily_concat",
+@@ -481,7 +509,7 @@
+             "C5": "top_q_0_20_sign_frozen_high_IMAX_exclude",
+             "C6": "HILIQ_primary_FULLA_research_optional",
+             "C7": "overlap_hard_18_18v_27_disclose_24_34_35_36",
+-            "C8": "forbid_eb70eef4_00eec671_10927bd9_25ae4572_plus_prior",
++            "C8": "forbid_4096d401_eb70eef4_00eec671_10927bd9_25ae4572_plus_prior",
+             "C9": "rss_1500_peak_proof",
+             "C10": "leaf36_HOLD_CLOSED_no_reopen",
+             "C11": "overlay_not_leaf24_imax_main_leaf",
+@@ -489,7 +517,7 @@
+             "C13": "decay_KEEP_three_gates_KEEP_does_not_unblock",
+         },
+         "note": (
+-            "dry-compile-only; ZERO big-table load; "
++            "B1/LOW_MEM parallel; prev_script_sha8=108aba8f; b1_lowmem=true; forbid has 4096d401; year-chunk panel+r_id + instr-chunk IMAX; dry-compile-only; ZERO big-table load; "
+             "NOT authorized to execute; wait Arch script review -> new X2 .ok "
+             f"(ban RESTORED {'+'.join(FORBID_OK_SHA8[:10])}…); "
+             "peak_proof REQUIRED; rss=1500 ban raise; "
+@@ -626,14 +654,32 @@
+ 
+ 
+ def _load_panel_imax(panel_dir: Path, by_day: dict, *, rss_cb=None):
+-    """Load panel ret/ret_on; compute r_id + IMAX_proxy on HI_LIQ members."""
++    """B1 LOW_MEM: year-chunk panel->r_id; lean concat; instr-chunk IMAX.
++
++    Ban one-shot full-window panel concat+merge+r_id peak (base after_r_id
++    ABORT_PEAK peak_kb~1204776 >= split 1131520). Per-year: read only needed
++    cols with date filter; merge HI_LIQ key; compute r_id; keep lean rows;
++    del+gc; rss after_panel_year_YYYY / after_r_id_year_YYYY. Then pivot and
++    rolling_imax by instrument column chunks with drop+gc.
++    """
+     import numpy as np
+     import pandas as pd
+     import pyarrow.parquet as pq
+ 
+     cols = ["date", "instrument", "hiliq", "ret", "ret_on"]
+-    frames = []
+     panel_sha = {}
++    warm_lo = pd.Timestamp(WARM_START)
++    x2_hi = pd.Timestamp(X2_END)
++    key = (
++        pd.DataFrame(
++            [(d, c) for d, mems in by_day.items() for c in mems],
++            columns=["date", "instrument"],
++        )
++        .drop_duplicates()
++        .assign(in_hiliq=True)
++    )
++    key["date"] = pd.to_datetime(key["date"]).dt.normalize()
++    lean_parts: list = []
+     for y in (2023, 2024, 2025, 2026):
+         p = panel_dir / f"cs_panel_{y}.parquet"
+         if not p.is_file():
+@@ -645,38 +691,56 @@
+                 f"WARN: panel {y} sha8={panel_sha[str(y)]} != pin {pin}",
+                 file=sys.stderr,
+             )
+-        frames.append(pq.read_table(p, columns=cols).to_pandas())
+-    panel = pd.concat(frames, ignore_index=True)
+-    del frames
+-    gc.collect()
+-    if rss_cb:
+-        rss_cb("after_panel_concat")
+-    panel["date"] = pd.to_datetime(panel["date"]).dt.normalize()
+-    panel["instrument"] = panel["instrument"].map(to_ts)
+-    warm_lo = pd.Timestamp(WARM_START)
+-    x2_hi = pd.Timestamp(X2_END)
+-    panel = panel[(panel["date"] >= warm_lo) & (panel["date"] <= x2_hi)].copy()
+-    key = (
+-        pd.DataFrame(
+-            [(d, c) for d, mems in by_day.items() for c in mems],
+-            columns=["date", "instrument"],
++        # date pushdown: avoid loading pre-warm / post-x2 rows from year file
++        tab = pq.read_table(
++            p,
++            columns=cols,
++            filters=[
++                ("date", ">=", warm_lo.to_datetime64()),
++                ("date", "<=", x2_hi.to_datetime64()),
++            ],
+         )
+-        .drop_duplicates()
+-        .assign(in_hiliq=True)
+-    )
+-    key["date"] = pd.to_datetime(key["date"]).dt.normalize()
+-    panel = panel.merge(key, on=["date", "instrument"], how="left")
+-    panel["in_hiliq"] = panel["in_hiliq"].fillna(False)
+-    if panel["hiliq"].dtype == bool:
+-        panel["in_hiliq"] = panel["in_hiliq"] & panel["hiliq"].fillna(False)
+-    ret = panel["ret"].astype(float)
+-    ron = panel["ret_on"].astype(float)
+-    panel["r_id"] = (1.0 + ret) / (1.0 + ron) - 1.0
+-    panel.loc[ret.isna() | ron.isna() | ~np.isfinite(panel["r_id"]), "r_id"] = np.nan
+-    sub = panel.loc[
+-        panel["in_hiliq"] & panel["r_id"].notna(), ["date", "instrument", "r_id"]
+-    ]
+-    del panel
++        chunk = tab.to_pandas()
++        del tab
++        if chunk.empty:
++            del chunk
++            gc.collect()
++            if rss_cb:
++                rss_cb(f"after_panel_year_{y}")
++                rss_cb(f"after_r_id_year_{y}")
++            continue
++        chunk["date"] = pd.to_datetime(chunk["date"]).dt.normalize()
++        chunk["instrument"] = chunk["instrument"].map(to_ts)
++        chunk = chunk[(chunk["date"] >= warm_lo) & (chunk["date"] <= x2_hi)]
++        if rss_cb:
++            rss_cb(f"after_panel_year_{y}")
++        y_lo = chunk["date"].min()
++        y_hi = chunk["date"].max()
++        key_y = key[(key["date"] >= y_lo) & (key["date"] <= y_hi)]
++        chunk = chunk.merge(key_y, on=["date", "instrument"], how="left")
++        del key_y
++        chunk["in_hiliq"] = chunk["in_hiliq"].fillna(False)
++        if chunk["hiliq"].dtype == bool:
++            chunk["in_hiliq"] = chunk["in_hiliq"] & chunk["hiliq"].fillna(False)
++        ret = chunk["ret"].astype(float)
++        ron = chunk["ret_on"].astype(float)
++        chunk["r_id"] = (1.0 + ret) / (1.0 + ron) - 1.0
++        chunk.loc[ret.isna() | ron.isna() | ~np.isfinite(chunk["r_id"]), "r_id"] = np.nan
++        lean = chunk.loc[
++            chunk["in_hiliq"] & chunk["r_id"].notna(),
++            ["date", "instrument", "r_id"],
++        ].copy()
++        lean_parts.append(lean)
++        del chunk, ret, ron, lean
++        gc.collect()
++        if rss_cb:
++            rss_cb(f"after_r_id_year_{y}")
++    del key
++    gc.collect()
++    if not lean_parts:
++        raise SystemExit("STOP: zero lean r_id rows after year-chunk panel load")
++    sub = pd.concat(lean_parts, ignore_index=True)
++    del lean_parts
+     gc.collect()
+     if rss_cb:
+         rss_cb("after_r_id")
+@@ -685,9 +749,23 @@
+     ).sort_index()
+     del sub
+     gc.collect()
+-    imax_cols = {c: rolling_imax(piv[c].to_numpy(dtype=float)) for c in piv.columns}
+-    imax = pd.DataFrame(imax_cols, index=piv.index)
+-    del piv, imax_cols
++    # instrument-column chunks: compute rolling_imax, drop source cols, gc
++    imax_cols: dict = {}
++    piv_index = piv.index
++    colnames = list(piv.columns)
++    step = 256
++    for i in range(0, len(colnames), step):
++        batch = colnames[i : i + step]
++        for c in batch:
++            imax_cols[c] = rolling_imax(piv[c].to_numpy(dtype=float))
++        piv.drop(columns=batch, inplace=True)
++        gc.collect()
++        if rss_cb:
++            rss_cb(f"after_imax_instr_chunk_{i // step:03d}")
++    del piv
++    gc.collect()
++    imax = pd.DataFrame(imax_cols, index=piv_index)
++    del imax_cols, piv_index
+     gc.collect()
+     if rss_cb:
+         rss_cb("after_panel_imax")
+@@ -695,6 +773,8 @@
+     long.columns = ["date", "instrument", "imax_proxy"]
+     long["date"] = pd.to_datetime(long["date"]).dt.normalize()
+     long["instrument"] = long["instrument"].map(to_ts)
++    del imax
++    gc.collect()
+     return long, panel_sha
+ 
+ 
+@@ -1467,7 +1547,7 @@
+         and zero_frac <= ZERO_FRAC_MAX
+     )
+     meta = {
+-        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_v1",
++        "schema": "leaf37_imax_lottery_exclusion_overlay_alpha_build_b1_lowmem_v1",
+         "live": False,
+         "promotion_approved": False,
+         "ok_requested": False,

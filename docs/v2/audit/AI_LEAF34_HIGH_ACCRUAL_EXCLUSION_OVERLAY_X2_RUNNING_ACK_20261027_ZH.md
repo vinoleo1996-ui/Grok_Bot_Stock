@@ -1,0 +1,23 @@
+# AI 叶34 High Accrual Exclusion Overlay X2 RUNNING_ACK
+
+- ET: 2026-10-27 10:59:42 EDT
+- status: **RUNNING**
+- ET_TS: `20261027_105941`
+- pid: `285178` alive=True nice=10
+- script: `research/leaf34_high_accrual_exclusion_overlay_alpha_build.py` sha8 **`482009dc`** / 全长 `482009dc697cbf74b369cbf3fb035f1fc447a4af9339de8abf283f3ed4e971bc`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_HILIQ.ok` sha8 **`c1b71e64`** / 全长 `c1b71e646093dbbe1cfea41c684d8ee0de8e5af8f0a8f058182c251d7dbe4ce1`（∉forbid24）
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`bc6f8b83`** holder=`leaf34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2`（**本拍不 lift** / 未擅 lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_OK_SIGNED_20261027_ZH.md` sha8 **`de0ee2cb`**
+- 脚本审: **`033b66f8` PASS_WC** / COVER **`c491e7a4`** / CMD **`cfa3ca4e`** / DIFF **`f583b616`** / RECEIPT **`f73c986f`** / FROZEN **`8be1099e`** / ArchFROZEN **`027efa26`** / PIN **`bb418e6a`** / FROZEN RECEIPT **`438ee33d`**
+- out: `output/ai_factory/_leaf34_high_accrual/20261027_105941/`
+- log: `output/ai_factory/_leaf34_high_accrual/20261027_105941_logs/stdout.log` / `output/ai_factory/_leaf34_high_accrual/20261027_105941_logs/stderr.log`
+- samp: `/tmp/quantlab_leaf34_high_accrual_*`（脚本自管；仅此前缀）
+- expires: **`2026-10-27T12:17:00-04:00` ET**；窗 `10:43`→`12:13`
+- approved_cmd: **exact**（含 `--allow-real-data --arch-ok-path`；**无** `--no-overlap-report`；**无** `--enable-soft-penalty`；**无** FULLA PRIMARY；rss 默认 1500 禁抬）
+- cmdline: `/workspace/qlvenv/bin/python -u research/leaf34_high_accrual_exclusion_overlay_alpha_build.py --universe HILIQ --window x2 --x2-end 20261009 --allow-real-data --arch-ok-path output/ai_factory/ARCH_RUN_AUTH_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_HILIQ.ok --out output/ai_factory/_leaf34_high_accrual/20261027_105941`
+- CMD原文钉: sha8 **`cfa3ca4e`** → `docs/v2/audit/AI_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_ALPHA_BUILD_CMD_DRAFT_20261027_ZH.md`
+- prelaunch: TEAM_STATE 顶部主令 MATCH；脚本/`.ok`/QUIET 全长 MATCH；叶33 `afbbe7e7` UNCHANGED；`.ok`∉forbid；dry-compile-only PASS exit0；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检 PASS；pgrep data readers empty；MemAvailable≈12.6Gi≥soft
+- PRIMARY: HILIQ **mask-only** top_q=**0.20**；soft-penalty **非 PRIMARY**；rss_limit_mb=**1500 禁抬**；peak_proof REQUIRED（after_mask / after_ocf_rebal_* / after_mask_cs_rebal_* / after_daily_concat）；硬 Exit 94/95
+- overlap: 必须写并消费 `overlap_vs_leaf19_25_27_30_31_32_33.json`（Jaccard≥0.7 硬拒；ρ>0.5 强度叙述；叶25 尾窗披露）
+- ≠X2 ACCEPT / ≠selfcheck / ≠Book-Smoke；live=false；禁触 A18；禁 RESTORED `245df63f`+`c5ed13df`+`5774bb6e`+二十票(+`81521fb5`)；`0087c928`/叶28/29 另队；叶33 **`afbbe7e7` UNCHANGED**；叶32 HOLD **`45dd87dc`** 不回撤
+- 完后写 RUN_RECEIPT → 交主→Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**；**勿自称 X2 ACCEPT**

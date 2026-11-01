@@ -1,0 +1,60 @@
+{
+  "schema": "quantlab.eng.paper_daily_rerun_receipt.v1",
+  "D": "20261026",
+  "written_at_et": "2026-10-26T19:11:17-04:00",
+  "status": "OK",
+  "exit": 0,
+  "forced": false,
+  "live": false,
+  "promotion_approved": false,
+  "done_sha8": "fbddcd2b",
+  "readiness_sha8": "3b76da6b",
+  "receipt_sha8": "dae07cc8",
+  "weights_modified": false,
+  "log": "/tmp/paper_daily_20261026_rerun_20261026T185919_2993559.log",
+  "out_dir": "output/loop/paper_daily_20261026",
+  "tracks": {
+    "capacity_adv_600000": {
+      "nav_x2h_20261026": 810864.5111,
+      "cagr_x2": 0.1382,
+      "mdd_x2": -0.1007,
+      "calmar_x2": 1.37,
+      "win_monthly_x2": 0.5,
+      "win_daily_x2": 0.527,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "capacity_adv_1000000": {
+      "nav_x2h_20261026": 1311336.9508,
+      "cagr_x2": 0.1223,
+      "mdd_x2": -0.1162,
+      "calmar_x2": 1.05,
+      "win_monthly_x2": 0.57,
+      "win_daily_x2": 0.536,
+      "status": "OK_HOLD_EXTEND"
+    },
+    "b4_600000": {
+      "nav_x2h_20261014": 829067.6107,
+      "cagr_x2": 0.1511,
+      "mdd_x2": -0.1385,
+      "calmar_x2": 1.09,
+      "win_monthly_x2": 0.64,
+      "win_daily_x2": 0.525,
+      "status": "PENDING_extend"
+    },
+    "b4_1000000": {
+      "nav_x2h_20261014": 1353463.9562,
+      "cagr_x2": 0.1424,
+      "mdd_x2": -0.1317,
+      "calmar_x2": 1.08,
+      "win_monthly_x2": 0.57,
+      "win_daily_x2": 0.529,
+      "status": "PENDING_extend"
+    }
+  },
+  "pending": [
+    "b4_X2H_extend",
+    "s6_X2H_extend"
+  ],
+  "refused": [],
+  "note_stall_merge": true
+}

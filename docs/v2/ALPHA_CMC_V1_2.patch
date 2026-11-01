@@ -1,0 +1,826 @@
+--- a/research/alpha_combo_marginal_v1_1.py
++++ b/research/alpha_combo_marginal_v1_2.py
+@@ -1,4 +1,24 @@
+-"""CMC per docs/v2/ALPHA_LEAF_ACCEPT_V2_PREREG_ZH.md §1 (Alpha-owned thresholds; AI produces data, no verdict) — VERSION v1.1.
++"""CMC per docs/v2/ALPHA_LEAF_ACCEPT_V2_PREREG_ZH.md §1 — VERSION v1.2 = MEMORY-ONLY refactor of research/alpha_combo_marginal_v1_1.py
++(5658f612fef313fc5b818fc4cb9d594d757377e0dbf7c7dc86a6e31788b88911; that file and docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest are NOT edited and
++NOT imported). Trigger: 2026-10-18 09:04 ET the leaf24 CMC v1.1 full run was stopped by runguard rc=3 (peak RSS ≥ 1630960 kB > 1536000 kB,
++~90 s in, inferred in ctx() building P / rolling beta). Spec: Arch→Alpha 2026-10-18 (memory only, numerics unchanged). THRESHOLDS, DEFINITIONS
++AND OUTPUT NUMBERS ARE THOSE OF v1.1; only how intermediates are held in memory changes:
++  M1. P built per instrument: ADG._close(i).reindex(days) into a float64 matrix (index unique and dtype float64 asserted per series), and
++      ADG._cache.pop(i) right after use (AP._F, the adj-factor table, is kept). v1.1: pd.DataFrame({i: series}) on the ~3100-day union index.
++  M2. sig(): parquet read with filters=[("target_weight", "!=", 0.0)]; pivot_table(sum) → reindex(index=ev, columns=U) → fillna(0.0) kept,
++      so an absent row and a zero row give the same cell (+0.0). No instrument filter (reindex(columns=U) does that, as in v1.1).
++  M3. mem: ev×U boolean matrix (ctx key mem_mask) + U_arr (object array of U); a day's pool = U_arr[mem_mask[k]].tolist() = the same list in
++      the same U order as v1.1 [i for i in U if i in mem[d]]. Call sites: ctx (coverage), resid_z, pool_ew, check_ind_coverage.
++  M4. del + gc.collect() between stages: ctx full-date P / R / beta / F (only the ev-window slices are kept, as v1.1 stored), mk; b0's Z.
++      Independent steps inside ctx are reordered (F and check_f_truncated right after P, before R / beta) — same formulas, same inputs.
++  M5. stderr line 'STAGE <name> ru_maxrss=<kB>' after: imports, mk/mem, _factors (after the first ADG._close, i.e. adj-factor load),
++      P, beta, FMC, IND, every sig (sig:<label>), b0, tiers (per tier); extra key=value diagnostics may follow on the same line.
++  Also (guard, not numerics): legacy_column refuses a v1.1 output as well as a v1.2 one. Closure manifest = docs/v2/ALPHA_V1_2_IMPORT_CLOSURE.manifest
++  (v1.1 manifest + this file). Runner .ok key: runner_sha256_alpha_combo_marginal_v1_2. Runguard research/alpha_v1_1_runguard.py (35991407)
++  reused unchanged. Receipts must disclose: tool sha v1_2 ≠ 5658f612 (numerics asserted bit-identical on synthetic data by
++  tests/test_alpha_v1_2_equiv_selftest.py). Not done (per spec): float32, per-year chunking, panel_stitch changes, process split.
++---- v1.1 definition notes (semantics unchanged in v1.2) ----
++CMC (Alpha-owned thresholds; AI produces data, no verdict) — VERSION v1.1.
+ Derived from research/alpha_combo_marginal.py (bee230199ac27bf9730aa77c63b104a67bb104229622c57524867a9b54a5c51c, FROZEN: not edited,
+ not imported). Ruling: 主 Agent 2026-10-18 02:44 ET — leaf23/24 §8 and CMC use v1.1; THRESHOLDS UNCHANGED; legacy-tool results only as a
+ disclosure comparison column (read from an existing legacy JSON output, --legacy-json); leaf25+ default v1.1. POST-HOC (Arch bd3abe5c P3-B;
+@@ -23,11 +43,11 @@
+      Diff vs bee23019 (disclosed): the START day 2024-06-03 has no mc_{t−1} and is skipped (window shorter by 1 day).
+   3. F (20d fwd adj return) truncated at END (P reindexed to days ≤ END → F[d] NaN when d+20 > END; same as bee23019). Checked by
+      check_f_truncated(): P ends ≤ END and the last H rows of F are all NaN (bee23019-v1.1 draft had a tautological assert).
+-  4. Output adds tool_version='v1.1', exposure_anchor, ind_coverage, peak_rss_kb, gate receipt, ok self-check receipt, closure receipt,
++  4. Output adds tool_version, exposure_anchor, ind_coverage, peak_rss_kb, gate receipt, ok self-check receipt, closure receipt,
+      env QL_X2_EXTEND_END; optional legacy comparison column (disclosure_only).
+   5. Run gate (as __main__): scripts_eng/ok_runner_pin.enforce (c7805d9a, itself a pinned dep) mode 'full' → research/alpha_v1_1_runguard
+      (pinned) ok_selfcheck (expires_et tz-aware and not expired, scope=full, no BOM, LF, every known allow_* explicit, only allow_full
+-     true) → --out pre-check → RSS watchdog + RLIMIT_AS backstop → heavy imports. Import closure (docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest,
++     true) → --out pre-check → RSS watchdog + RLIMIT_AS backstop → heavy imports. Import closure (v1.2: docs/v2/ALPHA_V1_2_IMPORT_CLOSURE.manifest,
+      pinned) verified after computing and before writing; .ok re-checked (unchanged, not expired) before writing. --out exclusive create.
+ B0 = B4 paper book for IC combo; tier nav baseline under hiliq = capacity_adv HI_LIQ book-smoke (主 Agent 2026-10-18 00:54 ET), b4 = diagnostic (capacity_adv/earnings_event/insider_increase 50/25/25, current paper weights);
+ B1 = 0.8*B0 + 0.2*leaf (leaf top-N 6/10, merged single name <=6%, overflow 510300).
+@@ -38,10 +58,11 @@
+ Metrics: RankIC vs 20d fwd adj return (daily), ICIR full + rolling-252 median, net ΔCAGR/ΔMDD (17.5bp/unit TO) per tier,
+ yearly ΔCAGR, rho(leaf resid, B0 combo). Window = Eng X2 smoke 2024-06-03..2026-10-09. promotion=false; live=false."""
+ from __future__ import annotations
+-import sys, json, os, argparse, glob, hashlib
++import sys, json, os, argparse, glob, hashlib, gc, resource
+ from pathlib import Path
+ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT))
+-TOOL_VERSION = "v1.1"
++TOOL_VERSION = "v1.2"
++V1_1_SHA = "5658f612fef313fc5b818fc4cb9d594d757377e0dbf7c7dc86a6e31788b88911"   # numerics reference; disclosed: v1_2 sha != this
+ LEGACY_SHA = "bee230199ac27bf9730aa77c63b104a67bb104229622c57524867a9b54a5c51c"
+ AF = ROOT / "output/ai_factory"
+ LEGS = {"capacity_adv": AF / "g1g5_capacity_adv_daily_weights_paper_20261013_r2.parquet",
+@@ -63,7 +84,7 @@
+ FMC = ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
+ PRICE_START = "2023-09-01"       # inherited from bee23019 L82 (`b.index >= "2023-09-01"`); asserted unchanged
+ SW_PRE_SNAPSHOT = "2024-05-31"   # the ONLY SW snapshot date < START (主 Agent 2026-10-18 P2-3 ruling)
+-MANIFEST = ROOT / "docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest"   # sha256sum format; full static import closure (incl. quantlab/*)
++MANIFEST = ROOT / "docs/v2/ALPHA_V1_2_IMPORT_CLOSURE.manifest"   # v1.2: v1.1 manifest + this file (sha256sum format)
+ CODE_DEPS = {"adg": ROOT / "research/alpha_decay_gate.py", "selfcheck_v3": ROOT / "research/leaf_selfcheck_v3.py",
+              "selfcheck_common": ROOT / "research/leaf_selfcheck_common.py",
+              "nontextbook": ROOT / "research/g1g5_nontextbook_weights.py", "panel_stitch": ROOT / "research/g1g5_x2_panel_stitch.py",
+@@ -75,6 +96,14 @@
+ UNIVERSE = os.environ.get("ALPHA_CMC_UNIVERSE", "hiliq")  # hiliq = gate; fulla = diagnostic only
+ 
+ 
++def _stage(name: str, **kv) -> int:
++    """M5: one stderr line per stage, 'STAGE <name> ru_maxrss=<kB>' (Linux ru_maxrss = peak RSS so far, kB) + optional k=v diagnostics.
++    Stdlib only; writes nothing to stdout (stdout carries the JSON)."""
++    kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    print(f"STAGE {name} ru_maxrss={kb}" + "".join(f" {k}={v}" for k, v in kv.items()), file=sys.stderr, flush=True)
++    return kb
++
++
+ def leaf_path(leaf: str) -> Path:
+     """leaf name (ai_factory, same glob as leaf_selfcheck_v3.wfile) or explicit parquet path."""
+     if str(leaf).endswith(".parquet"): return Path(leaf)
+@@ -92,11 +121,11 @@
+ 
+ 
+ def _cli():
+-    ap = argparse.ArgumentParser(description="CMC v1.1 (Alpha). hiliq=gate (default), fulla=diagnostic. Requires an Arch .ok.")
++    ap = argparse.ArgumentParser(description="CMC v1.2 (Alpha; memory-only refactor of v1.1 5658f612). hiliq=gate (default), fulla=diagnostic. Requires an Arch .ok.")
+     ap.add_argument("leaf"); ap.add_argument("--universe", choices=list(UNIVERSE_MASKS), default="hiliq")
+     ap.add_argument("--base", choices=["capadv", "b4"], default="capadv", help="hiliq tier baseline: capadv book-smoke (gate, 主 Agent 10-18 00:54) | b4 (diag)")
+     ap.add_argument("--out", default=None)
+-    ap.add_argument("--arch-ok", required=True, help="Arch .ok pinning runner_sha256_alpha_combo_marginal_v1_1 + dep_sha256_<key>")
++    ap.add_argument("--arch-ok", required=True, help="Arch .ok pinning runner_sha256_alpha_combo_marginal_v1_2 + dep_sha256_<key>")
+     ap.add_argument("--legacy-json", default=None, help="existing JSON written by the legacy tool bee23019 for the SAME leaf/universe/base; "
+                                                         "read only (legacy tool is not imported or run); emitted as a disclosure-only comparison column")
+     return ap.parse_args()
+@@ -110,15 +139,16 @@
+     _deps = gate_deps(_A.leaf, _A.universe, _A.base)
+     if _A.legacy_json: _deps["legacy_json"] = Path(_A.legacy_json)
+     _GATE = enforce(__file__, [_A.arch_ok], modes=["full"], deps=_deps)
+-    import research.alpha_v1_1_runguard as RG   # pinned above (dep_sha256_runguard); stdlib only
++    import research.alpha_v1_1_runguard as RG   # pinned above (dep_sha256_runguard; 35991407 reused unchanged); stdlib only
+     _OUTP = RG.precheck_out_file(_A.out) if _A.out else None
+     _OKREC = RG.ok_selfcheck([_A.arch_ok], _GATE, "full", out_target=_OUTP.parent if _OUTP else None)
+-    _MAN0 = RG.verify_manifest_shas(MANIFEST, "startup")
++    _MAN0 = RG.verify_manifest_shas(MANIFEST, "startup")     # v1.2 manifest
+     _WD = RG.start_watchdog(rlimit_as_kb=RG.rlimit_as_kb())
+ 
+ import numpy as np, pandas as pd   # noqa: E402  (after the gate)
+ import research.alpha_decay_gate as ADG   # noqa: E402
+ import research.leaf_selfcheck_v3 as V3   # noqa: E402
++_stage("imports")
+ B0W = {"capacity_adv": .5, "earnings_event": .25, "insider_increase": .25}
+ START, END = "2024-06-03", "2026-10-09"; COST = ADG.COST; H = 20
+ _CTX = {}
+@@ -133,12 +163,19 @@
+     return b[b.target_weight > 0]
+ 
+ 
++def _pool(c: dict, d) -> list:
++    """M3: PIT pool on session d as a list in U order — identical to v1.1 [i for i in U if i in mem.get(d_str, set())] for every d in ev
++    (ev_pos is built from ev itself). d not in ev → [] (v1.1 callers then fail on .loc[d] exactly as before; no caller passes such d)."""
++    k = c["ev_pos"].get(d.strftime("%Y-%m-%d"))
++    return [] if k is None else c["U_arr"][c["mem_mask"][k]].tolist()
++
++
+ def pool_ew() -> pd.Series:
+     """HI_LIQ (or FULLA) pool equal-weight daily return (close-to-close, clipped ±20%, no cost) — disclosure benchmark."""
+     c = ctx(); R = c["R"]; out = {}
+     for d in R.index:
+-        mm = c["mem"].get(d.strftime("%Y-%m-%d"))
+-        if mm: out[d] = R.loc[d, [i for i in c["U"] if i in mm]].clip(-.2, .2).mean()
++        mm = _pool(c, d)                                   # M3 (v1.1: mem set; non-empty ⇔ same list non-empty)
++        if mm: out[d] = R.loc[d, mm].clip(-.2, .2).mean()
+     return pd.Series(out).dropna()
+ 
+ 
+@@ -168,10 +205,12 @@
+     return me
+ 
+ 
+-def check_ind_coverage(IND: pd.DataFrame, pools: dict) -> dict:
+-    """Refuse if any window day's pool is entirely unclassified (all '_UNK'); report coverage."""
++def check_ind_coverage(IND: pd.DataFrame, mem_mask: np.ndarray, U_arr: np.ndarray, ev: pd.DatetimeIndex) -> dict:
++    """Refuse if any window day's pool is entirely unclassified (all '_UNK'); report coverage. M3: pools from the ev×U mask, in ev order
++    (= v1.1's dict built over ev), each pool in U order."""
+     cov = {}
+-    for d, pool in pools.items():
++    for k, d in enumerate(ev):
++        pool = U_arr[mem_mask[k]].tolist()
+         if len(pool) == 0: continue
+         cov[d] = float(IND.loc[d, pool].notna().mean())
+     bad = [str(pd.Timestamp(d).date()) for d, v in cov.items() if v == 0.0]
+@@ -200,22 +239,55 @@
+     except ValueError: return str(p)
+ 
+ 
++def _af_loaded() -> bool:
++    m = sys.modules.get("research.adj_price")
++    return bool(m is not None and getattr(m, "_F", None) is not None)
++
++
+ def ctx():
+     if _CTX: return _CTX
+     from research.g1g5_nontextbook_weights import _load_sw_members, sw_code_on
+     from research.g1g5_x2_panel_stitch import to_panel_id
+     if PRICE_START != "2023-09-01": raise RuntimeError("price read start must stay byte-identical to bee23019 (2023-09-01)")
+     b = ADG.bench(); days = b.index[(b.index >= PRICE_START) & (b.index <= END)]
++    ev = days[(days >= START)]
++    # ---- stage mk/mem (M3): same mask read as v1.1; mem as an ev×U boolean matrix instead of 570 Python sets
+     mk = pd.read_parquet(UNIVERSE_MASKS[UNIVERSE], columns=["date", "instrument", "in_universe"],
+                          filters=[("date", ">=", pd.Timestamp(START)), ("date", "<=", pd.Timestamp(END)), ("in_universe", "==", True)])
+     mk["d"] = pd.to_datetime(mk["date"]).dt.strftime("%Y-%m-%d"); mk["instrument"] = mk["instrument"].astype(str)
+     U = sorted(set(mk["instrument"]))
+-    P = pd.DataFrame({i: ADG._close(i) for i in U}).reindex(days)          # days ≤ END → F truncated at END
+-    R = P.pct_change(fill_method=None); rb = b.reindex(days).pct_change()
++    U_arr = np.array(U, dtype=object)
++    ev_pos = {d.strftime("%Y-%m-%d"): k for k, d in enumerate(ev)}             # v1.1 looked mem up by d.strftime("%Y-%m-%d")
++    if len(ev_pos) != len(ev): raise RuntimeError("window sessions are not unique by date string")
++    u_pos = {i: j for j, i in enumerate(U)}
++    rk = mk["d"].map(ev_pos); keep = rk.notna().to_numpy()                        # mask dates that are not sessions in ev: never looked up in v1.1
++    mem_mask = np.zeros((len(ev), len(U)), dtype=bool)
++    mem_mask[rk.to_numpy()[keep].astype(np.int64), mk["instrument"].map(u_pos).to_numpy()[keep].astype(np.int64)] = True
++    del mk, rk, keep; gc.collect()
++    _stage("mk/mem", n_ev=len(ev), n_U=len(U), n_member_days=int(mem_mask.sum()))
++    # ---- stage P (M1): per-instrument reindex onto days (≤ END → F truncated at END), popped from ADG._cache after use
++    arr = np.full((len(days), len(U)), np.nan, dtype=np.float64)
++    for j, i in enumerate(U):
++        s = ADG._close(i)
++        if not s.index.is_unique: raise RuntimeError(f"close series index not unique for {i} (v1.1 would also fail to align it)")
++        if s.dtype != np.float64: raise RuntimeError(f"close series dtype {s.dtype} != float64 for {i} (v1.2 equivalence precondition)")
++        arr[:, j] = s.reindex(days).to_numpy()
++        ADG._cache.pop(i, None); del s                                           # AP._F (adj factors) is kept
++        if j == 0: _stage("_factors", adj_factors_loaded=_af_loaded())
++    if len(U) == 0: _stage("_factors", adj_factors_loaded=_af_loaded())
++    P = pd.DataFrame(arr, index=days, columns=U, copy=False); del arr
++    F = P.shift(-H) / P - 1                                                        # same formula as v1.1; computed before R so P can go
++    check_f_truncated(P, F, ev)
++    F_ev = F.reindex(ev); del F
++    R = P.pct_change(fill_method=None); del P; gc.collect()
++    _stage("P", n_days=len(days), adj_cache_left=len(ADG._cache))
++    # ---- stage beta (unchanged formula); only the ev slices are kept (as v1.1 stored)
++    rb = b.reindex(days).pct_change()
+     beta = R.rolling(120, min_periods=60).cov(rb).div(rb.rolling(120, min_periods=60).var(), axis=0)
+-    beta_sig = beta.shift(1)                                                # v1.1: returns d−120..d−1
+-    ev = days[(days >= START)]
+-    mem = {d: set(g) for d, g in mk.groupby("d")["instrument"]}
++    beta_ev = beta.shift(1).reindex(ev); del beta                                 # v1.1: returns d−120..d−1
++    R_ev = R.reindex(ev); del R, rb; gc.collect()
++    _stage("beta")
++    # ---- stage FMC (unchanged)
+     pids = {to_panel_id(i): i for i in U}
+     fm = pd.read_parquet(FMC, columns=["instrument_id", "trade_date", "float_mktcap"],
+                          filters=[("trade_date", ">=", pd.Timestamp(START)), ("instrument_id", "in", list(pids))])   # == bee23019 L95
+@@ -225,29 +297,42 @@
+     cal = days[days >= pd.Timestamp(START)]
+     MC_sig = np.log(FMp.reindex(cal).ffill()).shift(1).reindex(ev).reindex(columns=U)   # v1.1: close d−1; START row NaN (skipped)
+     if MC_sig.loc[pd.Timestamp(START)].notna().any(): raise RuntimeError("START-day mc_{t−1} must be NaN (no pre-window float mcap)")
+-    del FMp
++    del FMp; gc.collect()
++    _stage("FMC")
++    # ---- stage IND (unchanged lookup; coverage pools from the mask, M3)
+     sw = _load_sw_members(); me = sw_snapshot_dates(days, ev)                  # v1.1: + 2024-05-31 (SW table only)
+     IND = pd.DataFrame({i: [sw_code_on(i, d, sw) for d in me] for i in U}, index=me).reindex(ev, method="ffill")
+-    indcov = check_ind_coverage(IND, {d: [i for i in U if i in mem.get(d.strftime("%Y-%m-%d"), set())] for d in ev})
+-    F = P.shift(-H) / P - 1
+-    check_f_truncated(P, F, ev)
+-    _CTX.update(R=R.reindex(ev), universe=UNIVERSE, mask=_rel(UNIVERSE_MASKS[UNIVERSE]), U=U, ev=ev, mem=mem,
+-                beta=beta_sig.reindex(ev), MC=MC_sig, IND=IND, F=F.reindex(ev), ind_coverage=indcov, sw_snapshots=[str(x.date()) for x in me],
++    indcov = check_ind_coverage(IND, mem_mask, U_arr, ev)
++    del sw; gc.collect()
++    _stage("IND")
++    _CTX.update(R=R_ev, universe=UNIVERSE, mask=_rel(UNIVERSE_MASKS[UNIVERSE]), U=U, U_arr=U_arr, ev=ev, ev_pos=ev_pos, mem_mask=mem_mask,
++                beta=beta_ev, MC=MC_sig, IND=IND, F=F_ev, ind_coverage=indcov, sw_snapshots=[str(x.date()) for x in me],
+                 reads=dict(price_start=str(days.min().date()), fmc_earliest_trade_date=fmc_min, start_day_skipped=START))
+     return _CTX
+ 
+ 
+-def sig(path) -> pd.DataFrame:
+-    c = ctx(); d = pd.read_parquet(path, columns=["date", "instrument", "target_weight"]); d["date"] = pd.to_datetime(d["date"].astype(str).str[:10])
+-    S = d.pivot_table(index="date", columns="instrument", values="target_weight", aggfunc="sum")
+-    return S.reindex(index=c["ev"], columns=c["U"]).fillna(0.0)
++def sig(path, label: str | None = None) -> pd.DataFrame:
++    """M2: zero-weight rows filtered at read (absent row ≡ zero row after reindex + fillna(0.0)). STAGE line reports nonzero rows and
++    duplicate (date, instrument) keys among them: dup_keys_nonzero == 0 ⇒ every pivot cell sums ONE value in v1.1 and v1.2 alike."""
++    c = ctx()
++    d = pd.read_parquet(path, columns=["date", "instrument", "target_weight"], filters=[("target_weight", "!=", 0.0)])
++    n_rows = int(len(d)); ndup = 0
++    if n_rows:
++        d["date"] = pd.to_datetime(d["date"].astype(str).str[:10])
++        ndup = int(d.duplicated(["date", "instrument"]).sum())
++        S = d.pivot_table(index="date", columns="instrument", values="target_weight", aggfunc="sum"); del d
++        S = S.reindex(index=c["ev"], columns=c["U"]).fillna(0.0)
++    else:                                                                          # every row was zero (v1.1: all-zero pivot → 0.0 grid)
++        del d; S = pd.DataFrame(0.0, index=c["ev"], columns=c["U"])
++    _stage(f"sig:{label or Path(path).name}", rows_nonzero=n_rows, dup_keys_nonzero=ndup)
++    return S
+ 
+ 
+ def resid_z(S: pd.DataFrame, extra: list[pd.DataFrame] | None = None) -> pd.DataFrame:
+     """Residualise on SW L1 + mc_{t−1} + beta_{t−1} (v1.1) [+ extra signals at d]; z-score per day."""
+     c = ctx(); out = pd.DataFrame(np.nan, index=S.index, columns=S.columns)
+     for d in S.index:
+-        pool = [i for i in c["U"] if i in c["mem"].get(d.strftime("%Y-%m-%d"), set())]
++        pool = _pool(c, d)                                                         # M3
+         X = pd.DataFrame({"mc": c["MC"].loc[d, pool], "beta": c["beta"].loc[d, pool]})
+         for k, e in enumerate(extra or []): X[f"x{k}"] = e.loc[d, pool]
+         X = X.join(pd.get_dummies(c["IND"].loc[d, pool].fillna("_UNK"), dtype=float))
+@@ -304,9 +389,11 @@
+ 
+ def b0():
+     if _B0: return _B0
+-    S = {k: sig(p) for k, p in LEGS_BY_UNIVERSE[UNIVERSE].items()}; Z = {k: resid_z(s) for k, s in S.items()}
++    S = {k: sig(p, label=k) for k, p in LEGS_BY_UNIVERSE[UNIVERSE].items()}; Z = {k: resid_z(s) for k, s in S.items()}
+     combo = sum(B0W[k] * Z[k].fillna(0) for k in Z).where(Z["capacity_adv"].notna())
++    del Z; gc.collect()                                                            # M4: Z never stored (v1.1 also dropped it on return)
+     _B0.update(S=S, combo=combo, ic=ic_stats(combo))
++    _stage("b0")
+     return _B0
+ 
+ 
+@@ -325,10 +412,10 @@
+ 
+ def cmc(leaf: str) -> dict:
+     B = b0(); wf = leaf_path(leaf)
+-    zl = resid_z(sig(wf), extra=list(B["S"].values()))
++    zl = resid_z(sig(wf, label="leaf"), extra=list(B["S"].values()))
+     c1 = (0.8 * B["combo"] + 0.2 * zl.fillna(0)).where(B["combo"].notna())
+     ic1 = ic_stats(c1)
+-    zs = resid_z(sig(wf))  # style-only residual (ind/mcap/beta at t−1), for rho reference
++    zs = resid_z(sig(wf, label="leaf_style"))  # style-only residual (ind/mcap/beta at t−1), for rho reference
+     rho = [zs.loc[d].corr(B["combo"].loc[d]) for d in zs.index]
+     rho_post = [zl.loc[d].corr(B["combo"].loc[d]) for d in zl.index]
+     out = dict(tool_version=TOOL_VERSION, B0_ic=B["ic"], B1_ic=ic1, d_ic=ic1["rank_ic"] - B["ic"]["rank_ic"],
+@@ -361,18 +448,20 @@
+                                   base_track=str(trk), base=("capadv_hiliq_book_smoke" if (UNIVERSE == "hiliq" and BASE == "capadv") else "b4_diag"),
+                                   vs_poolEW=dict(B0=vs_pool_ew(r0, EW), B1=vs_pool_ew(r1, EW)),
+                                   report_to_leo_eligible=bool(m1["cagr"] > m0["cagr"] and vs_pool_ew(r1, EW)["excess_cagr"] > 0))
++        _stage(f"tiers:{tier}")
+     out["definition_notes"] = __doc__
+     return out
+ 
+ 
+ def legacy_column(path: str, new: dict, pinned_sha256: str) -> dict:
+     """Disclosure-only comparison with an EXISTING legacy (bee23019) JSON output; the legacy tool is not imported or run.
+-    Refuses (Arch 31b4b8ba P3-3): bytes read now != the sha pinned by the gate (dep_sha256_legacy_json); a v1.1 output; universe mismatch;
+-    leaf file name mismatch; any tier whose base (capadv_hiliq_book_smoke / b4_diag) is missing or differs."""
++    Refuses (Arch 31b4b8ba P3-3): bytes read now != the sha pinned by the gate (dep_sha256_legacy_json); a v1.1 or v1.2 output; universe
++    mismatch; leaf file name mismatch; any tier whose base (capadv_hiliq_book_smoke / b4_diag) is missing or differs.
++    Key names (v1_1 / diff_v1_1_minus_legacy) are kept from v1.1 for schema continuity: they hold this tool's (v1.2 ≡ v1.1 numerics) values."""
+     p = Path(path); raw = p.read_bytes(); got = hashlib.sha256(raw).hexdigest()
+     if got != pinned_sha256: raise SystemExit(f"--legacy-json sha {got} != gate-pinned {pinned_sha256} (changed after enforce)")
+     L = json.loads(raw.decode("utf-8"))
+-    if L.get("tool_version") == TOOL_VERSION: raise SystemExit("--legacy-json is a v1.1 output, not a legacy one")
++    if L.get("tool_version") in ("v1.1", TOOL_VERSION): raise SystemExit(f"--legacy-json is a {L.get('tool_version')} output, not a legacy one")
+     if str(L.get("universe")) != str(new["universe"]): raise SystemExit(f"--legacy-json universe {L.get('universe')!r} != current {new['universe']!r}")
+     if Path(str(L.get("leaf_file", ""))).name != Path(str(new["leaf_file"])).name:
+         raise SystemExit(f"--legacy-json leaf_file {L.get('leaf_file')!r} != current {new['leaf_file']!r}")
+@@ -400,7 +489,10 @@
+     _CL = RG.verify_closure(MANIFEST, "after compute")
+     RG.recheck_expiry(_OKREC, "before write")
+     r.update(live=False, promotion_approved=False, gate=_GATE, ok_selfcheck=_OKREC, closure=dict(startup=_MAN0, after_compute=_CL),
+-             watchdog=_WD, env=RG.env_snapshot(), peak_rss_kb=RG.rss_kb(), vm_peak_kb=RG.vm_peak_kb())
++             watchdog=_WD, env=RG.env_snapshot(), peak_rss_kb=RG.rss_kb(), vm_peak_kb=RG.vm_peak_kb(),
++             memory_refactor_of=dict(tool="research/alpha_combo_marginal_v1_1.py", sha256=V1_1_SHA,
++                                     note="v1_2 sha != 5658f612: memory-only refactor (M1-M5), numerics asserted bit-identical on synthetic data "
++                                          "(tests/test_alpha_v1_2_equiv_selftest.py); thresholds unchanged"))
+     txt = json.dumps(r, ensure_ascii=False, indent=2, default=str)
+     if _A.out:
+         _OUTP.parent.mkdir(parents=True, exist_ok=True)
+--- a/docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest
++++ b/docs/v2/ALPHA_V1_2_IMPORT_CLOSURE.manifest
+@@ -70,6 +70,7 @@
+ 93b54ae774651b3bf9c832f8c23d973893e446270eba92423767306c57d37849  research/adj_price.py
+ e1736d80c589ecd717731dc38ae99a52f3d448da9841b2c3794ee008f59613ea  research/ai_debate_memory_runner.py
+ 5658f612fef313fc5b818fc4cb9d594d757377e0dbf7c7dc86a6e31788b88911  research/alpha_combo_marginal_v1_1.py
++bba212afadefce68dcd1bf76919f91de39402658e4398e925e3d80c6f01592c4  research/alpha_combo_marginal_v1_2.py
+ a877cec51dbb96c75a6d071e222caf35f62fd14f101741a03be117e0e6076a97  research/alpha_decay_gate.py
+ 455fdf826ef1aa95b3c4084d5222c0f83f40163526869c419994dfb8df82458a  research/alpha_hiliq_s8_paradigm_v1_1.py
+ 35991407875094fd9a456b69fda2b48a059f6a140ed48c6f84a9fc2cda8267b6  research/alpha_v1_1_runguard.py
+--- /dev/null
++++ b/tests/test_alpha_v1_2_equiv_selftest.py
+@@ -0,0 +1,485 @@
++"""Alpha CMC v1.2 ≡ v1.1 equivalence selftest (Arch→Alpha 2026-10-18 v1.2 spec: memory-only, numerics unchanged). SYNTHETIC DATA ONLY:
++pandas.read_parquet is wrapped and refuses any path outside the mkdtemp out_dir; ADG.bench / ADG._close (cache-through, like the real one) and
++leaf_selfcheck_common._ret (book nav) are monkeypatched; the SW member table / to_panel_id come from in-memory stub modules
++(research.g1g5_nontextbook_weights / research.g1g5_x2_panel_stitch / research.hiliq_v1_universe are NOT imported). The v1.1 selftest file
++(tests/test_alpha_v1_1_selftest.py, 6966a5d9) is not modified.
++
++GATE (module top level, at collection time, BEFORE any module under test is imported):
++  ok_runner_pin.enforce(__file__, [output/alpha/ARCH_RUN_AUTH_SELFTEST_CMC_V1_2.ok], modes=["selftest"], deps=TEST_DEPS), then
++  research/alpha_v1_1_runguard.ok_selfcheck(mode="selftest") (scope=selftest, every known allow_* explicit, only allow_selftest true,
++  allow_real_data=false, out_dir = mkdtemp or /tmp/<tag>, not expired). The .ok must pin runner_sha256_test_alpha_v1_2_equiv_selftest and
++  dep_sha256_<key> for every TEST_DEPS key. A refusal raises SystemExit (aborts collection); no skip path. Neither script's __main__ gate runs.
++
++Run ALONE (own process; do not collect together with tests/test_alpha_v1_1_selftest.py: both install the same stub modules and each has its
++own .ok), serial, nothing else concurrently, RSS ≤ 1.5 GB:
++  PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python -m pytest tests/test_alpha_v1_2_equiv_selftest.py -q -p no:cacheprovider
++
++EQUIVALENCE RULE. v1.1 (research/alpha_combo_marginal_v1_1.py) and v1.2 run cmc() on the SAME synthetic files. The output dicts are compared
++after removing METADATA_KEYS (tool_version — asserted "v1.1"/"v1.2" separately —, definition_notes = __doc__, and the __main__-only receipt
++fields peak_rss_kb, vm_peak_kb, gate, ok_selfcheck, closure, watchdog, env, memory_refactor_of; the last group is not produced by cmc() and is
++listed for completeness). Floats are compared bit-for-bit (struct '<d'); NaN == NaN (JSON cannot carry a NaN payload; both serialise "NaN");
++types must match exactly (int vs float, bool vs int differ). Final criterion: json.dumps(..., ensure_ascii=False, indent=2, default=str), i.e.
++the exact __main__ serialisation, is byte-identical.
++±0 HANDLING (explicit). -0.0 and +0.0 compare equal as numbers but serialise differently ("-0.0" vs "0.0"). Value differences and sign-of-zero
++differences are collected separately: test_*_values_equal fails only on real value differences (±0 treated as equal there), and
++test_*_signed_zero fails if any value differs ONLY in the sign of zero, listing every path — so a pure ±0 effect is visible on its own and
++Arch can rule on it. Both must pass for "bit-identical". The synthetic leg file contains explicit -0.0 (and NaN) target_weight rows: v1.2
++filters them at read (-0.0 != 0 is False in IEEE), v1.1 sums them in pivot_table (pandas group sum starts at +0.0, so +0.0 + -0.0 = +0.0); the
++cell is +0.0 in both after fillna(0.0) — checked bitwise by test_ctx_sig_signed_zero.
++Writes only under the mkdtemp out_dir (removed at exit). live=false; promotion=false.
++"""
++from __future__ import annotations
++
++import atexit
++import contextlib
++import hashlib
++import io
++import json
++import math
++import re
++import shutil
++import struct
++import sys
++import tempfile
++import types
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++TEST_OK = ROOT / "output/alpha/ARCH_RUN_AUTH_SELFTEST_CMC_V1_2.ok"
++TEST_DEPS = {
++    "combo_v1_1": "research/alpha_combo_marginal_v1_1.py",
++    "combo_v1_2": "research/alpha_combo_marginal_v1_2.py",
++    "ok_runner_pin": "scripts_eng/ok_runner_pin.py",
++    "runguard": "research/alpha_v1_1_runguard.py",
++    "adg": "research/alpha_decay_gate.py",
++    "selfcheck_v3": "research/leaf_selfcheck_v3.py",
++    "selfcheck_common": "research/leaf_selfcheck_common.py",
++    "manifest_v1_1": "docs/v2/ALPHA_V1_1_IMPORT_CLOSURE.manifest",
++    "manifest_v1_2": "docs/v2/ALPHA_V1_2_IMPORT_CLOSURE.manifest",
++}
++TEST_MODULES = {v for v in TEST_DEPS.values() if v.endswith(".py")}
++
++if not sys.flags.dont_write_bytecode:          # checked BEFORE the gate module is imported (no __pycache__ in the repo)
++    raise SystemExit("REFUSED (test_alpha_v1_2_equiv): run with PYTHONDONTWRITEBYTECODE=1")
++sys.path.insert(0, str(ROOT / "scripts_eng"))
++import ok_runner_pin as _PIN  # noqa: E402
++_GATE = _PIN.enforce(__file__, [TEST_OK], modes=["selftest"], deps={k: ROOT / v for k, v in TEST_DEPS.items()})
++sys.path.insert(0, str(ROOT))
++import research.alpha_v1_1_runguard as RG  # noqa: E402  (pinned just above; stdlib only)
++_OKREC = RG.ok_selfcheck([TEST_OK], _GATE, "selftest")
++OUT_DIR = Path(tempfile.mkdtemp(prefix="alpha_v12_equiv_")).resolve()
++if OUT_DIR == ROOT or ROOT in OUT_DIR.parents or "output" in OUT_DIR.parts:
++    raise SystemExit(f"REFUSED (test_alpha_v1_2_equiv): out_dir {OUT_DIR} inside the repo / output/")
++atexit.register(shutil.rmtree, str(OUT_DIR), True)
++
++# ---- gate passed: only now import numpy/pandas/pytest and the modules under test
++import numpy as np  # noqa: E402
++import pandas as pd  # noqa: E402
++import pytest  # noqa: E402
++
++_REAL_READ_PARQUET = pd.read_parquet
++READS: list = []                                            # (resolved path, filters) of every parquet read
++
++
++def _guarded_read_parquet(path, *a, **k):
++    rp = Path(path).resolve()
++    if OUT_DIR not in rp.parents:
++        raise AssertionError(f"real-data read attempted in synthetic selftest: {path}")
++    READS.append((rp, k.get("filters")))
++    return _REAL_READ_PARQUET(path, *a, **k)
++
++
++pd.read_parquet = _guarded_read_parquet
++
++
++# ---- in-memory stubs (same semantics as the real helpers; no data files) — identical to tests/test_alpha_v1_1_selftest.py
++def _to_panel_id(instrument: str) -> str:
++    a, b = str(instrument).split(".", 1)
++    return f"{b.lower()}.{a}"
++
++
++SW = {"df": None}
++
++
++def _load_sw_members():
++    return SW["df"]
++
++
++def _sw_code_on(instrument, session, sw):
++    sub = sw[sw["instrument_id"] == _to_panel_id(instrument)]
++    sess = pd.Timestamp(session).normalize()
++    hit = sub[(sub["in_date"] <= sess) & (sub["out_date"].isna() | (sub["out_date"] > sess))]
++    return None if hit.empty else str(hit.iloc[-1]["sw_code"])
++
++
++def _industry_on_date(instruments, session, sw):
++    return {i: c for i in instruments if (c := _sw_code_on(i, session, sw)) is not None}
++
++
++_stubs = {
++    "research.g1g5_x2_panel_stitch": dict(to_panel_id=_to_panel_id),
++    "research.g1g5_nontextbook_weights": dict(_load_sw_members=_load_sw_members, sw_code_on=_sw_code_on, to_panel_id=_to_panel_id),
++    "research.hiliq_v1_universe": dict(industry_on_date=_industry_on_date),
++}
++for _name, _attrs in _stubs.items():
++    _m = types.ModuleType(_name); _m.__dict__.update(_attrs); _m.__file__ = None
++    sys.modules[_name] = _m
++
++import research.alpha_decay_gate as ADG  # noqa: E402
++import research.leaf_selfcheck_v3 as V3  # noqa: E402
++import research.alpha_combo_marginal_v1_1 as CMC1  # noqa: E402
++_IMPORT_ERR = io.StringIO()
++with contextlib.redirect_stderr(_IMPORT_ERR):                # captures v1.2's 'STAGE imports' line
++    import research.alpha_combo_marginal_v1_2 as CMC2  # noqa: E402
++LC = V3.LC
++
++START, END, H = CMC2.START, CMC2.END, CMC2.H
++assert (CMC1.START, CMC1.END, CMC1.H) == (START, END, H)
++CAL = pd.bdate_range("2023-06-01", "2026-11-30")          # 2024-05-31 (Fri) is the last session before START 2024-06-03 (Mon)
++WIN = CAL[(CAL >= START) & (CAL <= END)]
++SAT = pd.Timestamp("2025-03-08")                            # Saturday in the window: a mask row that is not a session (never looked up)
++NAMES = [f"{600000 + k}.SH" for k in range(40)] + [f"{1 + k:06d}.SZ" for k in range(40)]
++BAL = "510300.SH"
++METADATA_KEYS = ("tool_version", "definition_notes", "peak_rss_kb", "vm_peak_kb", "gate", "ok_selfcheck", "closure", "watchdog", "env",
++                 "memory_refactor_of")
++STAGES_IN_ORDER = ["mk/mem", "_factors", "P", "beta", "FMC", "IND", "sig:capacity_adv", "sig:earnings_event", "sig:insider_increase", "b0",
++                   "sig:leaf", "sig:leaf_style", "tiers:60w", "tiers:100w"]
++
++
++class Synth:
++    """Exercises: union-index alignment (late listings, missing rows), NaN closes, mask rows with in_universe False and on a non-session,
++    changing membership, unclassified names + one SW reclassification, a full-grid leg with 0.0 / -0.0 / NaN weights, sparse legs with
++    explicit zero rows, (x, 0.0) and (x, y) duplicate keys, days without any row, three date encodings (timestamp, YYYY-MM-DD, YYYYMMDD)."""
++
++    def __init__(self, seed=11):
++        rng = np.random.default_rng(seed)
++        self.bench = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, .01, len(CAL)))), index=CAL)
++        self.close = {}
++        for k, i in enumerate(NAMES):
++            s = pd.Series(10 * np.exp(np.cumsum(rng.normal(0, .02, len(CAL)))), index=CAL)
++            if k < 2: s = s[s.index >= pd.Timestamp("2024-09-02")].copy()          # late listing → shorter index
++            elif k < 6: s[rng.random(len(s)) < .03] = np.nan                       # suspensions → NaN closes
++            elif k == 6: s = s.drop(s.index[rng.random(len(s)) < .02])              # absent rows
++            self.close[i] = s
++        late = pd.Timestamp("2024-09-16"); rows = []
++        for d in WIN:
++            u = rng.random(len(NAMES)) < .85
++            rows += [(d, i, bool(u[k] and (k >= 2 or d >= late))) for k, i in enumerate(NAMES)]
++        rows += [(SAT, i, True) for i in NAMES]
++        self.mask = pd.DataFrame(rows, columns=["date", "instrument", "in_universe"])
++        self.mask["adv20_yuan"] = rng.uniform(5e7, 5e8, len(self.mask))
++        self.fmc = pd.DataFrame([(_to_panel_id(i), d, float(v)) for i in NAMES
++                                 for d, v in zip(CAL, 1e9 * np.exp(np.cumsum(rng.normal(0, .01, len(CAL)))))],
++                                columns=["instrument_id", "trade_date", "float_mktcap"])
++        sw = [(_to_panel_id(i), pd.Timestamp("2020-01-01"), pd.NaT, f"80{k % 5}") for k, i in enumerate(NAMES) if k not in (10, 70, 71, 72)]
++        sw += [(_to_panel_id(NAMES[10]), pd.Timestamp("2020-01-01"), pd.Timestamp("2025-06-30"), "801"),
++               (_to_panel_id(NAMES[10]), pd.Timestamp("2025-06-30"), pd.NaT, "809")]
++        self.sw = pd.DataFrame(sw, columns=["instrument_id", "in_date", "out_date", "sw_code"])
++        # legs
++        rows = []
++        for d in WIN:
++            top = set(np.argsort(-rng.random(len(NAMES)))[:10])
++            rows += [(d, i, 0.1 if k in top else 0.0) for k, i in enumerate(NAMES)]
++        cap = pd.DataFrame(rows, columns=["date", "instrument", "target_weight"])
++        z = np.flatnonzero(cap.target_weight.to_numpy() == 0.0)
++        cap.loc[rng.choice(z, 300, replace=False), "target_weight"] = -0.0
++        cap.loc[rng.choice(z, 60, replace=False), "target_weight"] = np.nan
++        ee = []
++        for d in WIN:
++            ds = d.strftime("%Y-%m-%d"); ks = rng.choice(len(NAMES), 7, replace=False)
++            ee += [(ds, NAMES[k], float(rng.uniform(.05, .3))) for k in ks[:5]]
++            ee.append((ds, NAMES[ks[5]], 0.0))                                      # explicit zero row
++            if rng.random() < .15: ee.append((ds, NAMES[ks[0]], 0.0))              # duplicate key (x, 0.0)
++            if rng.random() < .05: ee.append((ds, NAMES[ks[1]], float(rng.uniform(.01, .05))))   # duplicate key (x, y), no zero
++        ins = []
++        for d in WIN:
++            if rng.random() < .4: continue                                          # day without any row
++            ds = d.strftime("%Y%m%d"); ks = rng.choice(len(NAMES), 5, replace=False)
++            ins += [(ds, NAMES[k], float(rng.uniform(.1, .3))) for k in ks[:4]] + [(ds, NAMES[ks[4]], 0.0)]
++        leaf = []
++        for d in WIN:
++            ds = d.strftime("%Y-%m-%d"); ks = rng.choice(len(NAMES), 11, replace=False)
++            leaf += [(ds, NAMES[k], float(rng.uniform(.05, .2))) for k in ks[:8]] + [(ds, NAMES[k], 0.0) for k in ks[8:]]
++            if rng.random() < .2: leaf.append((ds, BAL, 0.05))
++        self.legs = {"capacity_adv": cap, "earnings_event": pd.DataFrame(ee, columns=cap.columns),
++                     "insider_increase": pd.DataFrame(ins, columns=cap.columns)}
++        self.leaf = pd.DataFrame(leaf, columns=cap.columns)
++        self.books = {}
++        for tier, n in (("60w", 6), ("100w", 10)):
++            bk = []
++            for d in WIN:
++                ds = d.strftime("%Y-%m-%d"); ks = rng.choice(len(NAMES), n, replace=False)
++                bk += [(ds, NAMES[k], .95 / n) for k in ks] + [(ds, BAL, .05)]
++            self.books[tier] = pd.DataFrame(bk, columns=cap.columns)
++
++    def px(self, i):
++        return self.bench if i == ADG.B else self.close[i]
++
++
++def _write(s: Synth, tag: str) -> dict:
++    d = OUT_DIR / tag; d.mkdir()
++    p = dict(mask=d / "mask.parquet", fmc=d / "fmc.parquet", leaf=d / "g1g5_synthleaf_daily_weights_20261018.parquet",
++             legs={k: d / f"leg_{k}.parquet" for k in s.legs}, books={t: d / f"book_{t}.parquet" for t in s.books})
++    s.mask.to_parquet(p["mask"]); s.fmc.to_parquet(p["fmc"]); s.leaf.to_parquet(p["leaf"])
++    for k, df in s.legs.items(): df.to_parquet(p["legs"][k])
++    for t, df in s.books.items(): df.to_parquet(p["books"][t])
++    return p
++
++
++def _make_ret(s: Synth):
++    def _ret(W: pd.DataFrame, net: bool = True) -> pd.Series:                      # synthetic stand-in for LC._ret (same for both tools)
++        P = W.pivot_table(index="date", columns="instrument", values="target_weight", aggfunc="sum").fillna(0).sort_index()
++        P.index = pd.to_datetime(P.index)
++        C = pd.DataFrame({i: s.px(i) for i in P.columns}).reindex(P.index)
++        cc = C.pct_change(fill_method=None).fillna(0.0); Hh = P.shift(1).fillna(0)
++        r = (Hh * cc).sum(axis=1)
++        if net: r = r - ADG.COST * Hh.diff().abs().sum(axis=1).fillna(Hh.abs().sum(axis=1))
++        return r
++    return _ret
++
++
++def _install(s: Synth, p: dict, mod):
++    ADG._cache.clear()
++    ADG.bench = lambda: s.bench
++
++    def _close(i):                                                                 # cache-through, like the real ADG._close
++        if i == ADG.B: return s.bench
++        if i not in ADG._cache: ADG._cache[i] = s.close[i].copy()
++        return ADG._cache[i]
++    ADG._close = _close
++    LC._ret = _make_ret(s)
++    SW["df"] = s.sw
++    mod.UNIVERSE_MASKS["hiliq"] = p["mask"]; mod.FMC = p["fmc"]
++    mod.LEGS_BY_UNIVERSE["hiliq"] = dict(p["legs"])
++    mod.CAPADV_BOOK_TRACKS["60w"] = p["books"]["60w"]; mod.CAPADV_BOOK_TRACKS["100w"] = p["books"]["100w"]
++    mod.UNIVERSE = "hiliq"; mod.BASE = "capadv"
++    mod._CTX.clear(); mod._B0.clear()
++
++
++# ---- comparison helpers
++def _fbits(x: float) -> bytes:
++    return struct.pack("<d", x)
++
++
++def _walk(a, b, path="$", diffs=None, zsign=None):
++    """Collect real differences (diffs) and sign-of-zero-only differences (zsign) between two JSON-like objects."""
++    diffs = [] if diffs is None else diffs; zsign = [] if zsign is None else zsign
++    if type(a) is not type(b):
++        diffs.append((path, f"type {type(a).__name__} != {type(b).__name__}", a, b))
++    elif isinstance(a, dict):
++        if list(a) != list(b): diffs.append((path, "keys/order", list(a), list(b)))
++        for k in a:
++            if k in b: _walk(a[k], b[k], f"{path}.{k}", diffs, zsign)
++    elif isinstance(a, (list, tuple)):
++        if len(a) != len(b): diffs.append((path, "len", len(a), len(b)))
++        for n, (x, y) in enumerate(zip(a, b)): _walk(x, y, f"{path}[{n}]", diffs, zsign)
++    elif isinstance(a, float):
++        if math.isnan(a) and math.isnan(b): pass
++        elif _fbits(a) == _fbits(b): pass
++        elif a == b: zsign.append((path, a, b))                                    # 0.0 vs -0.0
++        else: diffs.append((path, "value", a, b))
++    elif a != b:
++        diffs.append((path, "value", a, b))
++    return diffs, zsign
++
++
++def _strip(o: dict) -> dict:
++    return {k: v for k, v in o.items() if k not in METADATA_KEYS}
++
++
++def _dump(o) -> str:
++    return json.dumps(o, ensure_ascii=False, indent=2, default=str)               # == __main__ serialisation
++
++
++def _cmp_frame(a: pd.DataFrame, b: pd.DataFrame) -> tuple[list, int]:
++    """(structural/value problems, number of cells equal in value but differing only in the sign of zero)."""
++    prob = []
++    if not a.index.equals(b.index): prob.append("index")
++    if list(a.columns) != list(b.columns): prob.append("columns")
++    if list(map(str, a.dtypes.unique())) != list(map(str, b.dtypes.unique())): prob.append(f"dtypes {a.dtypes.unique()} != {b.dtypes.unique()}")
++    if prob: return prob, 0
++    x, y = a.to_numpy(dtype=np.float64), b.to_numpy(dtype=np.float64)
++    nx, ny = np.isnan(x), np.isnan(y); both = ~nx & ~ny
++    nval = int((nx != ny).sum() + (both & (x != y)).sum())
++    if nval: prob.append(f"{nval} cells differ in value")
++    return prob, int((both & (x == y) & (np.signbit(x) != np.signbit(y))).sum())
++
++
++def _stage_names(txt: str) -> list:
++    out = []
++    for line in txt.splitlines():
++        m = re.fullmatch(r"STAGE (\S+) ru_maxrss=(\d+)( .*)?", line)
++        if m: out.append(m.group(1))
++    return out
++
++
++@pytest.fixture(scope="module")
++def RUN():
++    s = Synth(); res = {"synth": s}
++    for tag, mod in (("v1_1", CMC1), ("v1_2", CMC2)):
++        p = _write(s, tag)                                                         # same bytes, separate dir per tool (READS attribution)
++        _install(s, p, mod); READS.clear(); buf = io.StringIO()
++        with contextlib.redirect_stderr(buf):
++            c = mod.ctx(); cache_after_ctx = set(ADG._cache)
++            out = mod.cmc(str(p["leaf"]))
++            sigs = {k: mod.sig(q) for k, q in list(p["legs"].items()) + [("leaf", p["leaf"])]}
++        res[tag] = dict(mod=mod, paths=p, ctx=dict(c), cache_after_ctx=cache_after_ctx, out=out, sigs=sigs, stderr=buf.getvalue(), reads=list(READS))
++    return res
++
++
++# ======================= output JSON =======================
++def test_tool_versions(RUN):
++    assert RUN["v1_1"]["out"]["tool_version"] == "v1.1" and RUN["v1_2"]["out"]["tool_version"] == "v1.2"
++    assert CMC2.TOOL_VERSION == "v1.2" and CMC1.TOOL_VERSION == "v1.1"
++
++
++def test_output_json_values_equal(RUN):
++    o1, o2 = _strip(RUN["v1_1"]["out"]), _strip(RUN["v1_2"]["out"])
++    diffs, _ = _walk(o1, o2)
++    assert not diffs, diffs[:20]
++    assert o1["tiers"] and o1["B0_ic"]["n"] > 252 and o1["B1_ic"]["icir_roll252_median"] is not None, "synthetic run must reach every branch"
++
++
++def test_output_json_signed_zero_and_bytes(RUN):
++    o1, o2 = _strip(RUN["v1_1"]["out"]), _strip(RUN["v1_2"]["out"])
++    _, zsign = _walk(o1, o2)
++    assert not zsign, f"values equal but sign of zero differs (reported separately per spec): {zsign}"
++    assert _dump(o1) == _dump(o2), "serialised output JSON (metadata removed) not byte-identical"
++
++
++# ======================= intermediates (ctx, sig) =======================
++CTX_FRAMES = ("R", "beta", "MC", "F")
++
++
++def test_ctx_sig_values_equal(RUN):
++    c1, c2 = RUN["v1_1"]["ctx"], RUN["v1_2"]["ctx"]
++    for k in CTX_FRAMES:
++        prob, _ = _cmp_frame(c1[k], c2[k]); assert not prob, (k, prob)
++    assert c1["IND"].equals(c2["IND"]) and list(c1["IND"].columns) == list(c2["IND"].columns)
++    for k in ("U", "ind_coverage", "sw_snapshots", "universe"):
++        assert c1[k] == c2[k], k
++    assert c1["ev"].equals(c2["ev"])
++    r1, r2 = dict(c1["reads"]), dict(c2["reads"]); assert r1 == r2
++    for k in RUN["v1_1"]["sigs"]:
++        prob, _ = _cmp_frame(RUN["v1_1"]["sigs"][k], RUN["v1_2"]["sigs"][k]); assert not prob, (k, prob)
++
++
++def test_ctx_sig_signed_zero(RUN):
++    c1, c2 = RUN["v1_1"]["ctx"], RUN["v1_2"]["ctx"]; rep = {}
++    for k in CTX_FRAMES:
++        rep[k] = _cmp_frame(c1[k], c2[k])[1]
++    for k in RUN["v1_1"]["sigs"]:
++        rep[f"sig:{k}"] = _cmp_frame(RUN["v1_1"]["sigs"][k], RUN["v1_2"]["sigs"][k])[1]
++    assert not any(rep.values()), f"cells equal in value but with opposite zero sign (reported separately per spec): {rep}"
++    neg = int(np.signbit(RUN["v1_2"]["sigs"]["capacity_adv"].to_numpy()).sum())
++    assert neg == 0, "fillna(0.0)/pivot sum must leave no -0.0 cell"
++
++
++# ======================= M3: pools =======================
++def test_pools_identical_and_non_session_mask_row_ignored(RUN):
++    c1, c2 = RUN["v1_1"]["ctx"], RUN["v1_2"]["ctx"]
++    assert "mem" in c1 and "mem" not in c2 and c2["mem_mask"].dtype == bool and c2["mem_mask"].shape == (len(c2["ev"]), len(c2["U"]))
++    n_diff_days = 0
++    for d in c1["ev"]:
++        p1 = [i for i in c1["U"] if i in c1["mem"].get(d.strftime("%Y-%m-%d"), set())]
++        p2 = CMC2._pool(c2, d)
++        assert p1 == p2, d
++        n_diff_days += len(p1) != len(c1["U"])
++    assert n_diff_days > 0, "membership must vary across days"
++    assert SAT.strftime("%Y-%m-%d") in c1["mem"] and SAT not in c2["ev"] and SAT.strftime("%Y-%m-%d") not in c2["ev_pos"]
++
++
++# ======================= M1: P / ADG._cache =======================
++def test_adg_cache_popped_only_in_v1_2(RUN):
++    U = set(RUN["v1_1"]["ctx"]["U"])
++    assert U <= RUN["v1_1"]["cache_after_ctx"], "v1.1 keeps every close in ADG._cache"
++    assert not (U & RUN["v1_2"]["cache_after_ctx"]), "v1.2 must pop every close from ADG._cache after building P"
++
++
++def test_p_preconditions_refuse_dup_index_and_non_float(RUN):
++    s = RUN["synth"]; c = s.close[NAMES[8]]
++    s.close[NAMES[8]] = pd.concat([c, c.iloc[:1]])                                  # duplicate index label
++    try:
++        p = _write(s, "dup_v12"); _install(s, p, CMC2)
++        with contextlib.redirect_stderr(io.StringIO()), pytest.raises(RuntimeError, match="not unique"):
++            CMC2.ctx()
++        p = _write(s, "dup_v11"); _install(s, p, CMC1)
++        with pytest.raises(Exception):                                             # v1.1 cannot align it either
++            CMC1.ctx()
++        s.close[NAMES[8]] = (c * 100).round().astype(np.int64)
++        p = _write(s, "int_v12"); _install(s, p, CMC2)
++        with contextlib.redirect_stderr(io.StringIO()), pytest.raises(RuntimeError, match="float64"):
++            CMC2.ctx()
++    finally:
++        s.close[NAMES[8]] = c
++        CMC1._CTX.clear(); CMC2._CTX.clear()
++
++
++# ======================= M2: zero filter at read =======================
++def test_sig_reads_filter_zero_rows_only_in_v1_2(RUN):
++    for tag, want in (("v1_1", None), ("v1_2", [("target_weight", "!=", 0.0)])):
++        p = RUN[tag]["paths"]; legs = {Path(q).resolve() for q in p["legs"].values()}
++        flts = [f for rp, f in RUN[tag]["reads"] if rp in legs]
++        assert len(flts) == 6 and all(f == want for f in flts), (tag, flts)          # b0 (3) + fixture re-read (3)
++        lf = [f for rp, f in RUN[tag]["reads"] if rp == Path(p["leaf"]).resolve()]   # sig x2 in cmc + fixture sig + LC._w (unchanged, no filter)
++        assert len(lf) == 4 and sum(f == want for f in lf) == (4 if want is None else 3) and lf.count(None) == (4 if want is None else 1), (tag, lf)
++    cap = RUN["synth"].legs["capacity_adv"].target_weight
++    assert (cap == 0).sum() > 0 and np.signbit(cap[cap == 0]).any() and cap.isna().any(), "fixture must contain 0.0, -0.0 and NaN weights"
++
++
++# ======================= M5: STAGE lines =======================
++def test_stage_lines(RUN):
++    imp = _stage_names(_IMPORT_ERR.getvalue()); assert imp == ["imports"], imp
++    got = _stage_names(RUN["v1_2"]["stderr"])
++    it = iter(got)
++    assert all(n in it for n in STAGES_IN_ORDER), f"STAGE order {got}"
++    assert not _stage_names(RUN["v1_1"]["stderr"])
++    m = re.search(r"STAGE sig:earnings_event ru_maxrss=\d+ rows_nonzero=(\d+) dup_keys_nonzero=(\d+)", RUN["v1_2"]["stderr"])
++    assert m and int(m.group(2)) > 0, "the (x, y) duplicate keys must be reported"
++
++
++# ======================= legacy column =======================
++def test_legacy_column_equal_and_refuses_v1x_outputs(RUN):
++    new = _strip(RUN["v1_2"]["out"])
++    L = dict(universe="hiliq", leaf_file="/x/" + Path(new["leaf_file"]).name, d_ic=0.001, d_icir_full=0.01, d_icir_roll252_median=0.02,
++             rho_leaf_resid_vs_B0=0.1, tiers={t: dict(d_cagr_net=0.0, report_to_leo_eligible=False, base=v["base"]) for t, v in new["tiers"].items()})
++    q = OUT_DIR / "legacy_ok.json"; q.write_text(json.dumps(L)); h = hashlib.sha256(q.read_bytes()).hexdigest()
++    assert _dump(CMC1.legacy_column(str(q), new, h)) == _dump(CMC2.legacy_column(str(q), new, h))
++    for tv in ("v1.1", "v1.2"):
++        q = OUT_DIR / f"legacy_{tv}.json"; q.write_text(json.dumps(dict(L, tool_version=tv))); h = hashlib.sha256(q.read_bytes()).hexdigest()
++        with pytest.raises(SystemExit, match="not a legacy one"):
++            CMC2.legacy_column(str(q), new, h)
++
++
++# ======================= manifest / runner key / CLI =======================
++def test_manifest_v1_2_is_v1_1_plus_one_line():
++    m1p, m2p = ROOT / TEST_DEPS["manifest_v1_1"], ROOT / TEST_DEPS["manifest_v1_2"]
++    m1, m2 = RG.load_manifest(m1p), RG.load_manifest(m2p)
++    me = "research/alpha_combo_marginal_v1_2.py"
++    assert m2 == {**m1, me: RG.sha256_file(ROOT / me)}
++    l1, l2 = m1p.read_text(encoding="utf-8").split("\n"), m2p.read_text(encoding="utf-8").split("\n")
++    extra = [x for x in l2 if x not in l1]; assert len(l2) == len(l1) + 1 and len(extra) == 1 and extra[0].endswith("  " + me)
++    assert RG.verify_manifest_shas(m2p, "selftest")["all_sha_match"]
++    assert Path(CMC2.MANIFEST).resolve() == m2p.resolve() and Path(CMC2.CODE_DEPS["closure_manifest"]).resolve() == m2p.resolve()
++    assert Path(CMC1.MANIFEST).resolve() == m1p.resolve()
++    assert m1[TEST_DEPS["combo_v1_1"]] == CMC2.V1_1_SHA == RG.sha256_file(ROOT / TEST_DEPS["combo_v1_1"])
++    assert CMC2.CODE_DEPS["runguard"] == CMC1.CODE_DEPS["runguard"]
++
++
++def test_runner_key_and_arch_ok_mandatory(monkeypatch):
++    assert Path(CMC2.__file__).stem == "alpha_combo_marginal_v1_2"                 # → ok key runner_sha256_alpha_combo_marginal_v1_2
++    monkeypatch.setattr(sys, "argv", ["alpha_combo_marginal_v1_2.py", "some_leaf"])
++    with pytest.raises(SystemExit):
++        CMC2._cli()
++
++
++# ======================= nothing outside the pinned set was loaded =======================
++def test_only_pinned_project_modules_loaded():
++    allowed = TEST_MODULES | {str(Path(__file__).resolve().relative_to(ROOT))}
++    loaded = set()
++    for mm in list(sys.modules.values()):
++        f = getattr(mm, "__file__", None)
++        if not f: continue
++        try: loaded.add(str(Path(f).resolve().relative_to(ROOT)))
++        except ValueError: pass
++    assert loaded <= allowed, sorted(loaded - allowed)

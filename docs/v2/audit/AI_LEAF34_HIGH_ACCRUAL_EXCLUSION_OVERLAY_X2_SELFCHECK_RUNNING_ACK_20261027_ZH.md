@@ -1,0 +1,24 @@
+# AI 叶34 High Accrual Exclusion Overlay X2 selfcheck_v1 RUNNING_ACK
+
+- ET: 2026-10-27 11:53 ET（America/New_York；`2026-10-27T11:53:17-04:00`）
+- status: **RUNNING**（开跑瞬间快照；完结见 RUN_RECEIPT）
+- ET_TS: `20261027_115317`
+- pid: `341702`（ACK 写后立即 spawn；见同拍 RUN 日志）
+- script: `research/leaf34_high_accrual_exclusion_overlay_x2_selfcheck_v1.py` sha8 **`d210efba`** / 全长 `d210efba27ff3b45d3da88faa3f0767adc4d6b5481420f48a31bf6e77e38f7f6`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_SELFCHECK_V1_HILIQ_X2.ok` sha8 **`178e90e9`** / 全长 `178e90e905466abfea88186967fdcba5dbb4600e67d969452b68f3afd6c3671d`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`3fce510e`** holder=`leaf34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_SELFCHECK_V1` 窗→`13:13` expires `13:17` ET（**未擅 lift**；do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF34_HIGH_ACCRUAL_EXCLUSION_OVERLAY_X2_SELFCHECK_OK_SIGNED_20261027_ZH.md` sha8 **`56580a5c`**
+- 审: **`e2902e64`**；CMD: **`4255ad33`**（禁 `--arch-ok-path`）；COVER/DIFF/RECEIPT **`0bf02521`/`a1a6689d`/`a5467d7d`**
+- 钉 mask **`8b5d6d24`** / meta **`4fc6108d`** / overlap **`77368c8f`**；构建 **`482009dc` UNCHANGED**；模板叶32 **`dcf6b559`** / 叶31 **`e1fe578c`** / common **`218b61cf`** / 叶33 **`afbbe7e7`**
+- out: `output/ai_factory/_leaf34_high_accrual/20261027_105941/_selfcheck/`
+- report: `output/ai_factory/leaf_reports/leaf34_high_accrual/selfcheck_v1.json`
+- log: `output/ai_factory/_leaf34_high_accrual/20261027_115317_selfcheck_logs/run_20261027_115317.log`
+- samp: `/tmp/quantlab_leaf34_x2_selfcheck_20261027_115317`
+- approved_cmd: **exact**（**无** `--arch-ok-path`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf34_high_accrual_exclusion_overlay_x2_selfcheck_v1.py --universe HILIQ --window x2 --execute`
+- prelaunch: TEAM_STATE 顶 SIGNED `56580a5c` MATCH；`.ok`/`QUIET`/脚本/`build` 全长 MATCH；mask/meta/overlap sha8 MATCH；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈12.21Gi≥soft9.7Gi；dry-compile PASS（py_compile）；脚本仍 `d210efba`；IN_WINDOW expires 13:17；cmdline 无 `--arch-ok-path`
+- rss_limit_mb: **1500 禁抬**；硬 ABORT + peak_proof REQUIRED
+- PRIMARY=mask-only top_q=0.20×capacity_adv（≠α TopN）；Gate A/B/current + decay KEEP；KEEP 不解阻 X2 ACCEPT（`45dd87dc`）
+- forbid∋`c1b71e64`+`245df63f`+`c5ed13df`+`5774bb6e`+二十票(+`81521fb5`)
+- ≠X2 ACCEPT / ≠Book-Smoke / ≠重跑 alpha；live=false；`0087c928`/28/29 另队；禁触 A18
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**；leo_notify=false

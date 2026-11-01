@@ -1,0 +1,105 @@
+# r3 未经 .ok 自跑结果作废留证 2026-10-18 05:40:07 EDT
+## 清理前清单
+### /tmp/qlrev
+/tmp/qlrev/research/intel/intel_event_study.py 6485 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_common.py 18969 2026-10-18 05:19
+/tmp/qlrev/research/intel/intel_run.py 15082 2026-10-18 05:19
+/tmp/qlrev/research/intel/intel_run.py.bak_0526 9991 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_common.py.bak_0526 8690 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_pit_candidates_study.py 5145 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_c1_gap_split.py 6871 2026-10-18 05:11
+/tmp/qlrev/research/intel/build_cpi_consensus.py 2803 2026-10-18 05:11
+/tmp/qlrev/research/intel/build_tsmc_guidance.py 3528 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_cpi_tsmc_event_study.py 5922 2026-10-18 05:11
+/tmp/qlrev/research/intel/collect_ai_earnings_cnbc.py 2519 2026-10-18 05:11
+/tmp/qlrev/research/intel/parse_ai_earnings_cnbc.py 3426 2026-10-18 05:11
+/tmp/qlrev/research/intel/build_ai_earnings_surprise.py 4592 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_ai_earnings_event_study.py 4518 2026-10-18 05:11
+/tmp/qlrev/research/intel/test_news_classifier.py 4187 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_common.py.bak_20261018_newsclf 9204 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_common.py.bak_20261018_0040_prefix 10536 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_common.py.bak_20261018_0120_hormuz 11798 2026-10-18 05:11
+/tmp/qlrev/research/intel/intel_run.py.bak_20261018_0125_merge 10059 2026-10-18 05:11
+/tmp/qlrev/research/intel/test_intel_run_merge.py 2859 2026-10-18 05:11
+/tmp/qlrev/research/intel/test_sw_freshness.py 6222 2026-10-18 05:19
+/tmp/qlrev/data 24 2026-10-18 05:11
+/tmp/qlrev/output 26 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_event_study.py 6251 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_common.py 12210 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_run.py 14703 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_run.py.bak_0526 9991 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_common.py.bak_0526 8690 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_pit_candidates_study.py 5145 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_c1_gap_split.py 6637 2026-10-18 05:11
+/tmp/qlrev/orig_intel/build_cpi_consensus.py 2803 2026-10-18 05:11
+/tmp/qlrev/orig_intel/build_tsmc_guidance.py 3528 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_cpi_tsmc_event_study.py 5922 2026-10-18 05:11
+/tmp/qlrev/orig_intel/collect_ai_earnings_cnbc.py 2519 2026-10-18 05:11
+/tmp/qlrev/orig_intel/parse_ai_earnings_cnbc.py 3426 2026-10-18 05:11
+/tmp/qlrev/orig_intel/build_ai_earnings_surprise.py 4592 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_ai_earnings_event_study.py 4518 2026-10-18 05:11
+/tmp/qlrev/orig_intel/test_news_classifier.py 4187 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_common.py.bak_20261018_newsclf 9204 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_common.py.bak_20261018_0040_prefix 10536 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_common.py.bak_20261018_0120_hormuz 11798 2026-10-18 05:11
+/tmp/qlrev/orig_intel/intel_run.py.bak_20261018_0125_merge 10059 2026-10-18 05:11
+/tmp/qlrev/orig_intel/test_intel_run_merge.py 2859 2026-10-18 05:11
+/tmp/qlrev/orig_intel/weekly/paper_exposure.py 2041 2026-10-18 05:11
+/tmp/qlrev/orig_intel/weekly/weekly_charts_20261017.py 12702 2026-10-18 05:11
+/tmp/qlrev/orig_intel/weekly/alerts_postprocess_20261018.py 11114 2026-10-18 05:11
+SYMLINK /tmp/qlrev/data -> /workspace/QuantLab/data
+SYMLINK /tmp/qlrev/output -> /workspace/QuantLab/output
+### /tmp/qlrev3
+/tmp/qlrev3/t_fresh.log 6486 2026-10-18 05:32
+/tmp/qlrev3/test_news_classifier.log 2696 2026-10-18 05:32
+/tmp/qlrev3/test_intel_run_merge.log 412 2026-10-18 05:32
+/tmp/qlrev3/test_sw_freshness.log 6499 2026-10-18 05:32
+/tmp/qlrev3/dry_out/ALERTS_latest.json 36134 2026-10-18 05:32
+/tmp/qlrev3/dry_out/event_study_hitrate.json 4373 2026-10-18 05:32
+/tmp/qlrev3/dry.log 101 2026-10-18 05:32
+/tmp/qlrev3/dry/ALERTS_latest.md 27439 2026-10-18 05:32
+/tmp/qlrev3/dry/ALERTS_latest.json 52953 2026-10-18 05:32
+-rw-r--r--  1 box  box     8450 Oct 18 05:28 intel_r2_review.md
+-rw-r--r--  1 box  box    12049 Oct 18 05:37 intel_r3_review.md
+-rw-r--r--  1 box  box       53 Oct 18 01:31 intel_run_0131.log
+-rw-r--r--  1 box  box       73 Oct 18 04:37 intel_run_0436.log
+-rw-r--r--  1 box  box       53 Oct 18 02:07 intel_time.txt
+drwxr-xr-x  4 box  box     4096 Oct 18 05:11 qlrev
+drwxr-xr-x  6 box  box     4096 Oct 18 05:32 qlrev3
+drwxr-xr-x  2 box  box     4096 Oct 18 05:19 qlrev_dry
+-rw-r--r--  1 box  box      308 Oct 18 05:19 qlrev_dry.log
+-rw-r--r--  1 box  box      412 Oct 18 05:19 qlrev_test_intel_run_merge.log
+-rw-r--r--  1 box  box     2696 Oct 18 05:19 qlrev_test_news_classifier.log
+-rw-r--r--  1 box  box     3204 Oct 18 05:19 qlrev_test_sw_freshness.log
+## 清理后
+/tmp/qlrev_dry
+/tmp/qlrev_dry.log
+/tmp/qlrev_test_intel_run_merge.log
+/tmp/qlrev_test_news_classifier.log
+/tmp/qlrev_test_sw_freshness.log
+## 正式文件未动核对
+5102c289e9707d9c0668b45357ba7f8d6b4180159ab72bef72f7c7186550fd15  /workspace/QuantLab/research/intel/build_ai_earnings_surprise.py
+acf96477b190ef04bb3a6c123867ac615493cae63031a79604df92a146a47223  /workspace/QuantLab/research/intel/build_cpi_consensus.py
+42ad5ba589ffc39299677b47fa6a6534b75407153d5ac7e552390b8bb109e8ee  /workspace/QuantLab/research/intel/build_tsmc_guidance.py
+fa31af5cd4873bc145a0f820908d2b2367926a0191c43753dc61d7fc6e4d6cda  /workspace/QuantLab/research/intel/collect_ai_earnings_cnbc.py
+b0784e2d48155b840d5285c3615868408536bca8808aae4676d5582efdf86c81  /workspace/QuantLab/research/intel/intel_ai_earnings_event_study.py
+2063e6aaa212ac9c5c2dac804d6ce1e7adf5309b5a75b67640224fd325d46d9e  /workspace/QuantLab/research/intel/intel_c1_gap_split.py
+9a725d5cea69a9592f5e03b9d1defae5c924cebeb1c636db73e04e0134a38580  /workspace/QuantLab/research/intel/intel_common.py
+8cc4142bedd74afef2aba1ea9651a6b60eea61cec05b90cd605a12a710b22ff7  /workspace/QuantLab/research/intel/intel_cpi_tsmc_event_study.py
+ad95fe43b73a193b186f4a8250319d505d283951fce242488870e099cdf6c2cd  /workspace/QuantLab/research/intel/intel_event_study.py
+af374e736a0299bf2978409f79234792afd4dab41efa704c8868c3692e61d0f1  /workspace/QuantLab/research/intel/intel_pit_candidates_study.py
+0de787c1b6b14b7f59498667e682e8557a2cba828bc40d8783f7a7a8441ff87d  /workspace/QuantLab/research/intel/intel_run.py
+42fda2646e243b341d976abaf4ebb00ad78fa813c8039bf67e9a173db26316a1  /workspace/QuantLab/research/intel/parse_ai_earnings_cnbc.py
+0c56eab412c137996506eaea8f91bf00b7175b97148dab32144082104739f374  /workspace/QuantLab/research/intel/test_intel_run_merge.py
+cc41a3b1974ea0c8ec580ea0e5c5f3f7e5f94bed41c7ec1514984318c876cbf7  /workspace/QuantLab/research/intel/test_news_classifier.py
+522966a9a1ac347a57bed3bbb4656b377e6e79cf00a312e46c2b3c0da2ded070  /workspace/QuantLab/output/intel/ALERTS_latest.json
+## 补充清理 05:40:16 EDT
+/tmp/qlrev_dry/ALERTS_latest.md 27109 05:19
+/tmp/qlrev_dry/ALERTS_latest.json 51264 05:19
+/tmp/qlrev_dry.log 308 05:19
+/tmp/qlrev_test_intel_run_merge.log 412 05:19
+/tmp/qlrev_test_news_classifier.log 2696 05:19
+/tmp/qlrev_test_sw_freshness.log 3204 05:19
+## 最终
+ls: cannot access '/tmp/qlrev*': No such file or directory
+无 /tmp/qlrev* 残留

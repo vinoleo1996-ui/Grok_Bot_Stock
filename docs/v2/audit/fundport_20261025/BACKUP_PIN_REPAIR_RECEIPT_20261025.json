@@ -1,0 +1,69 @@
+{
+  "ok_sha256": "a4d7beca0437353ec60d6934b4cf9f51a32fcb7969687d048de11eecb989a8bd",
+  "start_et": "2026-10-25T01:25:43-04:00",
+  "repair": true,
+  "method": "os.unlink_dst_then_os.link",
+  "live": false,
+  "pre_stat_src1": {
+    "path": "backups/valuation/daily_basic_full_tushare.20261014_1136.parquet",
+    "inode": 138101,
+    "nlink": 1,
+    "size": 743884130,
+    "mtime_epoch": 1792904972
+  },
+  "pre_stat_dst1": {
+    "path": "backups/valuation_pinned/daily_basic_full_tushare.20261014_1136.parquet",
+    "inode": 138684,
+    "nlink": 1,
+    "size": 743884130,
+    "mtime_epoch": 1792904981
+  },
+  "sha_src1": "4820339fbed1ce21bf0aed0b56a10543b76659b330946de6e22334d76a4363dc",
+  "sha_dst1_before": "4820339fbed1ce21bf0aed0b56a10543b76659b330946de6e22334d76a4363dc",
+  "pre_stat_src2": {
+    "path": "backups/valuation/daily_basic_full_tushare.20261014_1137_dupbug.parquet",
+    "inode": 138117,
+    "nlink": 1,
+    "size": 744405927,
+    "mtime_epoch": 1792904978
+  },
+  "pre_stat_dst2": {
+    "path": "backups/valuation_pinned/daily_basic_full_tushare.20261014_1137_dupbug.parquet",
+    "inode": 138733,
+    "nlink": 1,
+    "size": 744405927,
+    "mtime_epoch": 1792904989
+  },
+  "sha_src2": "5c3ed5f646b6374d101f66f4f6d6a169f90eb23a52b227dfdb222579ccc04395",
+  "sha_dst2_before": "5c3ed5f646b6374d101f66f4f6d6a169f90eb23a52b227dfdb222579ccc04395",
+  "post_stat_src1": {
+    "path": "backups/valuation/daily_basic_full_tushare.20261014_1136.parquet",
+    "inode": 138101,
+    "nlink": 2,
+    "size": 743884130,
+    "mtime_epoch": 1792904972
+  },
+  "post_stat_dst1": {
+    "path": "backups/valuation_pinned/daily_basic_full_tushare.20261014_1136.parquet",
+    "inode": 138101,
+    "nlink": 2,
+    "size": 743884130,
+    "mtime_epoch": 1792904972
+  },
+  "post_stat_src2": {
+    "path": "backups/valuation/daily_basic_full_tushare.20261014_1137_dupbug.parquet",
+    "inode": 138117,
+    "nlink": 2,
+    "size": 744405927,
+    "mtime_epoch": 1792904978
+  },
+  "post_stat_dst2": {
+    "path": "backups/valuation_pinned/daily_basic_full_tushare.20261014_1137_dupbug.parquet",
+    "inode": 138117,
+    "nlink": 2,
+    "size": 744405927,
+    "mtime_epoch": 1792904978
+  },
+  "end_et": "2026-10-25T01:25:49-04:00",
+  "result": "OK"
+}

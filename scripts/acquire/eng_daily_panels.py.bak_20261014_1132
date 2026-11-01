@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Eng 日终面板增量 (研究级, promotion_approved=false). 幂等: 只追加 > 现有最后日 的交易日.
+  etf510300 : tushare fund_daily/fund_adj 510300.SH (2 次请求) -> data/v2/etf_510300/panels/sh.510300.parquet
+  asof_em   : 本地 tushare_raw/{daily,stk_limit,suspend_d,daily_basic,stock_st} -> data/v2/asof_extend_202610/panels (0 请求)
+  asof_ts   : 校验 data/v2/asof_extend_tushare_202610 (由 tier1 extend 写) 并刷新 manifest
+  dividend  : tushare dividend ex_date=缺失日 (逐日 1 请求) -> corporate_actions/dividend_by_exdate_tushare.parquet
+最后写 output/daily_update_status.json.
+用法: python3 scripts/acquire/eng_daily_panels.py [--date YYYYMMDD] [--steps etf510300,asof_em,asof_ts,dividend,status]
+"""
+import sys, os, json, glob, argparse, hashlib, pathlib, datetime as dt
+from zoneinfo import ZoneInfo
+ROOT=pathlib.Path("/workspace/QuantLab"); sys.path.insert(0,str(ROOT)); sys.path.insert(0,str(ROOT/"scripts/acquire"))
+import pandas as pd, numpy as np
+RAW=ROOT/"data/v2/tushare_raw"; SH=ZoneInfo("Asia/Shanghai"); ET=ZoneInfo("America/New_York")
+STATUS=ROOT/"output/daily_update_status.json"
+
+def sha(p):
+    h=hashlib.sha256()
+    with open(p,"rb") as f:
+        for b in iter(lambda:f.read(1<<20),b""): h.update(b)
+    return h.hexdigest()
+def tdays(): return sorted(p.stem for p in (RAW/"daily").glob("2*.parquet"))
+def atomic(df,p):
+    t=pathlib.Path(str(p)+".tmp"); df.to_parquet(t,index=False); os.replace(t,p)
+def to_iid(s): return s.str.split(".").map(lambda x:f"{x[1].lower()}.{x[0]}")
+def pull(api,**p):
+    from tushare_relay_pull import pull as _p
+    return _p(api,preferred="relay",**p)
+
+# ---------- 510300 ----------
+def etf510300(end):
+    P=ROOT/"data/v2/etf_510300/panels/sh.510300.parquet"; M=ROOT/"data/v2/etf_510300/manifest.json"
+    e=pd.read_parquet(P); last=e.event_time.max().strftime("%Y%m%d")
+    if last<end:
+        fd=pull("fund_daily",ts_code="510300.SH",start_date=last,end_date=end)
+        fa=pull("fund_adj",ts_code="510300.SH",start_date=last,end_date=end)
+        fd["trade_date"]=fd.trade_date.astype(str); fa["trade_date"]=fa.trade_date.astype(str)
+        fd=fd.merge(fa[["trade_date","adj_factor"]],on="trade_date",how="left").sort_values("trade_date")
+        base=fd.loc[fd.trade_date==last,"adj_factor"]
+        f_last=float(e.factor.iloc[-1]); a_last=float(base.iloc[0]) if len(base) and pd.notna(base.iloc[0]) else None
+        new=fd[(fd.trade_date>last)&(fd.trade_date<=end)]
+        rows=[]
+        for r in new.itertuples():
+            d=pd.Timestamp(r.trade_date); av=pd.Timestamp(d.date(),tz=SH)+pd.Timedelta(hours=18)
+            fac=f_last*(float(r.adj_factor)/a_last) if a_last and pd.notna(r.adj_factor) else f_last
+            rows.append(dict(instrument_id="sh.510300",open=r.open,high=r.high,low=r.low,close=r.close,volume=float(r.vol),
+              available_at=av,quality_status="ok_raw_ohlcv_tushare_fund_daily",tradestatus=1.0,open_status="derived",
+              open_status_available_at=av,limit_up=np.nan,limit_down=np.nan,factor=fac,event_time=d,
+              amount=float(r.amount)*1000,turnover=np.nan,factor_d0_orig=fac,factor_basis="tushare_adj_factor_scaled_to_d0_anchor"))
+        if rows:
+            n=pd.DataFrame(rows).astype({c:e[c].dtype for c in e.columns if c not in("available_at","open_status_available_at")})
+            for c in("available_at","open_status_available_at"): n[c]=n[c].astype(e[c].dtype)
+            e=pd.concat([e,n],ignore_index=True).drop_duplicates("event_time",keep="last").sort_values("event_time")
+            atomic(e,P)
+            raw=ROOT/"data/v2/etf_510300/fund_daily_tushare_510300.parquet"; r0=pd.read_parquet(raw); r0["trade_date"]=r0.trade_date.astype(str)
+            add=new.drop(columns=["adj_factor"]); add=add[r0.columns.intersection(add.columns)]
+            atomic(pd.concat([r0,add]).drop_duplicates("trade_date",keep="last").sort_values("trade_date",ascending=False),raw)
+    m=json.loads(M.read_text()); mx=e.event_time.max().strftime("%Y-%m-%d")
+    m.update(as_of=mx,date_max=mx,rows=len(e),sha256_panel=sha(P),updated_at=dt.datetime.now(ET).isoformat(),promotion_approved=False,
+             increment_note="2026-10-12+ rows from tushare fund_daily(amount 千元*1000)/fund_adj; turnover NaN for these rows")
+    M.write_text(json.dumps(m,ensure_ascii=False,indent=2))
+    return dict(path=str(P),last_date=mx,rows=len(e),sha256=m["sha256_panel"],manifest=str(M))
+
+# ---------- asof_extend_202610 (X2 个股面板) ----------
+def asof_em(end):
+    D=ROOT/"data/v2/asof_extend_202610"; PD_=D/"panels"; M=D/"manifest.json"; C=D/"calendar.parquet"
+    cal=pd.read_parquet(C); last=cal.session.max().strftime("%Y%m%d")
+    todo=[d for d in tdays() if last<d<=end]
+    added=0
+    if todo:
+        sf=sorted((RAW/"stock_st").glob("*.parquet")); st=pd.concat([pd.read_parquet(f,columns=["ts_code","trade_date"]) for f in sf]) if sf else pd.DataFrame(columns=["ts_code","trade_date"])
+        st["trade_date"]=st.trade_date.astype(str)
+        per={}
+        for d in todo:
+            x=pd.read_parquet(RAW/f"daily/{d}.parquet")
+            for k,cols in [("stk_limit",["ts_code","up_limit","down_limit"]),("daily_basic",["ts_code","turnover_rate"])]:
+                f=RAW/f"{k}/{d}.parquet"
+                if f.exists(): x=x.merge(pd.read_parquet(f)[cols],on="ts_code",how="left")
+                else: x[cols[1:]]=np.nan
+            sp=RAW/f"suspend_d/{d}.parquet"; sus=set(pd.read_parquet(sp).query("suspend_type=='S'").ts_code) if sp.exists() else set()
+            stset=set(st.loc[st.trade_date==d,"ts_code"])
+            x["d"]=d; x["sus"]=x.ts_code.isin(sus); x["st"]=x.ts_code.isin(stset)
+            for r in x.itertuples(): per.setdefault(r.ts_code,[]).append(r)
+        for ts,rs in per.items():
+            iid=f"{ts.split('.')[1].lower()}.{ts.split('.')[0]}"; p=PD_/f"{iid}.parquet"
+            if not p.exists(): continue   # 仅追加已有面板, 新股不在 X2 宇宙
+            g=pd.read_parquet(p); lastp=g.event_time.max().strftime("%Y%m%d") if len(g) else ""
+            rows=[]
+            for r in rs:
+                if r.d<=lastp: continue
+                d=pd.Timestamp(r.d); av=pd.Timestamp(d.date(),tz=SH)+pd.Timedelta(hours=18)
+                lr=round(r.up_limit/r.pre_close-1,2) if pd.notna(r.up_limit) and r.pre_close else np.nan
+                lr=min([0.05,0.1,0.2,0.3],key=lambda v:abs(v-lr)) if pd.notna(lr) else np.nan
+                rows.append(dict(instrument_id=iid,open=r.open,high=r.high,low=r.low,close=r.close,volume=float(r.vol),amount=float(r.amount)*1000,
+                  available_at=av,quality_status="research_not_promotable:tushare_daily_increment",tradestatus=0.0 if r.sus else 1.0,
+                  open_status="derived",open_status_available_at=av,limit_up=r.up_limit,limit_down=r.down_limit,turnover=r.turnover_rate,
+                  factor=np.nan,event_time=d,source="tushare_raw_daily",is_st_at_open=float(r.st),limit_ratio_at_open=lr,
+                  amount_source="tushare_daily_amount_kCNY*1000",volume_unit="lot_100sh",volume_shares=float(r.vol)*100))
+            if not rows: continue
+            n=pd.DataFrame(rows)
+            for c in g.columns:
+                if c not in n: n[c]=pd.NA
+                try: n[c]=n[c].astype(g[c].dtype)
+                except Exception: pass
+            atomic(pd.concat([g,n[g.columns]],ignore_index=True),p); added+=len(rows)
+        cal=pd.concat([cal,pd.DataFrame({"session":pd.to_datetime(todo).astype(cal.session.dtype)})]).drop_duplicates().sort_values("session")
+        atomic(cal,C)
+    mx=cal.session.max().strftime("%Y-%m-%d")
+    m=json.loads(M.read_text()); m.update(as_of_extended=mx,calendar_max=mx,extend_end_target=mx,updated_at=dt.datetime.now(ET).isoformat(),promotion_approved=False)
+    m.setdefault("notes",[]); note="2026-10-12+ increments from local tushare_raw daily/stk_limit/daily_basic/suspend_d/stock_st (0 API calls); factor NaN as before"
+    if note not in m["notes"]: m["notes"].append(note)
+    M.write_text(json.dumps(m,ensure_ascii=False,indent=2))
+    n_p=len(list(PD_.glob("*.parquet")))
+    return dict(path=str(PD_),last_date=mx,rows=None,n_panels=n_p,rows_added_this_run=added,sha256=sha(C),sha256_of="calendar.parquet",manifest=str(M))
+
+def asof_ts(end):
+    D=ROOT/"data/v2/asof_extend_tushare_202610"; M=D/"manifest.json"
+    ps=sorted((D/"panels").glob("*.parquet")); smp=ps[::25]
+    mx=max(pd.read_parquet(p,columns=["trade_date"]).trade_date.max() for p in smp).strftime("%Y-%m-%d")
+    m=json.loads(M.read_text()); m.update(as_of_extended=mx,n_panels_written=len(ps),checked_at=dt.datetime.now(ET).isoformat())
+    M.write_text(json.dumps(m,ensure_ascii=False,indent=2))
+    return dict(path=str(D/"panels"),last_date=mx,rows=None,n_panels=len(ps),sha256=sha(M),sha256_of="manifest.json",manifest=str(M),
+                note="由 nightly daily_pull(tier1 extend) 生成; promotion_approved 字段沿用原值")
+
+# ---------- dividend ----------
+def dividend(end):
+    out=RAW/"dividend_by_exdate"; P=ROOT/"data/v2/corporate_actions/dividend_by_exdate_tushare.parquet"
+    have=sorted(p.stem[3:] for p in out.glob("ex_*.parquet")); last=have[-1]
+    cur=dt.datetime.strptime(last,"%Y%m%d").date()+dt.timedelta(days=1); stop=dt.datetime.strptime(end,"%Y%m%d").date()
+    # 也刷新最近 7 天 (预案/实施状态可能更新) 中尚未覆盖的; 新日逐日 1 请求
+    while cur<=stop:
+        d=cur.strftime("%Y%m%d"); x=pull("dividend",ex_date=d); atomic(x,out/f"ex_{d}.parquet"); cur+=dt.timedelta(days=1)
+    parts=[pd.read_parquet(f) for f in sorted(out.glob("ex_*.parquet")) if f.stat().st_size>0]
+    parts=[p for p in parts if len(p)]
+    d=pd.concat(parts,ignore_index=True).drop_duplicates(); atomic(d,P)
+    mx=max(p.stem[3:] for p in out.glob("ex_*.parquet")); mxi=f"{mx[:4]}-{mx[4:6]}-{mx[6:]}"
+    M=ROOT/"data/v2/corporate_actions/manifest_dividend_by_exdate.json"
+    m=dict(path=str(P),source="tushare dividend(ex_date=逐日)",ex_date_covered_through=mxi,max_ex_date_in_rows=str(d.ex_date.max()),rows=len(d),
+           sha256=sha(P),updated_at=dt.datetime.now(ET).isoformat(),promotion_approved=False,
+           available_at_rule="以 ann_date/imp_ann_date 为公告口径; 本表按除权日索引, 研究级")
+    M.write_text(json.dumps(m,ensure_ascii=False,indent=2))
+    return dict(path=str(P),last_date=mxi,rows=len(d),sha256=m["sha256"],manifest=str(M))
+
+def daily_core():
+    import pyarrow.parquet as pq
+    out={}
+    for k,p in [("daily_ohlcv_raw_pit","data/v2/bars/daily_ohlcv_raw_pit.parquet"),("daily_basic","data/v2/valuation/daily_basic_full_tushare.parquet")]:
+        f=ROOT/p
+        if not f.exists(): continue
+        names=pq.read_schema(f).names; col=next((c for c in ("trade_date","session","event_time","date") if c in names),None)
+        t=pd.read_parquet(f,columns=[col]) if col else None
+        out[k]=dict(path=str(f),last_date=str(pd.to_datetime(t[col].astype(str)).max())[:10] if col else None,rows=pq.ParquetFile(f).metadata.num_rows,sha256=sha(f))
+    return out
+
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument("--date",default=tdays()[-1]); ap.add_argument("--steps",default="etf510300,asof_em,asof_ts,dividend,status")
+    a=ap.parse_args(); end=a.date; steps=a.steps.split(",")
+    prev=json.loads(STATUS.read_text()) if STATUS.exists() else {}
+    tables=prev.get("tables",{}); errs={}
+    F=dict(etf510300=etf510300,asof_em=asof_em,asof_ts=asof_ts,dividend=dividend)
+    for s in steps:
+        if s not in F: continue
+        try: r=F[s](end); r["finished_at"]=dt.datetime.now(ET).isoformat(timespec="seconds"); tables[s]=r; print(s,json.dumps(r,ensure_ascii=False),flush=True)
+        except Exception as e: errs[s]=str(e)[:300]; print("FAIL",s,e,flush=True)
+    if "status" in steps:
+        for k,v in daily_core().items(): v["finished_at"]=dt.datetime.now(ET).isoformat(timespec="seconds"); tables[k]=v
+    exp=f"{end[:4]}-{end[4:6]}-{end[6:]}"
+    ok=all(str(t.get("last_date",""))[:10]>=exp for k,t in tables.items() if k!="dividend") and not errs
+    st=dict(schema="quantlab.v2.daily_update_status.v1",target_trade_date=exp,status="ok" if ok else "partial",
+            finished_at=dt.datetime.now(ET).isoformat(timespec="seconds"),tables=tables,errors=errs,promotion_approved=False,live=False,
+            note="dividend.last_date=已查询到的最后除权日(自然日), 可能>=交易日; 其余 last_date 须>=target_trade_date 才算 ok")
+    STATUS.parent.mkdir(exist_ok=True); t=STATUS.with_suffix(".tmp"); t.write_text(json.dumps(st,ensure_ascii=False,indent=2)); os.replace(t,STATUS)
+    print("STATUS",st["status"],flush=True)
+if __name__=="__main__": main()

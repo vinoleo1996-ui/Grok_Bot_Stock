@@ -1,0 +1,103 @@
+--- docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v5_4240ce82.sh	2026-10-25 23:25:07.664589187 +0800
++++ docs/v2/audit/cmc_wrapper_c5_tighten_20261025/cmc_wrapper_v6_C5TIGHTEN.draft.sh	2026-10-26 01:01:55.118202739 +0800
+@@ -1,10 +1,12 @@
+ #!/bin/bash
+-# cmc_wrapper_v5: successor of cmc_wrapper_v4 (6174eacb). Arch 2026-10-25 P2 (leaf25 CONSUMED_PASS open item): DEFAULT sampler path MUST be under /tmp (NOT log_dir/output*). Hard-refuse sampler under /workspace/QuantLab/output* or /workspace/QuantLab/data*. Optional --sampler-dir DIR | --sampler-file PATH (both must resolve under /tmp). Other artifacts (exit/c5/log/marker/ps_*) stay in --logdir. C5/C4/STOP/guard semantics unchanged from v4.
+-# (v4 header:) successor of cmc_wrapper_v3 (61676a3c). Arch 09:44: P1-W1 vm_peak_kb excluded from peak (VmPeak = virtual, runguard L114-122); P2-W2 C4 vs 1331200 + STAGE ru_maxrss (kB, Linux getrusage) in peak; P2-W3 C5 adds scripts_eng/, python -c "import research", -m quantlab; P3 assert default alpha_combo_marginal_v1_2, PGID mismatch also kills children.
+-# (v3 header:) successor of cmc_wrapper_v2 (dcfef770). Arch 09:28 rulings: guard default-on (94322, pass iff state T or exited);
+-#   --no-guard only with allow_no_guard=true in --arch-ok; --c5-ignore only in synthetic selftests (refused for real runs unless allow_c5_ignore=true);
+-#   pre-launch ps snapshot incl. guard pid state. Selftest-only hooks: --test-stopkb N, --test-force-pgid-mismatch, --selftest-assert.
+-# usage: cmc_wrapper_v5.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID] --tag TAG --logdir DIR --outdir DIR
++# cmc_wrapper_v6_C5TIGHTEN (SIDE DRAFT — not pinned): successor of cmc_wrapper_v5 (4240ce82).
++# Arch 2026-10-25 VOID_FAIL_C5_FALSE_POSITIVE (ARCH_LEAF25_MEM_PROBE_R3_FAIL_C5_VOID_RULE sha 43fe482e…):
++#   C5 false-positive: unrelated sleep held fd → this-run wrapper log under output/ → rc=96.
++# Tighten (A+B+C): (A) whitelist fd/cwd under this-run --logdir/--outdir realpath;
++#   (B) skip kill for benign-only cmdline (sleep/true/bare cat; never skip python/research/scripts readers);
++#   (C) default setsid stdout/stderr to /tmp/quantlab_wrapper_logs/${TAG}.log; $L/${TAG}.log is symlink.
++# C4/STOP/guard/--c5-ignore refuse-91 (real runs without allow_c5_ignore) identical to v5.
++# usage: cmc_wrapper_v6_C5TIGHTEN.draft.sh [--selftest] [--arch-ok OK] [--guard-pid PID|--no-guard] [--c5-ignore PID] --tag TAG --logdir DIR --outdir DIR
+ #                          [--sampler-dir DIR|--sampler-file PATH] [--meta JSON] [--assert STR] [--cwd DIR] -- CMD [ARGS...]
+ # rc: child rc | 89 guard pid not T at launch | 90 --no-guard refused | 91 --c5-ignore refused | 92 test hook outside --selftest
+ #     | 95 stopline | 96 C5 hit | 97 PGID_MISMATCH | 98 cmdline assert failed | 2 usage / sampler path refused
+@@ -20,6 +22,8 @@
+   --assert) ASSERT=$2; shift 2;; --cwd) RUNCWD=$2; shift 2;; --) shift; break;; *) echo "usage error: $1" >&2; exit 2;; esac; done
+ [ -n "$TAG" ] && [ -n "$L" ] && [ -n "$OD" ] && [ $# -gt 0 ] || { echo "usage: --tag --logdir --outdir -- CMD" >&2; exit 2; }
+ mkdir -p "$L"
++_abs() { readlink -f "$1" 2>/dev/null || python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$1" 2>/dev/null || echo "$1"; }
++LABS=$(_abs "$L"); ODABS=$(_abs "$OD")
+ # P2: sampler DEFAULT under /tmp; hard-ban output*/data* (Arch leaf25 2026-10-25)
+ if [ -n "$SAMPLER_FILE" ]; then S="$SAMPLER_FILE"
+ elif [ -n "$SAMPLER_DIR" ]; then mkdir -p "$SAMPLER_DIR"; S="$SAMPLER_DIR/${TAG}_sampler.txt"
+@@ -31,13 +35,21 @@
+ case "$_SABS" in /workspace/QuantLab/output*|/workspace/QuantLab/data*) echo "usage error: sampler resolves under output*/data*: $_SABS" >&2; exit 2;; esac
+ case "$_SABS" in /tmp/*) ;; *) echo "usage error: sampler abs must be under /tmp: $_SABS" >&2; exit 2;; esac
+ mkdir -p "$(dirname "$S")"
+-X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; LOG="$L/${TAG}.log"; MK="$L/${TAG}_start.marker"
++X="$L/${TAG}_exit.txt"; C5F="$L/${TAG}_c5.txt"; MK="$L/${TAG}_start.marker"
++# C: setsid stdout/stderr under /tmp; keep $L/${TAG}.log as symlink for callers/peak grep
++mkdir -p /tmp/quantlab_wrapper_logs
++LOGTMP="/tmp/quantlab_wrapper_logs/${TAG}.log"
++LOG="$L/${TAG}.log"
++: > "$LOGTMP"
++ln -sfn "$LOGTMP" "$LOG"
+ log() { echo "$(date +%H:%M:%S.%N) $*" >> "$S"; }
+ refuse() { log "REFUSED rc=$1 $2"; echo "exit=$1 refused=1 reason=$2 launched=0" >> "$X"; echo "WRAPPER_REFUSED tag=$TAG rc=$1 $2"; exit "$1"; }
+ okkey() { [ -n "$OK" ] && [ -f "$OK" ] && grep -qxE "$1=true" "$OK"; }
+ REAL=0; [ -n "$OK" ] && REAL=1
+ [ -n "$OK" ] && { [ -f "$OK" ] || refuse 2 "arch-ok not found: $OK"; log "ARCH_OK $OK sha256=$(sha256sum "$OK" | cut -c1-64)"; }
+ log "SAMPLER_PATH $S"
++log "WRAPPER_STDOUT_LOG $LOG -> $LOGTMP (C5 lever C)"
++log "C5_OWN_WHITELIST logdir=$LABS outdir=$ODABS"
+ # --- policy checks before anything is launched ---
+ if [ "$SELFTEST" = 0 ] && { [ -n "$TSTOP" ] || [ "$TMISMATCH" = 1 ] || [ "$SELFASSERT" = 1 ]; }; then refuse 92 "test hook given without --selftest"; fi
+ if [ "$NOGUARD" = 1 ]; then okkey allow_no_guard || refuse 90 "--no-guard requires allow_no_guard=true in --arch-ok"; GUARDPID=""; log "NO_GUARD allowed by .ok allow_no_guard=true"; fi
+@@ -60,19 +72,45 @@
+ killmis() { local all; all=$(desc "$PID"); log "KILLMIS targets: pgid=$PGID pids=$all"; kill -TERM -- "-$PGID" 2>/dev/null; kill -TERM $all 2>/dev/null; sleep 5; kill -KILL -- "-$PGID" 2>/dev/null; kill -KILL $all 2>/dev/null; sleep 0.5; local left=""; for q in $all; do [ -e /proc/$q ] && [ "$(awk '{print $3}' /proc/$q/stat 2>/dev/null)" != Z ] && left="$left $q"; done; pgrep -g "$PGID" >/dev/null && left="$left pg:$PGID"; if [ -n "$left" ]; then log "KILLMIS_ALIVE$left"; else log "KILLMIS_EMPTY pgid=$PGID pids=$all"; fi; }
+ mytree() { local t=" $$ " n p c pp; n=1; while [ $n = 1 ]; do n=0; for p in /proc/[0-9]*; do c=${p#/proc/}; case "$t" in *" $c "*) continue;; esac
+     pp=$(awk '{print $4}' "$p/stat" 2>/dev/null); case "$t" in *" $pp "*) t="$t$c "; n=1;; esac; done; done; echo "$t"; }
++# A: path under this-run logdir/outdir → skip (not a cross-run reader)
++c5_under_own() {
++  local tabs; tabs=$(_abs "$1"); [ -n "$tabs" ] || return 1
++  case "$tabs" in "$LABS"|"$LABS"/*|"$ODABS"|"$ODABS"/*) return 0;; esac
++  return 1
++}
++# B: benign-only cmdline (nul→space already); never skip real QuantLab readers
++c5_benign_cmd() {
++  local c="$1"
++  case "$c" in
++    *python*|*research/*|*scripts/*|*scripts_eng/*|*-m\ quantlab*|/workspace/QuantLab/data*|/workspace/QuantLab/output*)
++      return 1;;
++  esac
++  case "$c" in
++    sleep|sleep\ *|/bin/sleep|/bin/sleep\ *|/usr/bin/sleep|/usr/bin/sleep\ *) return 0;;
++    true|/bin/true|/usr/bin/true|true\ |/bin/true\ |/usr/bin/true\ ) return 0;;
++    cat|/bin/cat|/usr/bin/cat|cat\ |/bin/cat\ |/usr/bin/cat\ ) return 0;;
++  esac
++  return 1
++}
+ c5watch() { while kill -0 "$PID" 2>/dev/null; do T=$(mytree); for d in /proc/[0-9]*; do p=${d#/proc/}
+     case "$T" in *" $p "*) continue;; esac
+     [ -n "$GUARDPID" ] && [ "$p" = "$GUARDPID" ] && continue; [ -n "$C5IGN" ] && [ "$p" = "$C5IGN" ] && continue
+     g=$(awk '{print $5}' "$d/stat" 2>/dev/null); [ -z "$g" ] && continue; [ "$g" = "$PGID" ] && continue
+     hit=""; cw=$(readlink "$d/cwd" 2>/dev/null)
+-    case "$cw" in /workspace/QuantLab/data*|/workspace/QuantLab/output*) hit="cwd:$cw";; esac
+-    if [ -z "$hit" ]; then for fd in "$d"/fd/*; do t=$(readlink "$fd" 2>/dev/null); case "$t" in /workspace/QuantLab/data/*|/workspace/QuantLab/output/*) hit="fd:$t"; break;; esac; done; fi
++    case "$cw" in /workspace/QuantLab/data*|/workspace/QuantLab/output*)
++      if c5_under_own "$cw"; then log "C5_SKIP own_logdir/outdir pid=$p cwd:$cw"; else hit="cwd:$cw"; fi;; esac
++    if [ -z "$hit" ]; then for fd in "$d"/fd/*; do t=$(readlink "$fd" 2>/dev/null); case "$t" in /workspace/QuantLab/data/*|/workspace/QuantLab/output/*)
++      if c5_under_own "$t"; then log "C5_SKIP own_logdir/outdir pid=$p fd:$t"; else hit="fd:$t"; break; fi;; esac; done; fi
+     if [ -z "$hit" ]; then m=$(grep -m1 -oE '/workspace/QuantLab/(research|scripts|scripts_eng)/[^ ]+' "$d/maps" 2>/dev/null); [ -n "$m" ] && hit="map:$m"; fi
+     if [ -z "$hit" ]; then c=$(tr '\0' ' ' 2>/dev/null < "$d/cmdline"); case "$c" in *python*research/*|*python*scripts/*|*python*scripts_eng/*|*python*import\ research*|*python*-m\ quantlab*|*/workspace/QuantLab/scripts_eng/*|*/workspace/QuantLab/research/*.py*|*/workspace/QuantLab/scripts/*.py*) hit="cmd";; esac; fi
+-    if [ -n "$hit" ]; then echo "$(date +%H:%M:%S.%N) C5_HIT pid=$p pgid=$g $hit cmd=$(tr '\0' ' ' 2>/dev/null < "$d/cmdline")" >> "$C5F"; killgrp; return; fi
++    if [ -n "$hit" ]; then
++      c=$(tr '\0' ' ' 2>/dev/null < "$d/cmdline")
++      if c5_benign_cmd "$c"; then log "C5_SKIP benign_cmd pid=$p $hit cmd=$c"; continue; fi
++      echo "$(date +%H:%M:%S.%N) C5_HIT pid=$p pgid=$g $hit cmd=$c" >> "$C5F"; killgrp; return
++    fi
+   done; sleep 0.5; done; }
+ cd "$RUNCWD" || exit 2                                   # (a)
+-setsid "$@" > "$LOG" 2>&1 &                              # (b) only the command is backgrounded; $! is the command
++setsid "$@" > "$LOG" 2>&1 &                              # (b) only the command is backgrounded; $! is the command (LOG → /tmp via symlink)
+ PID=$!; PGID=$PID; STOPPED=0; AT=0; RC_OVR=""
+ sleep 0.2
+ G=$(awk '{print $5}' /proc/$PID/stat 2>/dev/null)

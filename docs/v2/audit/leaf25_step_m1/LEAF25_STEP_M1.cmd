@@ -1,0 +1,4 @@
+# leaf25 step -1 command (DRAFT; NOT run; requires own read-only Arch .ok; <ET_TS> filled at run time from `date +%Y%m%d_%H%M%S`)
+# script research/leaf25_ttm_recon_step_m1.py sha256 7edf577f875512e8d5eab28c9f3590ec5d2bfb85add9bdc99b925adf6524cf83
+# wrapper docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh sha256 6174eacb4ff2d0905634477430b96bf155d3606794cd66f23a5a38a4f85e4169 (STOPKB 1484800, C4 1331200)
+cd /workspace/QuantLab && bash docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh --arch-ok output/ai_factory/ARCH_RUN_AUTH_LEAF25_TTM_RECON_STEP_M1.ok --assert leaf25_ttm_recon_step_m1 --tag leaf25_step_m1 --logdir output/ai_factory/_leaf25_ttm_recon/<ET_TS>_logs --outdir output/ai_factory/_leaf25_ttm_recon/<ET_TS> --cwd /workspace/QuantLab -- env PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf25_ttm_recon_step_m1.py --out output/ai_factory/_leaf25_ttm_recon/<ET_TS>/

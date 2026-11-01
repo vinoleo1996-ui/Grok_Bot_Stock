@@ -1,0 +1,8 @@
+CONT 94322 per Arch 10:13 (lock b5e78069 lifted 10:13:21 ET)
+before: 2026-10-18 10:14:13.499708891 EDT
+    PID    PPID STAT     ELAPSED   RSS CMD
+  94322   94319 Tsl     08:50:32 129184 python3 scripts/acquire/remaining_after_stk_surv.py
+after: 2026-10-18 10:14:15.521000769 EDT
+    PID    PPID STAT     ELAPSED   RSS CMD
+  94322   94319 Ssl     08:50:34 129008 python3 scripts/acquire/remaining_after_stk_surv.py
+94322 (python3) S

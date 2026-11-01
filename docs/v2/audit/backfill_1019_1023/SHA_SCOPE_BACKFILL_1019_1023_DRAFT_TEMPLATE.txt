@@ -1,0 +1,40 @@
+# DRAFT / TEMPLATE — 补跑 1019–1023 sha 范围草稿（QuantLab Data，2026-10-25T04:52:42-0400 ET）
+# *** 非执行 / 不可跑 / 未接入 nightly_sha_scope_snapshot_v2 ***
+# 用途：供 Eng 改编专用补跑执行器包的 EXPECTED / MUST_NOT 清单；Data 只读盘点缺口后列出意图。
+# 权威窗口 .ok：output/data/ARCH_RUN_AUTH_DATA_BACKFILL_1019_1023.ok
+#   sha256=9e4359f9b6521e9d8d2b9578c7031ac6e79d42bd7dc4e3003e34a7c0c3e32714
+# 中转：docs/v2/audit/relay_probe_20261025/RELAY_PROBE_RECEIPT_20261025T0448ET.md sha8=5d208af6 不通
+#   → 签后实跑须中转通 + Eng 专用 runner + Arch 审 runner。
+# 代码钉（只引用）：incr a7ac54b3… / transform 308b5054… / driver f1910e8a…（禁止 nightly 驱动硬跑历史日）
+# 日历钉：data/v2/tushare_raw/trade_cal.parquet pin=141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086
+# date_list=20261019,20261020,20261021,20261022,20261023（均为 is_open=1）
+# 参照结构：docs/v2/audit/nightly_sha_scope_backfill_1014_1016.txt（579c8605…）
+# 注意：同目录 nightly_sha_scope_backfill_1019_1023.txt（428a05d4…）是 10-19 日更/enable 衍生，不是本五日草稿。
+#
+# ===== [EXPECTED_CHANGE 意图 — Eng 定稿前勿当正式 scope] =====
+# 跑后新建、BEFORE 不存在 → 正式 v1/v2 清单通常不能预钉；跑后 ls+元数据核：
+#   data/v2/tushare_raw/daily_basic/20261019.parquet
+#   data/v2/tushare_raw/daily_basic/20261020.parquet
+#   data/v2/tushare_raw/daily_basic/20261021.parquet
+#   data/v2/tushare_raw/daily_basic/20261022.parquet
+#   data/v2/tushare_raw/daily_basic/20261023.parquet
+# 若专用 runner 写 valuation 合并产物（须 Arch 审 scope 后才 EXPECTED）：
+#   data/v2/valuation/daily_basic_full_tushare.parquet
+#   data/v2/valuation/daily_basic_full_tushare_manifest.json
+# 状态类（视 runner 是否触达）：
+# /workspace/QuantLab/output/data_freshness_status.json
+# /workspace/QuantLab/output/relay_health.json
+#
+# ===== [MUST_NOT_CHANGE 意图 — 日历 / PIT / 纸面闭包] =====
+/workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet
+/workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+/workspace/QuantLab/data/v2/calendar/manifest.json
+/workspace/QuantLab/data/v2/asof_extend_202610/calendar.parquet
+/workspace/QuantLab/docs/v2/eng_sd1/paper_import_closure.json
+#
+# ===== [MUST_NOT_CHANGE 意图 — 缺口日前 daily_basic 原始] =====
+/workspace/QuantLab/data/v2/tushare_raw/daily_basic/20261014.parquet
+/workspace/QuantLab/data/v2/tushare_raw/daily_basic/20261015.parquet
+/workspace/QuantLab/data/v2/tushare_raw/daily_basic/20261016.parquet
+#
+# end DRAFT — Eng 定稿后另存正式文件并重钉 sha；本文件永不作为可跑宣称。

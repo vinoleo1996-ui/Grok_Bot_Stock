@@ -1,0 +1,21 @@
+loader:
+  legacy: REFUSED code=1 :: REFUSED ckpt /tmp/ldtest2/legacy.pkl: version=MISSING (expected v1_3)
+  smoke_void: REFUSED code=1 :: REFUSED ckpt /tmp/ldtest2/smoke_void.pkl: smoke=True (full run loads only smoke=False ckpts; move the dir to a
+  badsha: REFUSED code=1 :: REFUSED ckpt /tmp/ldtest2/badsha.pkl: code_sha256 mismatch (ckpt=000000000000000000000000000000000000000000000
+  badver: REFUSED code=1 :: REFUSED ckpt /tmp/ldtest2/badver.pkl: version=v1_2 (expected v1_3)
+  nover: REFUSED code=1 :: REFUSED ckpt /tmp/ldtest2/nover.pkl: version=MISSING (expected v1_3)
+  good: ACCEPTED
+auth:
+  real_current_ok_parse: REFUSED code=1 :: v1_3 blocked: run-auth /tmp/ldtest2/real.ok lacks structured fields ['format', 'version', 'signed_by', 'allow_
+  missing_file: REFUSED code=1 :: v1_3 blocked: run-auth file missing: /tmp/ldtest2/nope.ok (Arch writes it; do not create it yourself)
+  full_allowed: ACCEPTED
+  full_not_allowed: REFUSED code=1 :: v1_3 blocked: full run requested but run-auth allow_full is not true
+  smoke_not_allowed: REFUSED code=1 :: v1_3 blocked: --smoke-days given but run-auth allow_smoke is not true
+  smoke_allowed_in_list: ACCEPTED
+  smoke_day_not_listed: REFUSED code=1 :: v1_3 blocked: smoke days ['2024-06-28'] not in run-auth smoke_days
+  smoke_allowed_empty_list: REFUSED code=1 :: v1_3 blocked: allow_smoke=true but run-auth smoke_days is empty
+  runner_sha_mismatch: REFUSED code=1 :: v1_3 blocked: runner sha256 b623825457efb2a3ce22c450d12e87624dc8f5642ad310e4ecc869362c64cbb4 != authorized aaa
+  combined_sha_mismatch: REFUSED code=1 :: v1_3 blocked: combined code sha256 51f54743a2ed1546d0f56744676da6d96e94ed46029eb67950dfe807bfbd87aa != authori
+  bool_typo: REFUSED code=1 :: v1_3 blocked: run-auth allow_smoke='yes', must be exactly true or false
+  short_sha: REFUSED code=1 :: v1_3 blocked: run-auth runner_sha256 is not a 64-hex sha256
+  duplicate_field: REFUSED code=1 :: v1_3 blocked: run-auth field 'allow_smoke' appears more than once in /tmp/ldtest2/dup.ok

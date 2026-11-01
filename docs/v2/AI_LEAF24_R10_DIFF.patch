@@ -1,0 +1,498 @@
+diff --git a/research/g1g5_imax_intraday_alpha.py b/research/g1g5_imax_intraday_alpha.py
+index e1df8bb..ac91078 100644
+--- a/research/g1g5_imax_intraday_alpha.py
++++ b/research/g1g5_imax_intraday_alpha.py
+@@ -1,6 +1,35 @@
+ #!/usr/bin/env python3
+ """Leaf24 imax_intraday — g1g5_ashare_imax_intraday_v1 (research leaf, not production; long-only, no short arm). Script r1 (Arch b997cba8 fixes).
+ Prereg: docs/v2/AI_G1G5_IMAX_OVERNIGHT_WHO_PAYS_PREREG_ZH.md (FROZEN 2026-10-18 01:44:40 ET; sha256 pinned below + in the Arch .ok).
++r8 (Arch P2, 2026-10-18 ET, NOT RUN — static checks only): RSS watchdog also checks VmHWM (limit unchanged 1536000 kB) and an explicit
++    peak check (VmHWM and ru_maxrss) runs at the end of each build year, each pool_benchmarks year and each universe in eval
++    (RSS_GUARD_KILL, os._exit(137)); same code as leaf 23 r2.10 (d). No other change.
++r9 (Arch 06:27, folds r8; NOT RUN — static checks only; RSS limit stays 1536000 kB; code kept structurally identical to leaf 23 r2.10):
++    (a) eval split into one process per universe (--stage eval --uni HILIQ, then --uni FULLA) + --stage merge (combines the per-universe
++        summaries into summary_<stamp>.json and writes eval_meta.json); chain eval_HILIQ ← build_HILIQ+build_FULLA, eval_FULLA ← same
++        + eval_HILIQ, merge ← both eval_<uni>; a sensitivity's first stage needs the primary eval_HILIQ, eval_FULLA and eval (merge) metas;
++    (b) reads reduced to rows/columns that can matter: build reads the leaf18/18v α files per build year (date in [max(X2 start, Jan 1 y),
++        Jan 1 y+1)) instead of the whole X2 range once; eval PX drops logmv/<uni col> (never used from PX); pick_book merges only
++        rebalance-day α/gate rows; the overlap section reads the leaf18/18v α files only for the instruments held in their own weight
++        file (the merge is a left join on the held rows, so every matched row and every NaN is the same; a rebalance-day-only read
++        would turn non-rebalance held rows into NaN and change held_alpha_missing_share); no dtype change;
++    (c) build frees Q after the e_id loop, ER after its pivots, Ee/Lu after imax_window, drops P.logmv/adv20_yuan after the style
++        pivots; allocator trim (gc + pyarrow pool release_unused + malloc_trim) at segment ends and at the end of every build year;
++        pool_benchmarks = leaf 23 r2.10 version (per-year frames freed early + trim); FE return cache loaded once per eval process and
++        kept (was cleared and re-read after every book);
++    (d) watchdog (VmRSS + VmHWM) and per-segment peak checks as r8.
++    No numerical change intended in any stage.
++r10 (Arch r9 review b771b4be CONDITIONAL PASS + B3 diagnosis 561219c7; NOT RUN — static checks only):
++    P1-1 pool_benchmarks B3 fix byte-identical with leaf 23 r2.11 (4aa19627): carry on every mask-suspended day (no row or restored row),
++        mcap anchors follow the same carry, hard stop unless mask suspended <=> row_origin=restored on every panel row (panel row without
++        mask row also stops), carried name-days counted on (S & sus==1); every function shared with leaf 23 r2.11 is byte-identical
++        (rss_watchdog / peak_check / trim / merge / pick_book / rank_ind docstrings and the read_panel refusal message text made identical —
++        comment/message-only changes);
++    P2-1 the r9 P.drop(logmv, adv20_yuan) is removed (it freed nothing: pandas 3.0.6 keeps the shared float32 block alive); instead the
++        year-y filter (same condition, same .copy()) is taken right after Q is built and before the e_id loop, and the full P is dropped
++        at once (P is rebound to the filtered frame);
++    P3 watchdog fail-closed (shared code); explicit refusal when a leaf18/18v weight file yields no held names or a NaN instrument.
++    No numerical change intended.
+ Written 2026-10-18 ET by QuantLab AI. NOT RUN at write time (syntax check only). Same guards as leaf 23 r2.1: every stage refuses
+ to start without an Arch run-auth .ok (quantlab_run_auth_v1) pinning (64-hex, recomputed at runtime) this script, the prereg,
+ cs_panel_dir + cs_panel_manifest_sha256, the evaluation tools and the leaf18/18v X2 α files.
+@@ -33,8 +62,8 @@ fix-2 (Arch 129d67c5, NOT RUN — py_compile only): P1-1 B3 state recursed from
+     P2-2 stage chains across variants (and leaf 24 after leaf 23); P2-3 exclusive create; P2-6 all years 2018–2026 verified;
+     P3 asserts → raise, carry_col for FULLA, panel re-hash per stage, limit-up 30*/688/689 (P2-5), rebalance-day limit-up share.
+ """
+-import argparse, hashlib, json, os, re, sys, gc, threading, time, resource
+-import numpy as np, pandas as pd
++import argparse, hashlib, json, os, re, sys, gc, threading, time, resource, ctypes
++import numpy as np, pandas as pd, pyarrow as pa
+ from pathlib import Path
+ from datetime import datetime
+ from collections import deque, defaultdict
+@@ -79,7 +108,7 @@ X2S, X2E = "2024-06-03", "2026-10-09"   # Alpha 486496a9 P1-1: assigned before O
+ OK_FIXED = {"format": "quantlab_run_auth_v1", "signed_by": "arch", "scope": "X2", "leaf": LEAF_NO, "live": "false", "promotion": "false",
+             "promotion_approved": "false", "allow_full": "true", "allow_smoke": "false", "allow_sealed": "false", "cs_panel_build_version": PANEL_VERSION,
+             "mechanism_tag": "g1g5_ashare_imax_intraday_v1", "window_start": X2S, "window_end": X2E, "rss_limit_mb": "1500",
+-            "serial_order": "after_leaf23_complete>build_HILIQ>build_FULLA>eval>sensitivities", "sensitivity_specs": "src-total,k1,win60,exfin", "run_niceness": "10",
++            "serial_order": "after_leaf23_complete>build_HILIQ>build_FULLA>eval_HILIQ>eval_FULLA>merge>sensitivities", "sensitivity_specs": "src-total,k1,win60,exfin", "run_niceness": "10",
+             "tool_cmds_path": str(TOOL_CMDS), "research_only": "true"}   # N5 / P2-1: explicit, fixed values
+ OK_REQUIRED = ("script_sha256", "prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "out_dir", "allow_sensitivity", "tool_cmds_sha256", "issued_at", "expires_et")
+ BLOCK_CMDS = ("scripts/fix_sd1/", "scripts_eng/", "scripts/nightly_update.py"); LOG_ONLY_CMDS = ("scripts/acquire/",)
+@@ -93,17 +122,46 @@ ND = NormalDist()
+ 
+ 
+ # ---------------------------------------------------------------- guards (same as leaf 23 r2.1)
++def vm_status():
++    """VmRSS / VmHWM (kB) from /proc/self/status."""
++    d = {}
++    for l in open("/proc/self/status"):
++        if l.startswith(("VmRSS:", "VmHWM:")): d[l.split(":")[0]] = int(l.split()[1])
++    return d
++
++
+ def rss_watchdog():
++    """Kill on current RSS or on the high-water mark (VmHWM), so a peak between two samples is not missed; any read error also kills (fail-closed)."""
+     def loop():
+         while True:
+             try:
+-                kb = int(next(l for l in open("/proc/self/status") if l.startswith("VmRSS")).split()[1])
+-                if kb > RSS_LIMIT_KB: print(f"RSS_GUARD_KILL rss_kb={kb} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
+-            except Exception: pass
++                v = vm_status()
++                if v["VmRSS"] > RSS_LIMIT_KB or v["VmHWM"] > RSS_LIMIT_KB:
++                    print(f"RSS_GUARD_KILL rss_kb={v['VmRSS']} hwm_kb={v['VmHWM']} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
++            except Exception as ex:   # r2.11 (P3): fail-closed instead of silently disabling the guard
++                print(f"RSS_WATCHDOG_ERROR {type(ex).__name__}: {ex}", flush=True); os._exit(137)
+             time.sleep(1)
+     threading.Thread(target=loop, daemon=True).start()
+ 
+ 
++def peak_check(tag):
++    """Explicit peak check at segment ends (VmHWM and ru_maxrss); over the limit → same kill as the watchdog."""
++    v = vm_status(); mx = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if v["VmHWM"] > RSS_LIMIT_KB or mx > RSS_LIMIT_KB:
++        print(f"RSS_GUARD_KILL at {tag} hwm_kb={v['VmHWM']} maxrss_kb={mx} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
++    print(f"peak_check {tag} rss_kb={v['VmRSS']} hwm_kb={v['VmHWM']}", flush=True)
++
++
++try: _LIBC = ctypes.CDLL("libc.so.6")
++except OSError: _LIBC = None
++
++
++def trim():
++    """Hand freed memory back to the OS (gc + pyarrow pool + glibc heap); no effect on any value."""
++    gc.collect(); pa.default_memory_pool().release_unused()
++    if _LIBC is not None: _LIBC.malloc_trim(0)
++
++
+ def ancestors():
+     """own pid + full ancestor chain (Arch P2-4: wrappers carry 'research/' in their cmdline too)."""
+     out, p = set(), os.getpid()
+@@ -315,9 +373,12 @@ def verify_upstream(out, auth, stages):
+ 
+ 
+ def verify_primary_eval(auth):
+-    """Arch P2-2: a sensitivity variant's first stage requires the primary eval_meta chain (same script/.ok/manifest) and records its sha."""
+-    mf = OUT_ROOT/"eval_meta.json"; check_meta(mf, same_run(auth, stage="eval", variant="primary"))
+-    return {str(mf.relative_to(AIF)): sha(mf)}
++    """Arch P2-2 (r2.10 split): a sensitivity variant's first stage requires the primary eval_HILIQ, eval_FULLA and eval (merge) metas
++    (same script/.ok/manifest, variant primary) and records their sha."""
++    up = {}
++    for st in ("eval_HILIQ", "eval_FULLA", "eval"):
++        mf = OUT_ROOT/f"{st}_meta.json"; check_meta(mf, same_run(auth, stage=st, variant="primary")); up[str(mf.relative_to(AIF))] = sha(mf)
++    return up
+ 
+ 
+ def guard_fresh(out, patterns):
+@@ -327,12 +388,13 @@ def guard_fresh(out, patterns):
+ 
+ # ---------------------------------------------------------------- helpers
+ def read_panel(panel, y, cols, lo=None):
+-    if set(cols) & FORBIDDEN_SIGNAL_COLS: raise RuntimeError("signal/selection code must not read is_resume_day/hiliq_carry")
++    if set(cols) & FORBIDDEN_SIGNAL_COLS: raise RuntimeError("signal/selection code must not read is_resume_day/hiliq_carry (P2-8)")
+     flt = [("date", ">=", pd.Timestamp(lo).to_pydatetime())] if lo is not None else None
+     x = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=cols, filters=flt); x["date"] = pd.to_datetime(x.date); return x
+ 
+ 
+ def rank_ind(v, ind):
++    """within-SW-L1 rank → normal quantile; groups < 5 or NaN → 0 (prereg r2 §4.2)."""
+     out = np.zeros(len(v))
+     for k in np.unique(ind):
+         i = np.where((ind == k) & np.isfinite(v))[0]
+@@ -374,8 +436,9 @@ AUTH_TOOLS = {}
+ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     """Arch P1-1 (129d67c5 §3; replaces the r2.2 'no row = carry'). Membership state S(i,d), recursed year by year from 2018
+     (one state vector carried across years, no seed window):
+-      panel row                                  → S = that row's col (restored rows are False);
+-      no panel row, mask row with suspended=True → S = previous S (carry through the suspension);
++      mask suspended=True (no panel row, or a restored panel row) → S = previous S (carry through the suspension; Arch 561219c7);
++      other panel row                            → S = that row's col;
++      panel row: mask suspended=True <=> row_origin=restored; panel row without mask row → STOP (hard assert);
+       no panel row, mask row with suspended=False (ST / adv / young) → S = False and the carry chain breaks;
+       no mask row                                → S = False (defensive only: the mask is a rectangular grid, Arch bd3abe5c §5-1);
+       day > delist_date in delisted_master       → S = False and the MV chain breaks (主 Agent 02:44 / Arch spec: PRIMARY cut = delist_date;
+@@ -398,7 +461,8 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     sp_dd, mp_dd = pd.Series(dtype="float64"), pd.Series(dtype="float64")
+     for y in PANEL_YEARS:
+         if pd.Timestamp(f"{y}-01-01") > idx[-1]: break
+-        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind"]); pr["date"] = pd.to_datetime(pr.date)
++        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind", "row_origin"]); pr["date"] = pd.to_datetime(pr.date)
++        pr["_rs"] = pr.row_origin.eq("restored").astype("float64"); pr = pr.drop(columns=["row_origin"])   # Arch 561219c7: restored flag only
+         mk = pd.read_parquet(MASK, columns=["date", "instrument", "suspended", "st", "young", "adv_fail"],
+                              filters=[("date", ">=", pd.Timestamp(f"{y}-01-01").to_pydatetime()), ("date", "<=", pd.Timestamp(f"{y}-12-31").to_pydatetime())])
+         mk["date"] = pd.to_datetime(mk.date)
+@@ -410,8 +474,18 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         val = pv(pr.assign(_v=pr[col].fillna(False).astype("float64")), "_v")
+         lmv = pv(pr, "logmv", "mean")
+         sus = pv(mk.assign(_s=mk.suspended.astype("float64")), "_s")          # NaN = no mask row
++        rst = pv(pr, "_rs").fillna(0.0) == 1.0                                 # restored panel row (Arch 561219c7)
++        bad_rs = (has & ((sus == 1.0) != rst)) | (has & sus.isna())            # hard assert: suspended <=> restored; panel row without mask row
++        if bool(bad_rs.to_numpy().any()):
++            st_b = bad_rs.stack(); st_b = st_b[st_b]
++            raise SystemExit(f"STOP (B3 assert, Arch 561219c7): {int(len(st_b))} panel rows in {y} where mask suspended != (row_origin == restored) or no mask row "
++                             f"(e.g. {[(str(d_.date()), i_) for d_, i_ in st_b.index[:5]]}) — report to Arch")
++        del bad_rs
++        pre = pr[pr.date < lo].sort_values("date").groupby("instrument").tail(1).set_index("instrument")   # r2.2 seed / N4 ind seed (r2.10 (c): taken here, then pr freed)
++        del pr
+         gone = pd.DataFrame(days.values[:, None] > cut.reindex(names).values[None, :], index=days, columns=names)   # NaT → False
+-        carry_nc = (~has) & (sus == 1.0); carry = carry_nc & ~gone                 # primary: no carry after delist_date
++        carry_nc = (sus == 1.0) & (~has | rst); carry = carry_nc & ~gone        # every mask-suspended day carries (restored rows too); no carry after delist_date
++        del rst
+         A_nc = val.where(has, 0.0).mask(carry_nc)                              # r2.3 rule (no delisting cut) — only to count the cut
+         gone_dd = pd.DataFrame(days.values[:, None] > cut_dd.reindex(names).values[None, :], index=days, columns=names)
+         carry_dd = carry_nc & ~gone_dd                                          # shadow: cut at last_trade_date (disclosure only)
+@@ -424,6 +498,7 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         S_nc = pd.concat([pd.DataFrame([sp_nc.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A_nc]).ffill().iloc[1:].fillna(0.0)
+         S_dd = pd.concat([pd.DataFrame([sp_dd.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A_dd]).ffill().iloc[1:].fillna(0.0)
+         MV_dd = pd.concat([pd.DataFrame([mp_dd.reindex(names).fillna(-np.inf).to_numpy()], index=[p0], columns=names), B_dd]).ffill().iloc[1:]
++        del A, B   # sus kept for the carried-reason count
+         sp, mp_, sp_nc = S.iloc[-1], MV.iloc[-1].fillna(-np.inf), S_nc.iloc[-1]
+         sp_dd, mp_dd = S_dd.iloc[-1], MV_dd.iloc[-1].fillna(-np.inf); MV_dd = MV_dd.replace(-np.inf, np.nan)
+         cx = (S_nc.astype(bool) & ~S.astype(bool) & gone & ~has); cx = cx.loc[(cx.index >= s) & (cx.index <= e)].sum()
+@@ -432,11 +507,10 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         for k_, v_ in cy[cy > 0].items(): dl_cut_sh[k_] += int(v_)
+         del S_nc, A_nc, carry_nc, gone, gone_dd, carry_dd, A_dd, B_dd
+         MV = MV.replace(-np.inf, np.nan)
+-        pre = pr[pr.date < lo].sort_values("date").groupby("instrument").tail(1).set_index("instrument")   # r2.2 seed / N4 ind seed
+         if len(pre): lr_v = pre[col].fillna(False).astype("float64").combine_first(lr_v); lr_m = pre.logmv.combine_first(lr_m); lr_i = pre.ind.astype("float64").combine_first(lr_i)
+         w = (days >= lo)
+         if w.any():
+-            cw = (S.astype(bool) & ~has).loc[w]                                 # carried name-days
++            cw = (S.astype(bool) & (sus == 1.0)).loc[w]                         # carried name-days: S & mask-suspended (restored rows included)
+             st_ = cw.loc[(cw.index >= s) & (cw.index <= e)].stack(); st_ = st_[st_].reset_index().iloc[:, :2]; st_.columns = ["date", "instrument"]
+             if len(st_):
+                 r = st_.merge(mk, on=["date", "instrument"], how="left")
+@@ -444,11 +518,13 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+                 reasons["not_suspended"] += int((~r.suspended.fillna(False).astype(bool)).sum())
+                 for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
+             for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has)), ("S_dd", S_dd), ("MV_dd", MV_dd)): parts[k_].append(f_.loc[w])
+-        del pr, mk, has, val, lmv, sus, carry, A, B, S, MV, S_dd, MV_dd; gc.collect()
+-    cat = lambda k, _p=parts: pd.concat(_p[k]).reindex(index=idx)   # r7 P3-7: bind parts (pyflakes: later del)
++        del mk, has, val, lmv, carry, S, MV, S_dd, MV_dd, pre, w, sus; trim(); peak_check(f"pool_benchmarks {carry_col} year {y}")   # r2.10 (c)/(d)
++
++    def cat(k):   # r2.10 (c): pop each key's parts as it is concatenated (no second copy of the per-year frames)
++        return pd.concat(parts.pop(k)).reindex(index=idx)
+     S, MV, VAL, LMV = cat("S"), cat("MV"), cat("VAL"), cat("LMV"); U = S.columns
+     S = S.fillna(0.0).astype(bool); MV = MV.reindex(columns=U); VAL = VAL.reindex(columns=U); LMV = LMV.reindex(columns=U)
+-    S_dd = cat("S_dd").reindex(columns=U).fillna(0.0).astype(bool); MV_dd = cat("MV_dd").reindex(columns=U); del parts
++    S_dd = cat("S_dd").reindex(columns=U).fillna(0.0).astype(bool); MV_dd = cat("MV_dd").reindex(columns=U)   # r2.10: parts is empty after the pops (no del: cat closes over it)
+     # Arch b09901f5 P2-1 (kept; cut = delist_date now): the delisting cut must hold on EVERY X2 day — no S=True after cut
+     # for names with cut <= window end (gone rebuilt on the X2 frame, independent of the recursion)
+     xd = (idx >= pd.Timestamp(s)) & (idx <= pd.Timestamp(e))
+@@ -473,17 +549,17 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     last = pd.Series({c: VAL[c].last_valid_index() for c in U}).reindex(U).fillna(pd.Timestamp("1970-01-01"))
+     after = idx.values[:, None] > pd.DatetimeIndex(last.values).values[None, :]
+     M2 = V2.ffill().mask(after).fillna(0.0).astype(bool); Mp2 = M2.shift(1, fill_value=False); wv2 = (np.exp(L2.ffill().mask(after)).where(M2).shift(1)*Mp2).fillna(0.0)
+-    del V2, L2, M2, MV, VAL, LMV
++    del V2, L2, M2, MV, VAL, LMV, S, last, after; trim()   # r2.10 (c)
+     rs = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", carry_col, "row_origin", "restore_reason"],
+                                     filters=[("row_origin", "==", "restored"), ("restore_reason", "==", "resume")]) for y in PANEL_YEARS])
+     rs["date"] = pd.to_datetime(rs.date); rs = rs[(rs.date > idx[0]) & (rs.date <= idx[-1])]   # idx[0] has no T−1 inside the frame
+     ri, ci = idx.get_indexer(rs.date), U.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
+     mpv = np.zeros(len(rs), bool); mpv[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
+     bad = (mpv != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
+-    diag = dict(carry_col=carry_col, rule="Arch 129d67c5 §3 (carry only on mask-suspended no-row days, recursed from 2018)",
++    diag = dict(carry_col=carry_col, rule="Arch 561219c7: carry on every mask-suspended day (no row or restored row), recursed from 2018; mask suspended <=> restored asserted",
+                 resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
+                 mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"), carried_by_mask_reason_x2=dict(reasons),
+-                not_suspended_note="P3-A: by construction carried name-days are mask-suspended, so not_suspended is always 0 (self-consistency only); "
++                not_suspended_note="P3-A: carried name-days are counted on (S & mask suspended), so not_suspended is always 0 (self-consistency only); "
+                                    "independent checks are Mp != carry_col and P2-B",
+                 delisted_cut_name_days_x2=dict(sorted(dl_cut.items())), delisted_cut_total_x2=int(sum(dl_cut.values())), delisted_cut_names_x2=len(dl_cut),
+                 delisted_cut_name_days_x2_shadow_last_trade_date=dict(sorted(dl_cut_sh.items())),
+@@ -577,10 +653,12 @@ def build(a, panel, out, auth, up):
+     FIN = load_fin(panel)   # N8: panel dir only (no v1 fallback); asserts len(FIN) == 2
+     written, on_missing, gap_share = [], {}, {}
+     lo_x2 = pd.Timestamp(X2S).to_pydatetime()
+-    A18 = pd.read_parquet(L18[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a18"})
+-    A18v = pd.read_parquet(L18V[uni], columns=["date", "instrument", "alpha"], filters=[("date", ">=", lo_x2)]).rename(columns={"alpha": "a18v"})
+-    for t in (A18, A18v): t["date"] = pd.to_datetime(t.date)
+-    BR = bench_ret(); tail = defaultdict(lambda: deque(maxlen=3)); cov = []; min_valid = 15 if a.win == 20 else 45
++
++    def a18_year(path, nm, y):   # r9 (b): leaf18/18v α for build year y only (P holds year-y rows only at the merge; same rows matched)
++        f_ = [("date", ">=", max(lo_x2, pd.Timestamp(f"{y}-01-01").to_pydatetime())), ("date", "<", pd.Timestamp(f"{y+1}-01-01").to_pydatetime())]
++        x = pd.read_parquet(path, columns=["date", "instrument", "alpha"], filters=f_).rename(columns={"alpha": nm}); x["date"] = pd.to_datetime(x.date)
++        return x
++    BR = bench_ret(); trim(); tail = defaultdict(lambda: deque(maxlen=3)); cov = []; min_valid = 15 if a.win == 20 else 45
+     for y in YEARS:
+         lo = pd.Timestamp("2023-06-01") if y == 2024 else pd.Timestamp(f"{y-1}-05-01")   # ≥ 121 sessions (mom t−120→t−20, beta120) and ≥ win
+         P = pd.concat([read_panel(panel, yy, ["date", "instrument", "ret", "ret_on", "logmv", "ind", "adv20_yuan", col], lo) for yy in sorted({lo.year, y})])
+@@ -595,24 +673,28 @@ def build(a, panel, out, auth, up):
+         Q["r"] = (1 + Q.ret)/(1 + Q.ret_on) - 1 if a.src == "intra" else Q.ret   # N7: ret_on missing → r_id NaN (no fillna(0))
+         on_missing[str(y)] = int(Q.ret_on.isna().sum()) if a.src == "intra" else 0; Q = Q.dropna(subset=["r"])
+         Q["lu"] = limit_up(Q.instrument, Q.ret.to_numpy()).astype("float32")
++        gstart = pd.Timestamp(X2S) - pd.Timedelta(days=10) if y == 2024 else pd.Timestamp(f"{y}-01-01")
++        P = P[(P.date >= gstart) & (P.date.dt.year == y) & (P.date <= X2E) & P[col].fillna(False).astype(bool) & (P.ind >= 0)].copy(); trim()   # r10 P2-1: year filter right after Q, full P dropped (rebound)
+         ER = []
+         for d, g in Q.groupby("date", sort=True):
+             if len(g) < 100: continue
+             ind = g.ind.to_numpy(); D = (ind[:, None] == np.unique(ind)[None, :]).astype(float); z = g.lmv1.to_numpy(float); z = (z - z.mean())/z.std()
+             ER.append(pd.DataFrame({"date": d, "instrument": g.instrument.to_numpy(), "e": FE.ols_resid(g.r.to_numpy(float).clip(-.3, .3), np.column_stack([D, z])).astype("float32"), "lu": g.lu.to_numpy()}))
++        del Q; trim()   # r9 (c): Q not read after the e_id loop
+         ER = pd.concat(ER); Ee = ER.pivot_table(index="date", columns="instrument", values="e").reindex(index=RW.index, columns=RW.columns)
+         Lu = ER.pivot_table(index="date", columns="instrument", values="lu").reindex(index=RW.index, columns=RW.columns)
+-        IM, LS = imax_window(Ee.to_numpy(), Lu.to_numpy(), a.win, a.k, min_valid)
++        del ER; trim()   # r9 (c)
++        IM, LS = imax_window(Ee.to_numpy(), Lu.to_numpy(), a.win, a.k, min_valid); del Ee, Lu   # r9 (c): residual pivots freed right after use
+         IMX = pd.DataFrame(IM, index=RW.index, columns=RW.columns); LSX = pd.DataFrame(LS, index=RW.index, columns=RW.columns)
+-        del ER, Ee, Lu, IM, LS, Q, RW; gc.collect()
+-        gstart = pd.Timestamp(X2S) - pd.Timedelta(days=10) if y == 2024 else pd.Timestamp(f"{y}-01-01")
+-        P = P[(P.date >= gstart) & (P.date.dt.year == y) & (P.date <= X2E) & P[col].fillna(False).astype(bool) & (P.ind >= 0)].copy()
++        del IM, LS, RW; trim(); peak_check(f"build {uni} year {y} imax")   # r9 (c)/(d)
+         if a.ex_fin: P = P[~P.ind.isin(FIN)]
+         for nm, M in list(feats.items()) + [("imax", IMX), ("lu_share", LSX)]: P = P.join(M.stack().rename(nm).astype("float32"), on=["date", "instrument"])
+         del feats, IMX, LSX; gc.collect()
+         P = P.dropna(subset=["lmv1", "beta120", "mom_120_20", "ladv1", "vol20", "ret"]).sort_values("date")
+         gap_share[str(y)] = float((P.loc[P.date >= X2S, "nv120"] < 100).mean()) if (P.date >= X2S).any() else None   # Arch P3-C
++        A18, A18v = a18_year(L18[uni], "a18", y), a18_year(L18V[uni], "a18v", y)   # r9 (b)
+         P = P.merge(A18, on=["date", "instrument"], how="left").merge(A18v, on=["date", "instrument"], how="left"); P[["a18", "a18v"]] = P[["a18", "a18v"]].fillna(0.0)
++        del A18, A18v; trim()   # r9 (c)
+         AL, GL = [], []
+         for d, g in P.groupby("date", sort=True):
+             if len(g) < 100: continue
+@@ -634,13 +716,15 @@ def build(a, panel, out, auth, up):
+             cov.append((d, int(ok.sum())))
+         if AL: xparquet(pd.concat(AL), out/f"alpha_{uni}_{y}.parquet"); written.append(f"alpha_{uni}_{y}.parquet")
+         if GL: xparquet(pd.concat(GL), out/f"gate_{uni}_{y}.parquet"); written.append(f"gate_{uni}_{y}.parquet")
+-        print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; gc.collect()
++        print(uni, y, "built", f"rss={rss():.0f}", flush=True); del P, AL, GL; trim(); peak_check(f"build {uni} year {y}")   # r8; r9 (c) trim at year end
+     xparquet(pd.DataFrame(cov, columns=["date", "n"]), out/f"coverage_{uni}.parquet"); written.append(f"coverage_{uni}.parquet")
+     write_meta(out, f"build_{uni}", auth, written, up, p3c_nv120_lt100_share_x2=gap_share, uni=uni, ret_on_missing_rows_in_mask=on_missing)
+ 
+ 
+ # ---------------------------------------------------------------- stage eval (X2 only)
+ def pick_book(A, G, rd, days, N, w, ind_cap, blocked):
++    """Re-pick N names from the gate=1 list by α at rebalance days; w each; industry ≤ ind_cap; rest 510300 (P1-3).
++    blocked[d] = names with is_resume_day on d: not newly bought that day (entry gate only; P0-1)."""
+     from research.g1g5_fund_resid_alpha import BAL
+     Ag = A.merge(G, on=["date", "instrument"], how="left"); Ag["gate"] = Ag.gate.fillna(1)
+     byd = {d: g for d, g in Ag[Ag.gate == 1].groupby("date")}; held, rows, cur, skips = set(), [], None, 0
+@@ -662,10 +746,12 @@ def pick_book(A, G, rd, days, N, w, ind_cap, blocked):
+ 
+ 
+ def evaluate(a, panel, out, auth, up):
++    """r9 (a) = leaf 23 r2.10 (a): one universe per process (a.uni); writes summary_<uni>_<stamp>.json + eval_<uni>_meta.json; --stage merge combines."""
+     panel_recheck(auth, panel); repin(auth, "dep_fe_sha256", "data_etf_daily_adj_sha256")
+     import research.g1g5_fund_resid_alpha as FE
+-    ext_out = {}
++    ext_out = {}; trim()
+     FE.PC = panel; FE._RET.clear()
++    FE.rets(range(2024, 2027)); trim()   # r9 (c) = r2.10 (c): FE return cache loaded once at the lowest-memory point and kept for every book_ret (same key (2024, 2025, 2026), same data)
+     stamp = datetime.now().strftime("%Y%m%d_%H%M%S"); s, e = X2S, X2E; ann = lambda r: float((1+r).prod()**(244/len(r))-1)
+     summ = dict(leaf="imax_intraday", leaf_no=24, stamp=stamp, live=False, promotion_approved=False, research_only=True, short_arm=False,
+                 sealed_read=False, auth=auth, res={}, engine="FE.book_ret wb_SD0 (SD0) on cs_panel_v2_resumefix",
+@@ -688,19 +774,20 @@ def evaluate(a, panel, out, auth, up):
+                     "涨停识别（Arch P2-5）：深市 30 开头（含 302）与沪市 688/689 用 20%，其余 10%。持仓涨停占比另报再平衡日口径 held_limitup_share_in_imax_sample_rebal（Arch P3-3），原全持有日口径保留。",
+                     "家族计数：p1_factor_lib 也有低波因子，家族实际次数可能 > 3；|t|≥2.50 已等于 n=4 门槛，结论不受影响。叶18/18v 已读密封窗，不是干净样本外；引擎 SD0。",
+                     "文件名 IMAX_OVERNIGHT，但因子是剔除隔夜分量后的日内 IMAX。"])
+-    for uni in ("HILIQ", "FULLA"):
++    for uni in (a.uni,):   # r9 (a): one universe per process (loop body unchanged)
+         col = FE.UCOL[uni]
+         A = pd.concat([pd.read_parquet(out/f"alpha_{uni}_{y}.parquet", columns=["date", "instrument", "alpha", "ind", "lu_share", "fin"]) for y in YEARS if (out/f"alpha_{uni}_{y}.parquet").exists()])
+         G = pd.concat([pd.read_parquet(out/f"gate_{uni}_{y}.parquet") for y in YEARS if (out/f"gate_{uni}_{y}.parquet").exists()])
+         for t in (A, G): t["date"] = pd.to_datetime(t.date)
+         A, G = A[(A.date >= s) & (A.date <= e)], G[(G.date >= s) & (G.date <= e)]
+         days = sorted(A.date.unique()); rd = set(days[::FE.REBAL])
++        A_rd, G_rd = A[A.date.isin(rd)], G[G.date.isin(rd)]; trim()   # r9 (b) = r2.10 (b): pick_book only reads rebalance-day rows (byd used only for d in rd)
+         lo_px = pd.Timestamp("2024-05-20"); carry_col = "hiliq_carry" if uni == "HILIQ" else "fulla_carry"
+-        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "logmv", "close", col, "is_resume_day", carry_col],
++        PX = pd.concat([pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", "ret", "close", "is_resume_day", carry_col],   # r9 (b): logmv/<col> were never used from PX
+                                         filters=[("date", ">=", lo_px.to_pydatetime())]) for y in YEARS])
+         PX["date"] = pd.to_datetime(PX.date); PX = PX[PX.date <= e]
+         blocked = {d: set(g.instrument) for d, g in PX[PX.is_resume_day.fillna(False).astype(bool)].groupby("date")}
+-        rr = PX.pivot_table(index="date", columns="instrument", values="ret").sort_index()
++        rr = PX.pivot_table(index="date", columns="instrument", values="ret").sort_index(); trim()
+         # B3 (Arch P1-1, 129d67c5 §3): S carried only on mask-suspended no-row days, recursed from 2018; then T−1; ret at T; suspended → 0, kept
+         repin(auth, "data_mask_sha256"); pb = pool_benchmarks(panel, PX, col, carry_col, rr, s, e); b3 = pb["diag"]
+         if b3["carry_mismatch"] or b3["carried_by_mask_reason_x2"].get("not_suspended", 0) or b3["bj_member_rows"]:
+@@ -709,13 +796,16 @@ def evaluate(a, panel, out, auth, up):
+         Mp, wv = pb["Mp"], pb["wv"]; r0 = pb["r0"]; del rr   # Alpha P3-2: reuse the single return frame; r7 P3-7 dead U removed; P3-8 drop rr now
+         ewf = lambda M, W_, _r=r0: (((_r*M).sum(1)/M.sum(1)).loc[s:e], ((_r*W_).sum(1)/W_.sum(1)).loc[s:e])   # r7 P3-7
+         ew, wb = ewf(Mp, wv); ew_o, wb_o = ewf(pb["Mpo"], pb["wvo"]); ew_2, wb_2 = ewf(pb["Mp2"], pb["wv2"])
+-        b3.update(carried_member_days_x2=int((Mp & ~pb["Mpo"]).loc[s:e].to_numpy().sum()),
++        cmd_x2 = int((Mp & ~pb["Mpo"]).loc[s:e].to_numpy().sum())
++        for k_ in ("Mpo", "wvo", "Mp2", "wv2"): del pb[k_]   # r9 (c) = r2.10 (c): disclosure frames dropped once read
++        trim()
++        b3.update(carried_member_days_x2=cmd_x2,
+                   poolEW_cagr244_old_nocarry=ann(ew_o), wb_cagr244_old_nocarry=ann(wb_o), poolEW_cagr244_r2_2_norowcarry=ann(ew_2), wb_cagr244_r2_2_norowcarry=ann(wb_2),
+                   poolEW_cagr244_diff_vs_old=ann(ew) - ann(ew_o), wb_cagr244_diff_vs_old=ann(wb) - ann(wb_o),
+                   poolEW_cagr244_diff_vs_r2_2=ann(ew) - ann(ew_2), wb_cagr244_diff_vs_r2_2=ann(wb) - ann(wb_2),
+                   note="old / r2.2 / shadow constructions: disclosure only (shadow diffs come from pool_benchmarks diag)")
++        del Mp, wv, r0, pb; trim()   # r9 (c) = r2.10 (c): freed before the next allocation (was after the return-cache read)
+         repin(auth, "data_etf_daily_adj_sha256"); bal = FE.rets(range(2024, 2027))[0][FE.BAL].loc[s:e].astype(float)
+-        del Mp, wv, r0, pb; gc.collect()
+ 
+         def vs(r, b):
+             b = b.reindex(r.index).fillna(0); x = r - b; be = float(np.cov(r, b)[0, 1]/b.var()); res = r - be*b
+@@ -727,7 +817,7 @@ def evaluate(a, panel, out, auth, up):
+                  "top6_60w_cap20_disclosure": (6, TIER_W, CORE_IND_CAP), "top10_100w_cap20_disclosure": (10, TIER_W, CORE_IND_CAP)}
+         books = {}
+         for nm, (N, w, icap) in specs.items():
+-            W = pick_book(A, G, rd, days, N, w, icap, blocked); xparquet(W, out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet")
++            W = pick_book(A_rd, G_rd, rd, days, N, w, icap, blocked); xparquet(W, out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet")   # r9 (b): rebalance-day rows only (identical picks)
+             r, to = FE.book_ret(W, s, e); _c = FE.COST; FE.COST = 0.003; r30, _ = FE.book_ret(W, s, e); FE.COST = _c
+             nav = (1+r).cumprod()
+             H = W[W.instrument != FE.BAL].merge(PX[["date", "instrument", "is_resume_day", carry_col, "close"]], on=["date", "instrument"], how="left") \
+@@ -741,7 +831,7 @@ def evaluate(a, panel, out, auth, up):
+                 cap = TIERS[N]; Hr = H[H.date.isin(rd)].dropna(subset=["close"])
+                 fill = (np.floor(cap*Hr.target_weight/(Hr.close*100))*100*Hr.close).groupby(Hr.date).sum()/(cap*Hr.groupby("date").target_weight.sum())
+                 b["lot_fill_ratio_mean"] = float(fill.mean()); b["lot_cash_drag_mean"] = float(1 - fill.mean())
+-            books[nm] = b; FE._RET.clear()
++            books[nm] = b   # r9 (c): return cache kept (was FE._RET.clear())
+             if uni == "HILIQ" and nm in ("top6_60w", "top10_100w"):
+                 tag = f"imax_intraday_{nm}" + ("" if is_primary(a) else f"_{variant_tag(a)}")
+                 xparquet(W, R/f"output/ai_factory/g1g5_{tag}_daily_weights_{stamp}.parquet")
+@@ -755,7 +845,7 @@ def evaluate(a, panel, out, auth, up):
+             nv = pd.read_csv(d_/"nav.csv", index_col=0, parse_dates=True).nav; rf = nv.pct_change().dropna().loc[s:e]
+             tw = pd.read_parquet(d_/"target_weights.parquet").rename(columns={"session": "date", "weight": "target_weight"})
+             tw["instrument"] = tw.instrument_id.str.split(".").map(lambda x: f"{x[1]}.{x[0].upper()}"); tw["date"] = pd.to_datetime(tw.date.astype(str).str[:10])
+-            rc, _ = FE.book_ret(tw[tw.target_weight > 0][["date", "instrument", "target_weight"]], s, e); FE._RET.clear()
++            rc, _ = FE.book_ret(tw[tw.target_weight > 0][["date", "instrument", "target_weight"]], s, e)   # r9 (c): cache kept
+             capadv[N] = dict(filed_cagr244=ann(rf), recomputed_cagr244=ann(rc), recomputed_mdd=float(((1+rc).cumprod()/(1+rc).cumprod().cummax()-1).min()))
+         qres = {}
+         for k in (5, 10):
+@@ -771,7 +861,7 @@ def evaluate(a, panel, out, auth, up):
+                 for d in days:
+                     if d in gq: cur = gq[d]
+                     if cur is not None: full.append(cur.assign(date=d))
+-                gx[q], _ = FE.book_ret(pd.concat(full), s, e); FE._RET.clear()
++                gx[q], _ = FE.book_ret(pd.concat(full), s, e)   # r9 (c): cache kept
+             exc = {q: float((r - ew.reindex(r.index).fillna(0)).mean()*244) for q, r in gx.items()}
+             ls = (gx[k-1] - gx[0]).dropna()
+             qres[f"q{k}"] = dict(excess_vs_poolEW_ann244=exc, spearman=float(pd.Series(exc).rank().corr(pd.Series(range(k), dtype=float))),
+@@ -781,15 +871,18 @@ def evaluate(a, panel, out, auth, up):
+         # §5 overlap with leaf 18 / 18v on this panel
+         ov = {}
+         Wm20 = pd.read_parquet(out/f"eval_weights_{uni}_top20_disclosure_x2_{stamp}.parquet"); Wm20["date"] = pd.to_datetime(Wm20.date)
+-        rt, _ = FE.book_ret(Wm20, s, e); FE._RET.clear(); b_ = ew.reindex(rt.index).fillna(0); x1 = rt - np.cov(rt, b_)[0, 1]/b_.var()*b_
++        rt, _ = FE.book_ret(Wm20, s, e); b_ = ew.reindex(rt.index).fillna(0); x1 = rt - np.cov(rt, b_)[0, 1]/b_.var()*b_
+         for lf, paths in L18_W.items():
+             if not paths[uni].exists(): ov[lf] = "N/A: weights file missing"; continue
+             kk = L18_KEY[lf]; repin(auth, f"dep_{kk}w_{uni.lower()}_sha256", f"dep_{kk}_{uni.lower()}_sha256")
+             Wl = pd.read_parquet(paths[uni]); Wl["date"] = pd.to_datetime(Wl.date); Wl = Wl[Wl.target_weight > 0]
+             # N3: leaf18/18v weights are all 0.04 (nunique=1) → rank their names by their own α file (pinned), as leaf 23 does for leaf 20
+-            Al = pd.read_parquet(L18_A[lf][uni], columns=["date", "instrument", "alpha"]); Al["date"] = pd.to_datetime(Al.date)
++            if Wl.instrument.isna().any(): raise SystemExit(f"STOP: {lf} {uni} weight file has NaN instrument rows — report to Arch")   # r10 P3
++            held_ = sorted(set(Wl.instrument) - {FE.BAL})   # r9 (b): only rows the held-row left join can match (same matches, same NaNs)
++            if not held_: raise SystemExit(f"STOP: {lf} {uni} weight file has no held names (target_weight > 0, not {FE.BAL}) — report to Arch")   # r10 P3
++            Al = pd.read_parquet(L18_A[lf][uni], columns=["date", "instrument", "alpha"], filters=[("instrument", "in", held_)]); Al["date"] = pd.to_datetime(Al.date)
+             Wls = Wl[Wl.instrument != FE.BAL].merge(Al, on=["date", "instrument"], how="left"); del Al
+-            rl, _ = FE.book_ret(Wl, s, e); FE._RET.clear(); b2 = ew.reindex(rl.index).fillna(0); x2 = rl - np.cov(rl, b2)[0, 1]/b2.var()*b2
++            rl, _ = FE.book_ret(Wl, s, e); b2 = ew.reindex(rl.index).fillna(0); x2 = rl - np.cov(rl, b2)[0, 1]/b2.var()*b2
+             js = {}
+             for nm, N in (("top6_60w", 6), ("top10_100w", 10), ("top20_disclosure", 20)):
+                 Wm = pd.read_parquet(out/f"eval_weights_{uni}_{nm}_x2_{stamp}.parquet"); Wm = Wm[Wm.instrument != FE.BAL]; v = []
+@@ -815,15 +908,38 @@ def evaluate(a, panel, out, auth, up):
+                                    verdict_cap=("FAIL" if not floor else ("WATCH" if not tpass else "PENDING_EXTERNAL_GATES")),
+                                    note="非判定规格一律「未做多重检验校正，仅披露」" if not is_primary(a) else "判定规格；Gate B/GATE_V3/衰减另由钉 sha 工具出")
+         summ["res"][uni] = res
+-        del A, G, PX; FE._RET.clear(); gc.collect(); print(uni, "eval done", f"rss={rss():.0f}", flush=True)
+-    summ["peak_rss_mb_eval"] = rss(); xtext(out/f"summary_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
+-    write_meta(out, "eval", auth, [f"summary_{stamp}.json"] + sorted(p.name for p in out.glob(f"eval_weights_*_{stamp}.parquet")), up,
+-               stamp=stamp, external_outputs=ext_out); print("STAMP", stamp)
++        del A, G, A_rd, G_rd, PX; FE._RET.clear(); trim(); print(uni, "eval done", f"rss={rss():.0f}", flush=True); peak_check(f"eval {uni}")   # r8
++    uni = a.uni; summ["uni"] = uni; summ["peak_rss_mb_eval"] = rss()
++    xtext(out/f"summary_{uni}_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
++    write_meta(out, f"eval_{uni}", auth, [f"summary_{uni}_{stamp}.json"] + sorted(p.name for p in out.glob(f"eval_weights_{uni}_*_{stamp}.parquet")), up,
++               uni=uni, stamp=stamp, external_outputs=ext_out); print("STAMP", stamp)
++
++
++def merge(a, panel, out, auth, up):
++    """Combine summary_HILIQ_<s1>.json and summary_FULLA_<s2>.json (both listed and sha-verified in their eval_<uni>_meta,
++    already chain-checked by verify_upstream) into summary_<stamp>.json; writes eval_meta.json (stage "eval": what P2-2 / CMC expect)."""
++    panel_recheck(auth, panel)
++    parts, stamps, metas = {}, {}, {}
++    for uni in ("HILIQ", "FULLA"):
++        mf = out/f"eval_{uni}_meta.json"; m = json.loads(mf.read_text(encoding="utf-8"))
++        f = f"summary_{uni}_{m['stamp']}.json"
++        if f not in m.get("outputs", {}) or sha(out/f) != m["outputs"][f]: raise SystemExit(f"refused: {f} not listed in / changed since {mf.name}")
++        parts[uni] = json.loads((out/f).read_text(encoding="utf-8")); stamps[uni] = m["stamp"]; metas[uni] = m
++        if parts[uni].get("uni") != uni or list(parts[uni].get("res", {})) != [uni]: raise SystemExit(f"refused: {f} does not hold exactly res.{uni}")
++    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
++    summ = {k: v for k, v in parts["HILIQ"].items() if k not in ("res", "auth", "stamp", "uni", "peak_rss_mb_eval")}
++    summ.update(stamp=stamp, auth=auth, auth_by_uni={u: parts[u]["auth"] for u in parts}, stamps_by_uni=stamps,
++                peak_rss_mb_eval={u: parts[u]["peak_rss_mb_eval"] for u in parts}, res={u: parts[u]["res"][u] for u in ("HILIQ", "FULLA")},
++                merge_note="r2.10 (a): eval split per universe (one process each, serial HILIQ → FULLA); this file = merge of summary_<uni>_<stamp>.json")
++    xtext(out/f"summary_{stamp}.json", json.dumps(summ, ensure_ascii=False, indent=1, default=float))
++    ext = {k: v for u in ("HILIQ", "FULLA") for k, v in metas[u].get("external_outputs", {}).items()}
++    write_meta(out, "eval", auth, [f"summary_{stamp}.json"], up, stamp=stamp, stamps_by_uni=stamps, external_outputs=ext)
++    peak_check("merge"); print("STAMP", stamp)
+ 
+ 
+ if __name__ == "__main__":
+     ap = argparse.ArgumentParser(description="Leaf24 imax_intraday (requires Arch .ok)")
+-    ap.add_argument("--stage", required=True, choices=["build", "eval"])
++    ap.add_argument("--stage", required=True, choices=["build", "eval", "merge"])
+     ap.add_argument("--uni", choices=["HILIQ", "FULLA"])
+     ap.add_argument("--panel-dir", required=True, help="output/ai_factory/panel_cache_v2_resumefix; panel_cache / panel_cache_v2_fixesnone refused")
+     ap.add_argument("--arch-ok", required=True)
+@@ -834,9 +950,10 @@ if __name__ == "__main__":
+     ap.add_argument("--sealed", action="store_true")
+     a = ap.parse_args()
+     if a.sealed: raise SystemExit("sealed window not implemented here (prereg §6.5: once, only after X2 hard gates pass, separate .ok)")
+-    if a.stage == "build" and not a.uni: raise SystemExit("--uni required for build")
++    if a.stage in ("build", "eval") and not a.uni: raise SystemExit(f"--uni required for {a.stage} (r9: eval runs one universe per process)")
++    if a.stage == "merge" and a.uni: raise SystemExit("--uni not accepted for merge")
+     panel, auth = authorize(a); out = out_dir(a)
+-    # N6: serial order build HILIQ > build FULLA > eval; first stage needs an empty out_dir; later stages chain-verify upstream metas
++    # N6: serial order build HILIQ > build FULLA > eval HILIQ > eval FULLA > merge; first stage needs an empty out_dir; later stages chain-verify upstream metas
+     if a.stage == "build" and a.uni == "HILIQ":
+         if out.exists() and any(out.iterdir()): raise SystemExit(f"refused: out_dir {out} is not empty (N6: no silent overwrite; Arch decides on cleanup)")
+         up = verify_leaf23_complete(auth)                            # P2-2: leaf 24 only after leaf 23 primary + 4 sensitivities
+@@ -844,7 +961,12 @@ if __name__ == "__main__":
+         out.mkdir(parents=True, exist_ok=True)
+     else:
+         if not out.is_dir(): raise SystemExit(f"refused: out_dir {out} missing (run build --uni HILIQ first)")
+-        up = verify_upstream(out, auth, ["build_HILIQ"] if a.stage == "build" else ["build_HILIQ", "build_FULLA"])
+-        guard_fresh(out, [f"alpha_{a.uni}_*", f"gate_{a.uni}_*", f"coverage_{a.uni}.parquet", f"build_{a.uni}_meta.json"] if a.stage == "build"
+-                    else ["summary_*.json", "eval_weights_*", "eval_meta.json", "B3_carry_mismatch_*"])
+-    {"build": lambda: build(a, panel, out, auth, up), "eval": lambda: evaluate(a, panel, out, auth, up)}[a.stage]()
++        need = {"build": ["build_HILIQ"],
++                "eval": ["build_HILIQ", "build_FULLA"] + (["eval_HILIQ"] if a.uni == "FULLA" else []),   # r9 (a): FULLA after HILIQ
++                "merge": ["eval_HILIQ", "eval_FULLA"]}[a.stage]
++        up = verify_upstream(out, auth, need)
++        guard_fresh(out, {"build": [f"alpha_{a.uni}_*", f"gate_{a.uni}_*", f"coverage_{a.uni}.parquet", f"build_{a.uni}_meta.json"],
++                          "eval": [f"summary_{a.uni}_*.json", f"eval_weights_{a.uni}_*", f"eval_{a.uni}_meta.json", f"B3_carry_mismatch_{a.uni}.json"],
++                          "merge": ["summary_2*.json", "eval_meta.json"]}[a.stage])
++    {"build": lambda: build(a, panel, out, auth, up), "eval": lambda: evaluate(a, panel, out, auth, up),
++     "merge": lambda: merge(a, panel, out, auth, up)}[a.stage]()

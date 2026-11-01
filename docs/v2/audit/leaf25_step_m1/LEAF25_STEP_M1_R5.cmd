@@ -1,0 +1,6 @@
+# leaf25 step -1 r5 command (DRAFT; NOT run; requires own read-only Arch .ok; <ET_TS> filled at run time from `date +%Y%m%d_%H%M%S`)
+# supersedes LEAF25_STEP_M1_R4.cmd (7a18fb34, pinned to 2f7ea713; kept unchanged)
+# script research/leaf25_ttm_recon_step_m1_r5.py sha256 f43b901671728204437279da1f49c7729ec11f11d8070e73434b5d6288953d68
+# wrapper docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh sha256 6174eacb4ff2d0905634477430b96bf155d3606794cd66f23a5a38a4f85e4169 (STOPKB 1484800, C4 1331200, hard 1536000; expected-peak report line 650000 = P3 only)
+# --meta lets the wrapper fold run_meta.json peak_rss_kb into the peak (N-P3-7). Exit code 4 = some rule_exercised false (stop, report).
+cd /workspace/QuantLab && bash docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh --arch-ok output/ai_factory/ARCH_RUN_AUTH_LEAF25_TTM_RECON_STEP_M1_R5.ok --assert leaf25_ttm_recon_step_m1_r5 --tag leaf25_step_m1_r5 --logdir output/ai_factory/_leaf25_ttm_recon/<ET_TS>_logs --outdir output/ai_factory/_leaf25_ttm_recon/<ET_TS> --meta output/ai_factory/_leaf25_ttm_recon/<ET_TS>/run_meta.json --cwd /workspace/QuantLab -- env PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf25_ttm_recon_step_m1_r5.py --out output/ai_factory/_leaf25_ttm_recon/<ET_TS>/

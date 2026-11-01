@@ -1,0 +1,9 @@
+{
+    "request_id": "3_Action1_swap1_2021-12-10-Action1_swap1_2021-12-09Price2021Dec10_Action1_swap1_2021-12-08-Action1_swap1_2021-12-07Price2021Dec08_Action1_swap1_2021-12-06Price2021Dec06",
+    "request_hash": "5010511210568f2494e7d715ddca3fe5",
+    "type": "MockCalc",
+    "tests": [
+        "test_exit_action_bytradename"
+    ],
+    "mocked_data": "[[[[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":0.0}],[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":75.69557051901756}]]],[[[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":-1.8189894035458565e-12}],[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":-646.199254763831}]]],[[[{\"$type\":\"Risk\",\"children\":{},\"unit\":{\"United States Dollar\":1.0},\"val\":3.637978807091713e-12}]]]]"
+}

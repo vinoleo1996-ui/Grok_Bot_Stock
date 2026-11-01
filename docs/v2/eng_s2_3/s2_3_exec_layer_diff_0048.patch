@@ -1,0 +1,42 @@
+# s2_3_exec_layer.py diff for Arch catch-up review (P1-1; 主 Agent ruling: this S2-3 round = VOID_PENDING_DIFF)
+# a = state as of ARCH_S2_3_RELEASE.ok (00:47:18 ET) — RECONSTRUCTED, not a saved copy: no backup/git/hash of the
+#     pre-version exists. Built by exactly inverting the three string replacements Eng applied at ~00:48:19 ET
+#     (each matched exactly once). The reconstruction cannot be independently verified against a hash.
+#     reconstructed a sha256 = 059cf43e4322fda69cab5a2ebddca91bcb7ed636b50005ee698075be2b7a93e5
+# b = file that actually ran at 00:48:52–00:49:04 ET (unchanged since mtime 00:48:19 ET; equals manifest)
+#     b sha256 = 3d4b08e31973ad58254714fdfdf699290d7995da4c9461bd48ea13df9d5b2bf4
+# Change scope: input guards + meta only (--weights-ok weight-sha check, release-.ok doc-hash check, 2 meta fields).
+# No change to lot procedure, band, recheck, turnover, cost or summary code.
+--- a/scripts_eng/s2_3_exec_layer.py (reconstructed, state at 00:47:18 ET)
++++ b/scripts_eng/s2_3_exec_layer.py (mtime 00:48:19 ET; ran 00:48:52)
+@@ -298,11 +298,21 @@
+     ap.add_argument("--weights", required=True); ap.add_argument("--aum", type=int, required=True, choices=(600000, 1000000))
+     ap.add_argument("--disclosure"); ap.add_argument("--version", default="v1_3"); ap.add_argument("--label", default="")
+     ap.add_argument("--windows", default="X2"); ap.add_argument("--allow-real", action="store_true"); ap.add_argument("--b2", action="store_true"); ap.add_argument("--b4-beta", action="store_true")
++    ap.add_argument("--weights-ok", help="Arch .ok listing authorized weight sha256s (e.g. core_x2/ARCH_RESIGN_A_v1_3.ok); real runs must match")
+     ap.add_argument("--arch-ok", help="matching Arch .ok marker authorizing this run (主 Agent 00:40: required for any run incl. dry-run)")
+     a = ap.parse_args()
+     if not a.arch_ok or not Path(a.arch_ok).exists():
+         raise SystemExit("REFUSED: 主 Agent 00:40 ET — every run (incl. smoke/dry-run) needs a matching Arch .ok; pass --arch-ok PATH.")
+     wp = Path(a.weights).resolve(); wsha = sha256(wp)
++    okt = Path(a.arch_ok).read_text(encoding="utf-8")
++    for k, f in (("freeze_record_sha256", "docs/v2/S2_3_FREEZE_RECORD_ZH.md"), ("s2_3_draft_sha256", "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md"),
++                 ("stage2_prereg_sha256", "docs/v2/STRATEGY_OPTIMIZER_STAGE2_PREREG_DRAFT_ZH.md")):
++        want = next((l.split("=", 1)[1].strip() for l in okt.splitlines() if l.startswith(k + "=")), None)
++        if want and sha256(ROOT / f) != want:
++            raise SystemExit(f"STOP: {f} sha256 != {k} in {a.arch_ok}")
++    if a.allow_real:
++        if not a.weights_ok or wsha not in Path(a.weights_ok).read_text(encoding="utf-8"):
++            raise SystemExit("STOP: real run needs --weights-ok whose text lists this weight file's sha256")
+     void_reg = json.loads((OUT / "_void_pre_K6_sha.json").read_text(encoding="utf-8"))["files"]
+     is_void = wsha in {v["sha256"] for v in void_reg.values()}
+     if not is_void and not a.allow_real:
+@@ -346,7 +356,7 @@
+     tag = f"{a.version}_{sleeve}_{a.aum // 10000}w"
+     od = OUT / f"s2_3_{tag}"; od.mkdir(parents=True, exist_ok=True)
+     meta = {"label": a.label or "REAL", "void_pre_K6": is_void, "version": a.version, "sleeve": sleeve, "aum": a.aum,
+-            "weights": str(wp.relative_to(ROOT)), "weights_sha256": wsha, "arch_ok": str(a.arch_ok), "arch_ok_sha256": sha256(Path(a.arch_ok)), "disclosure": str(dp.relative_to(ROOT)) if dp.exists() else None,
++            "weights": str(wp.relative_to(ROOT)), "weights_sha256": wsha, "arch_ok": str(a.arch_ok), "arch_ok_sha256": sha256(Path(a.arch_ok)), "weights_ok": str(a.weights_ok), "weights_ok_sha256": (sha256(Path(a.weights_ok)) if a.weights_ok else None), "disclosure": str(dp.relative_to(ROOT)) if dp.exists() else None,
+             "spec": "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md §3 (freeze record S2_3_FREEZE_RECORD_ZH.md)",
+             "band_nav": BAND, "gate": GATE, "headline": "nobuf_HEADLINE", "ablation": "buf_ABLATION", "b2_flag": a.b2,
+             "B1": "w_tgt read from pre-produced weights file; post-band holdings are never fed back to the solver w0 (by construction).",

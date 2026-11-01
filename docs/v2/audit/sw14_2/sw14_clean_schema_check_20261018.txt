@@ -1,0 +1,60 @@
+# DIFF C r3b §14② CLEAN SW L1 只读核查报告（新文件）
+started_et=2026-10-18T11:15:43-04:00
+script=/workspace/QuantLab/docs/v2/audit/sw14_2/sw14_check.py sha256=dcd530994ba09452dff1425877ff1d170e9a5e696e41d9043010893ef22a6c34
+python=/usr/bin/python3 pid=110316
+ok=/workspace/QuantLab/output/ai_factory/ARCH_RUN_AUTH_DATA_SW14_2_READONLY.ok sha256=40a73330a71e660ebada09d6c953957005ae48ff8a373231adccf0a4bd3da86d expires_et=2026-10-18T13:02:55-04:00 fields=['allow_force', 'allow_import_project_code', 'allow_modify_inputs', 'allow_parallel_real_data', 'allow_read_calendar_cols', 'allow_read_factors', 'allow_read_prices', 'allow_read_returns', 'allow_read_sw_l1_clean', 'allow_read_sw_manifest', 'allow_retry', 'allow_write_output_new_file', 'arch_review', 'auth_id', 'cmd', 'cwd', 'expires_et', 'input_calendar', 'input_calendar_columns', 'input_calendar_sha256', 'input_manifest', 'input_manifest_sha256', 'input_parquet', 'input_parquet_sha256', 'interpreter', 'issued_at', 'lag_primary_basis', 'live', 'output_must_not_exist', 'output_path', 'post_run', 'precondition_94322', 'precondition_healthz', 'precondition_no_web_children', 'precondition_quiet_lock', 'precondition_serial', 'promotion', 'requester', 'rss_hard_kb', 'rss_stop_kb', 'script_path', 'script_sha256', 'signed_et', 'signer', 'single_use']
+pandas=3.0.6 pyarrow=26.0.0
+input /workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet sha256=89d4afa337435a2302b5c13fd4cf049b71eda2f20e1d9094f15d62cdb587f66c size=107038 mtime_ns=1792300123180683904 inode=1463893
+input /workspace/QuantLab/data/v2/sw_l1_pit/manifest.json sha256=0493991cd34f72a85d8cb1139b1f3b947b0754fa38029f54ad06a45b2a26446b size=2563 mtime_ns=1792300099868683904 inode=1458416
+input /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet sha256=fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41 size=77822 mtime_ns=1792300415476683904 inode=2212328
+RSS after_hash maxrss_kb=105588（停止线 1484800）
+
+## (1) 列与类型
+parquet num_rows(meta)=7920 num_columns=11
+RSS after_read maxrss_kb=167460（停止线 1484800）
+col[0] name='instrument_id' arrow=large_string nullable=True pandas=str
+col[1] name='sw_code' arrow=large_string nullable=True pandas=str
+col[2] name='sw_name' arrow=large_string nullable=True pandas=str
+col[3] name='in_date' arrow=timestamp[us] nullable=True pandas=datetime64[us]
+col[4] name='out_date' arrow=timestamp[us] nullable=True pandas=datetime64[us]
+col[5] name='available_at' arrow=timestamp[us] nullable=True pandas=datetime64[us]
+col[6] name='source' arrow=large_string nullable=True pandas=str
+col[7] name='revision' arrow=int64 nullable=True pandas=int64
+col[8] name='quality_status' arrow=large_string nullable=True pandas=str
+col[9] name='schema' arrow=large_string nullable=True pandas=str
+col[10] name='is_new' arrow=large_string nullable=True pandas=str
+列数=11（Strategy r3b 期望 11）
+与 r3b SW_L1_CLEAN_COLUMNS 对照（顺序无关，名+pandas dtype）：一致
+
+## (2) 不符合 Data r2 norm_code 白名单的 instrument_id（strip 后 A_DOT / A_PFX fullmatch；空值也算不符）
+A_DOT='^(\\d{6})\\.(SH|SZ|BJ)$' A_PFX='^(SH|SZ|BJ)\\.(\\d{6})$'（re.I；出处 docs/v2/plans/DATA_SW_L1_PIT_V2_FIX_PLAN_ZH_r2.md L329-330）
+白名单外：不同值 1 个，行数合计 1
+  NONWL 'Tsh.00018' rows=1
+含 "00018" 或以 "T" 开头的 id：不同值 4 个
+  SPECIAL 'Tsh.00018' rows=1 whitelist=否
+  SPECIAL 'sh.600018' rows=1 whitelist=是
+  SPECIAL 'sz.000018' rows=5 whitelist=是
+  SPECIAL 'sz.300018' rows=1 whitelist=是
+白名单内写法分布（行）：{'A_DOT': 0, 'A_PFX': 7919}；首尾带空白的行数=0
+
+## (3) manifest tushare_candidate 与实际表对照
+manifest tushare_candidate.path=/workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet checked_at=2026-10-10T14:43:21.987009-04:00 blockers=[]
+manifest metrics: rows=7920 n_instruments=5914 n_l1=31 in_date_min=1984-05-09 in_date_max=2026-09-24 available_at_nulls=0
+actual: rows=7920 nunique(instrument_id)=5914 nunique(sw_code)=31 in_date_min=1984-05-09 in_date_max=2026-09-24 available_at_nulls=0 in_date_unparseable=0
+  rows                 manifest=7920 actual=7920 一致
+  n_instruments        manifest=5914 actual=5914 一致
+  n_l1                 manifest=31 actual=31 一致
+  in_date_min          manifest='1984-05-09' actual='1984-05-09' 一致
+  in_date_max          manifest='2026-09-24' actual='2026-09-24' 一致
+  available_at_nulls   manifest=0 actual=0 一致
+RSS after_compare maxrss_kb=176008（停止线 1484800）
+
+## (4) manifest 时点相对冻结日历的滞后（开市日数，严格晚于基准日、截至 20261016 含）
+calendar rows=8035 open_days=5343 range=20050101..20261231
+  fetch_time=2026-10-10T10:01:23.213525-04:00 → 上海 2026-10-10T22:01:23+08:00；naive 基准日 20261010 lag=5；收盘覆盖日 20261009 lag=5
+  tushare_candidate.checked_at=2026-10-10T14:43:21.987009-04:00 → 上海 2026-10-11T02:43:21+08:00；naive 基准日 20261011 lag=5；收盘覆盖日 20261009 lag=5
+  tushare_candidate.metrics.in_date_max=2026-09-24 基准日 20260924 lag=10
+  in_date_max(顶层)=2026-09-24 基准日 20260924 lag=10
+RSS end maxrss_kb=182588（停止线 1484800）
+
+finished_et=2026-10-18T11:15:43-04:00

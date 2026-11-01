@@ -1,0 +1,86 @@
+[
+  {
+    "path": "/workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet",
+    "exists": true,
+    "sha256": "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41",
+    "rows": 8035,
+    "cols": [
+      "cal_date",
+      "is_open",
+      "pretrade_date",
+      "available_at"
+    ],
+    "dcol": "cal_date",
+    "ocol": "is_open",
+    "slice": [
+      {
+        "cal_date": "20261019",
+        "is_open": 1
+      },
+      {
+        "cal_date": "20261020",
+        "is_open": 1
+      },
+      {
+        "cal_date": "20261021",
+        "is_open": 1
+      },
+      {
+        "cal_date": "20261022",
+        "is_open": 1
+      },
+      {
+        "cal_date": "20261023",
+        "is_open": 1
+      }
+    ],
+    "all_open": true,
+    "open_count": 5,
+    "matches_ok_pin_trade_cal": false
+  },
+  {
+    "path": "/workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet",
+    "exists": true,
+    "sha256": "141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086",
+    "rows": 9862,
+    "cols": [
+      "exchange",
+      "cal_date",
+      "is_open",
+      "pretrade_date"
+    ],
+    "dcol": "cal_date",
+    "ocol": "is_open",
+    "exchange_filter": "SSE-ish",
+    "slice": [
+      {
+        "cal_date": "20261023",
+        "is_open": 1,
+        "exchange": "SSE"
+      },
+      {
+        "cal_date": "20261022",
+        "is_open": 1,
+        "exchange": "SSE"
+      },
+      {
+        "cal_date": "20261021",
+        "is_open": 1,
+        "exchange": "SSE"
+      },
+      {
+        "cal_date": "20261020",
+        "is_open": 1,
+        "exchange": "SSE"
+      },
+      {
+        "cal_date": "20261019",
+        "is_open": 1,
+        "exchange": "SSE"
+      }
+    ],
+    "all_open": true,
+    "open_count": 5,
+    "matches_ok_pin_trade_cal": true
+  }
+]

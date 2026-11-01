@@ -1,0 +1,10 @@
+etf_ts_code,index_code,index_name,role,is_feeder,feeder_of,valid_from,valid_to,source,promotion_approved,note
+510300.SH,000300.SH,沪深300,primary,false,,20120101,,r2_hardcode_DRAFT,false,叶26 r2 主规格硬编码
+510500.SH,000905.SH,中证500,primary,false,,20120501,,r2_hardcode_DRAFT,false,叶26 r2 主规格硬编码
+512100.SH,000852.SH,中证1000,primary,false,,20161001,,r2_excluded_DRAFT,false,r2 默认剔除；扩池候选
+160615.SZ,000300.SH,沪深300,feeder,true,,,,fund_basic_name_联接,false,鹏华沪深300ETF联接；feeder_of 待核
+160706.SZ,000300.SH,沪深300,feeder,true,,,,fund_basic_name_联接,false,嘉实沪深300ETF联接
+160119.SZ,000905.SH,中证500,feeder,true,510500.SH,,,fund_basic_name_联接,false,南方中证500ETF联接
+162711.SZ,000905.SH,中证500,feeder,true,,,,fund_basic_name_联接,false,广发中证500ETF联接
+501036.SH,000905.SH,中证500,feeder,true,,,,fund_basic_name_联接,false,汇添富中证500ETF联接-A
+501037.SH,000905.SH,中证500,feeder,true,,,,fund_basic_name_联接,false,汇添富中证500ETF联接-C

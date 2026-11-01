@@ -1,0 +1,23 @@
+# AI 叶31 Amihud Impact Slow X2 selfcheck_v1 RUNNING_ACK
+
+- ET: 2026-10-27 03:23 ET（America/New_York；`2026-10-27T03:23:09-04:00`）
+- status: **RUNNING**（开跑瞬间快照；完结见 RUN_RECEIPT）
+- ET_TS: `20261027_032306`
+- pid: `3876415` alive=True@ACK nice=10
+- script: `research/leaf31_amihud_impact_slow_x2_selfcheck_v1.py` sha8 **`e1fe578c`** / 全长 `e1fe578ca70bd61f6c98bd849357beecb918f9e88f0732ac6bbc98dcfb0d4b38`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF31_AMIHUD_IMPACT_SLOW_X2_SELFCHECK_V1_HILIQ_X2.ok` sha8 **`4bb141c9`** / 全长 `4bb141c90ca3e934dd04645f8656f9a06455e1c6d3167688b0988c7c440b5d58`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`351e98fb`** holder=`leaf31_AMIHUD_IMPACT_SLOW_X2_SELFCHECK_V1`（**未擅 lift**；do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF31_AMIHUD_IMPACT_SLOW_X2_SELFCHECK_OK_SIGNED_20261027_ZH.md` sha8 **`e3657034`**
+- 审: **`0db69426`**；CMD: **`25c16a2b`**（禁 `--arch-ok-path`）；COVER/DIFF/RECEIPT **`96b704e1`/`3880d0ad`/`00060e44`**
+- 钉 alpha **`d4ceb78b`** / meta **`696ab1cc`** / overlap **`8396f211`**；构建 **`08f37fd2` UNCHANGED**；模板 **`797724d4` UNCHANGED**
+- out: `output/ai_factory/_leaf31_amihud/20261027_024204/_selfcheck/`
+- report: `output/ai_factory/leaf_reports/leaf31_amihud/selfcheck_v1.json`
+- log: `output/ai_factory/_leaf31_amihud/20261027_024204/_selfcheck/_logs/run_20261027_032306.log`
+- samp: `/tmp/quantlab_leaf31_x2_selfcheck_20261027_032306`
+- approved_cmd: **exact**（**无** `--arch-ok-path`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf31_amihud_impact_slow_x2_selfcheck_v1.py --universe HILIQ --window x2 --execute`
+- prelaunch: QUIET MATCH `351e98fb`；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈12.6Gi≥soft；script/ok/alpha/meta MATCH；dry-compile-only PASS（executed=false）；IN_WINDOW expires 04:49
+- rss_limit_mb: **1500 禁抬**；硬 ABORT + peak_proof REQUIRED
+- forbid∋`fdbaa512`+`aa25e989`+`7e239487`+`5af20222`+`5ae077fa`
+- ≠X2 ACCEPT / ≠Book-Smoke / ≠重跑 alpha；live=false；`0087c928` 另队
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**

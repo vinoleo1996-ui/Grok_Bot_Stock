@@ -1,0 +1,12 @@
+--- /tmp/b4_paper_extend.py.before_hotfix	2026-10-26 19:22:22.292129207 -0400
++++ research/b4_paper_extend.py	2026-10-26 19:28:52.622119520 -0400
+@@ -270,7 +270,8 @@
+             W, booked = splice_booked(W, bp)
+             if booked["deferred_rebalance_day"]: LEG_CHG.add(booked["deferred_rebalance_day"])
+             # Option A (Arch APPROVE 20261026): booked-window realized change days stay in LEG_CHG across re-extends
+-            LEG_CHG |= set(change_days(pd.read_parquet(bp, columns=["session", "instrument", "weight"])))
++            # Hotfix: use .update (not |=) so module-global LEG_CHG is not treated as local in main()
++            LEG_CHG.update(change_days(pd.read_parquet(bp, columns=["session", "instrument", "weight"])))
+         last = W.session.max(); c = check(W, aum)
+         fp = OUT / f"B_B4_50_25_25_topN_{aum // 10000}w_{last.replace('-', '')}_{REV}.parquet"
+         res = dict(info, aum=aum, last_session=last, check=c, file=str(fp.relative_to(ROOT)), frozen_script_sha256=script_shas(TRACK_SCRIPTS),

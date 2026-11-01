@@ -1,0 +1,1086 @@
+# DIFF C r3c (FORMAL) — INCREMENTAL vs C r3b (review aid). Base /tmp/swr5/c3b (e1adef52 / 9943b412 / b867ee15 /
+#   3ed5a8dd / prereg 9db7cd14). Result = r3c state; full notes + landing appendix: see ..._r3c.diff header.
+# STATUS: FORMAL r3c, based on Arch review 016ae55e (ARCH_STRATEGY_DIFF_C_R3B_REVIEW_ZH.md), Arch 2026-10-18 11:11 ET
+#   rulings ①-④ (+ 11:13 / 11:20 ET supplements) and Data §14② (docs/v2/audit/sw14_2/sw14_clean_schema_check_20261018.txt,
+#   sha256 0a5a51976b516212e492bdbab56f2907063f2769759515587da6b12b63577d2b). Not applied to the real tree, not committed.
+# (1) NON_A_SHARE_KNOWN = ("Tsh.00018",): exact spelling after strip only (Data §14② L31-32); never normalised to any
+#     A-share code (sh.600018 / sz.000018 stay separate, whitelisted); count disclosed (n_rows_non_a_share_excluded);
+#     every other non-whitelisted id (T00018, tsh.00018, TSH.00018, Tsz.00018, ...) raises. A_PFX + A_DOT kept, re.I.
+# (2) Dtypes SW_L1_CLEAN_COLUMNS: CONFIRMED equal to Data §14② L13-27 (str / datetime64[us] / int64, 11 cols) -> no change.
+# (3) Manifest check: rows / n_instruments / in_date_min / in_date_max from manifest tushare_candidate.metrics vs raw
+#     table (pre-exclusion); Data §14② L40-49 all equal; no numbers invented. Open: n_l1 / available_at_nulls not compared.
+# (4) Dates: TS_UNIT = datetime64[us]; sw in_date/out_date, session keys and TradeCal days cast explicitly on both sides
+#     before any comparison (Arch 11:20 ③; there is no merge_asof in the code). Test: [us] vs [ns] -> identical.
+# (5) CLEAN lag (merged reading of Arch 11:13 + 11:20, PENDING Arch confirmation; prereg §5): lag <= 10 -> stale=False,
+#     stale_lag_only=False, days in lag_notes only; lag > 10 without coverage_gap -> stale + stale_lag_only; coverage_gap
+#     -> always stale, stale_lag_only=False. CLEAN_LAG_DISCLOSE_TDAYS removed. Legacy sw_pit keeps 3. Today lag = 5.
+# (6) TESTS WERE NOT RUN. First pgrep (11:23:48 ET, inline bash -c) matched pid 125666 = most likely its own wrapper
+#     shell -> no collect then. Re-check via script `bash /tmp/swr5/pgrep_check.sh` (pgrep -af same pattern) at
+#     2026-10-18 11:26:53 ET -> no match, EXIT=1; then ONE `PYTHONDONTWRITEBYTECODE=1 nice -n 10 pytest --collect-only
+#     -q -p no:cacheprovider` on a fresh /tmp copy -> EXIT=0, "81 tests collected": test_sw_members_asof.py 69 +
+#     test_sw_pit_freshness.py (cee59fc5) 12. py_compile EXIT=0; pyflakes 4.0.3 EXIT=1 = only the 2 baseline findings
+#     (hx2 charts2, fulla nav_path); /workspace/ql-enrich-venv (Python 3.13.5), 11:24:21 ET. No real data read; copy,
+#     __pycache__ / .pytest_cache removed. Receipts: /tmp/swr5/r3c_final_static/ (pgrep2.txt, collect2.txt).
+diff --git a/research/sw_members_asof.py b/research/sw_members_asof.py
+index a812e25648c74be30ab71e9902a36e298ae89d97..06afc0d5208cf7f96e0504c6859714c047231a06 100644
+--- a/research/sw_members_asof.py
++++ b/research/sw_members_asof.py
+@@ -40,10 +40,24 @@ Default table (C r3b, Arch 2026-10-18 ~07:00 ET): SW_L1_REL = CLEAN
+ data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet (sha 89d4afa3, the table leaf 23/24 pin); the old sw_pit
+ table stays reachable as SW_L1_LEGACY_REL (pitfix before arm).
+ CLEAN layout (instrument_id "sz.000001" / sw_name) is adapted to ts_code "000001.SZ" / l1_name in load_sw_l1 after a
+-column/dtype check (SW_L1_CLEAN_COLUMNS, pending Data §14②) and the Data r2 norm_code whitelist (known non-A ids
++column/dtype check (SW_L1_CLEAN_COLUMNS, confirmed by Data §14②) and the Data r2 norm_code whitelist (known non-A ids
+ excluded + disclosed, any other id raises; attrs["layout"]). Freshness:
+ sw_l1_table_check() runs research.sw_pit_freshness for the legacy sw_pit layout and a CLEAN manifest check
+ (data/v2/sw_l1_pit/manifest.json "tushare_candidate") for CLEAN; any other table -> disclosed as unchecked.
++r3c (Arch 016ae55e P3s, Arch 2026-10-18 11:11 ET rulings ①-④, Data §14② 0a5a5197):
++  - gap carry with > 1 candidate on (code, d): on_overlap="raise" -> SwPitIntegrityError; "count" -> same fixed
++    OVERLAP_TIEBREAK, disclosed as stats["gap_carry_multi_candidate_codes"] (P3-1);
++  - exact duplicate rows are dropped in prep_sw (one copy kept) and counted, n_rows_exact_duplicate_dropped (P3-2);
++    same code + same in_date + different l1_name = conflict (raise / overlap_codes; table count, Arch 11:11 ET ②);
++  - rows with in_date > out_date are counted, n_rows_in_after_out (never active, kept) (P3-3);
++  - l1_asof refuses > max_keys keys (parameter, default MAX_KEYS_PER_CALL): callers split by whole session (rule is
++    per (code, d), so chunks are exactly
++    equivalent; row counts add up, code lists re-merge by code) — sw_l1_asof_chunked() does this (P3-6);
++  - check_allow_ok(): key=value .ok parser for allow_* switches (pitfix) (P3-4);
++  - CLEAN manifest lag (P3-5; Arch 11:11 ET ①): stale only if lag_tdays > CLEAN_STALE_LAG_TDAYS (10) or coverage_gap;
++    lag <= 10 -> lag_notes only; lag > 10 alone -> stale + stale_lag_only (Arch 11:13 / 11:20); legacy keeps 3.
++  - Arch 11:20 ET: Tsh.00018 excluded only on an exact (stripped) match and never normalised to an A share (①); dates
++    and keys cast explicitly to TS_UNIT = datetime64[us] on both sides before any comparison (③; no merge_asof).
+ """
+ from __future__ import annotations
+ 
+@@ -58,17 +72,20 @@ from zoneinfo import ZoneInfo
+ import numpy as np
+ import pandas as pd
+ 
+-from research.sw_pit_freshness import STALE_LAG_TDAYS, SwPitIntegrityError
++from research.sw_pit_freshness import SwPitIntegrityError  # (STALE_LAG_TDAYS = 3 stays inside sw_pit_freshness)
+ from research.sw_pit_freshness import ensure_checked as _sw_pit_ensure_checked
+ 
+ SW_L1_REL = "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"  # C r3b: default = CLEAN (sha 89d4afa3)
+ SW_L1_LEGACY_REL = "data/v2/sw_pit/industry_members_sw_l1_pit.parquet"  # old sw_pit table (0b1d3432); pitfix only
+ SW_L1_CLEAN_MANIFEST_REL = "data/v2/sw_l1_pit/manifest.json"
++CLEAN_STALE_LAG_TDAYS = 10  # Arch 11:11 ET ①: CLEAN table stale only if lag_tdays > 10 (legacy sw_pit keeps 3)
+ TRADE_CAL_REL = "data/v2/calendar/trade_cal_sse_pit.parquet"
+ TRADE_CAL_SHA_PIN = "fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41"
+ ON_OVERLAP_CHOICES = ("raise", "count")
+ OVERLAP_TIEBREAK = ("latest in_date -> is_new == 'Y' -> out_date null -> later file row "
+                     "(sort by in_date, _pri, _ord ascending; keep last)")
++MAX_KEYS_PER_CALL = 1_000_000  # r3c P3-6 / Arch 11:11 ④: DEFAULT of the max_keys parameter (whole-session chunks)
++TS_UNIT = "datetime64[us]"  # r3c (Arch 11:20 ET ③): CLEAN dates are [us]; all dates / keys cast to this first
+ 
+ 
+ def _check_on_overlap(on_overlap) -> str:
+@@ -97,7 +114,7 @@ class TradeCal:
+         self.start, self.end = pd.Timestamp(dd[0]), pd.Timestamp(dd[-1])
+         if len(dd) != (self.end - self.start).days + 1:
+             raise SwPitIntegrityError(f"trade calendar not contiguous {self.start.date()}..{self.end.date()}")
+-        self.open_days = dd[oo == 1]
++        self.open_days = dd[oo == 1].astype(TS_UNIT)  # r3c (Arch 11:20 ③): explicit [us]
+         if len(self.open_days) == 0:
+             raise SwPitIntegrityError("trade calendar has no open day")
+         self.sha256 = sha256
+@@ -107,7 +124,7 @@ class TradeCal:
+         cal_date). Raises SwPitIntegrityError, checked in this order, if any d is NaT (Arch c6f97571 P3-3), before the
+         calendar start or after its end, not an open day when require_open (Arch c6f97571 P3-2), or has no open day
+         before it. No calendar-day fallback."""
+-        x = pd.to_datetime(pd.Series(np.asarray(d).ravel())).dt.normalize().to_numpy()
++        x = pd.to_datetime(pd.Series(np.asarray(d).ravel())).dt.normalize().astype(TS_UNIT).to_numpy()
+         if len(x) == 0:
+             return x
+         if pd.isna(x).any():
+@@ -128,6 +145,13 @@ class TradeCal:
+         return self.open_days[i]
+ 
+ 
++def _check_max_keys(max_keys) -> int:
++    """r3c (Arch 11:11 ET ④): per-call key limit is a parameter (default MAX_KEYS_PER_CALL); int >= 1, bool rejected."""
++    if isinstance(max_keys, bool) or not isinstance(max_keys, (int, np.integer)) or int(max_keys) < 1:
++        raise ValueError(f"max_keys must be an int >= 1, got {max_keys!r}")
++    return int(max_keys)
++
++
+ def load_trade_cal(root: Path, sha_pin: str | None = TRADE_CAL_SHA_PIN) -> TradeCal:
+     """Single read of ROOT/data/v2/calendar/trade_cal_sse_pit.parquet; sha256 of those bytes must equal sha_pin
+     (None = record only; production callers must not pass None). root is required (no module default)."""
+@@ -139,32 +163,51 @@ def load_trade_cal(root: Path, sha_pin: str | None = TRADE_CAL_SHA_PIN) -> Trade
+ 
+ 
+ def prep_sw(sw: pd.DataFrame) -> pd.DataFrame:
+-    """Parse dates with explicit failure accounting; stats in .attrs["prep_stats"]."""
++    """Parse dates with explicit failure accounting; stats in .attrs["prep_stats"].
++    r3c (Arch 016ae55e P3-2; Arch 11:11 ET ②): rows identical in ts_code / l1_name / parsed in_date / parsed out_date /
++    is_new are exact duplicates: ONE copy is kept (contents are identical), the others are dropped and counted
++    (n_rows_exact_duplicate_dropped), so they no longer trip on_overlap="raise". Rows that are NOT identical still
++    overlap: in particular same ts_code + same in_date with different l1_name is a CONFLICT — on any d where both are
++    active, on_overlap="raise" raises and "count" lists the code in overlap_codes (conflict=True); a gap-carry tie of
++    such rows raises / is listed in gap_carry_multi_candidate_codes. Table-level disclosure (all rows, not only the
++    queried days): n_codes_same_in_date_conflict + same_in_date_conflict_codes.
++    r3c (P3-3): rows with parsed in_date > out_date can never be active; counted as n_rows_in_after_out (kept)."""
+     sw = sw.copy()
+     raw_in, raw_out = sw["in_date"], sw["out_date"]
+     nonnull_in = raw_in.notna() & (raw_in.astype(str).str.strip() != "")
+     nonnull_out = raw_out.notna() & (raw_out.astype(str).str.strip() != "")
+-    sw["in_date"] = pd.to_datetime(raw_in, errors="coerce").dt.normalize()
+-    sw["out_date"] = pd.to_datetime(raw_out, errors="coerce").dt.normalize()
++    sw["in_date"] = pd.to_datetime(raw_in, errors="coerce").dt.normalize().astype(TS_UNIT)
++    sw["out_date"] = pd.to_datetime(raw_out, errors="coerce").dt.normalize().astype(TS_UNIT)
+     n_out_unparsed = int((nonnull_out & sw["out_date"].isna()).sum())
+     n_in_unparsed = int((nonnull_in & sw["in_date"].isna()).sum())
+     if n_out_unparsed > 0:
+         raise SwPitIntegrityError(f"sw_pit out_date: {n_out_unparsed} non-null values failed to parse "
+                                   "(would read as 'still member')")
++    n_raw = int(len(sw))
+     isnew = sw["is_new"].astype(str).str.upper().eq("Y") if "is_new" in sw.columns else pd.Series(False, index=sw.index)
+     sw["_pri"] = 2 * isnew.astype(int) + sw["out_date"].isna().astype(int)  # tie order: is_new=Y, then out null
+-    sw["_ord"] = np.arange(len(sw))
++    sw["_ord"] = np.arange(len(sw))  # file order of the RAW table
++    dup_cols = [c for c in ("ts_code", "l1_name", "in_date", "out_date", "is_new") if c in sw.columns]
++    dup = sw.duplicated(subset=dup_cols)  # identical contents -> same values; a tie with any OTHER row is a conflict
++    n_dup = int(dup.sum())
++    sw = sw[~dup].copy()
++    n_in_after_out = int((sw["in_date"].notna() & sw["out_date"].notna() & (sw["in_date"] > sw["out_date"])).sum())
++    sid = sw[sw["in_date"].notna()].groupby(["ts_code", "in_date"])["l1_name"].nunique()
++    sid_codes = sorted({str(c) for c, _ in sid[sid > 1].index})  # same code + in_date, different l1_name
+     s = sw.sort_values(["ts_code", "in_date", "_ord"])
+     prev_out = s.groupby("ts_code")["out_date"].shift(1)
+     gap = int((s["in_date"].notna() & prev_out.notna() & (s["in_date"] == prev_out + pd.Timedelta(days=1))).sum())
+-    sw.attrs["prep_stats"] = {"n_rows": int(len(sw)), "n_in_unparsed": n_in_unparsed, "n_out_unparsed": 0,
++    sw.attrs["prep_stats"] = {"n_rows": n_raw, "n_in_unparsed": n_in_unparsed, "n_out_unparsed": 0,
+                               "n_out_null": int((~nonnull_out).sum()), "n_reclass_gap_rows": gap,
++                              "n_rows_exact_duplicate_dropped": n_dup, "n_rows_in_after_out": n_in_after_out,
++                              "n_codes_same_in_date_conflict": len(sid_codes), "same_in_date_conflict_codes": sid_codes,
+                               "has_is_new": "is_new" in sw.columns}
+     return sw
+ 
+ 
+-# C r3b (Arch 07:16 ET item 1): expected CLEAN columns / dtypes (pandas 3 dtype names). PENDING Data §14② read-only
+-# column check (docs/v2/plans/DATA_SW_L1_PIT_V2_FIX_PLAN_ZH_r2.md §14-2); any difference -> SwPitIntegrityError.
++# C r3b (Arch 07:16 ET item 1): expected CLEAN columns / dtypes (pandas 3 dtype names); any difference ->
++# SwPitIntegrityError. r3c: CONFIRMED unchanged by Data §14② (docs/v2/audit/sw14_2/sw14_clean_schema_check_20261018.txt,
++# sha256 0a5a51976b516212e492bdbab56f2907063f2769759515587da6b12b63577d2b, lines 13-27: 11 columns, pandas 3.0.6).
+ SW_L1_CLEAN_COLUMNS = (("instrument_id", "str"), ("sw_code", "str"), ("sw_name", "str"),
+                        ("in_date", "datetime64[us]"), ("out_date", "datetime64[us]"),
+                        ("available_at", "datetime64[us]"),
+@@ -172,14 +215,14 @@ SW_L1_CLEAN_COLUMNS = (("instrument_id", "str"), ("sw_code", "str"), ("sw_name",
+                        ("is_new", "str"))
+ # C r3b (Arch 07:16 ET item 2): code whitelist copied from Data r2 norm_code
+ # (docs/v2/plans/DATA_SW_L1_PIT_V2_FIX_PLAN_ZH_r2.md sha256 482d8a2b..., lines 329-330 A_DOT / A_PFX, re.I, after
+-# strip; lines 362-375 norm_code). Known non-A-share ids: Data r2 lines 62 / 1016 / 1022 ("T00018"). Known ids are
+-# excluded and disclosed as non_a_share_excluded; any other id outside the whitelist (incl. null) -> raise.
++# strip; lines 362-375 norm_code). Known ids are excluded and disclosed as non_a_share_excluded; any other id outside
++# the whitelist (incl. null) -> raise.
+ A_DOT = r"(\d{6})\.(SH|SZ|BJ)"
+ A_PFX = r"(SH|SZ|BJ)\.(\d{6})"
+-NON_A_SHARE_KNOWN = ("T00018",)
+-# PLACEHOLDER (open question): Data r2 line 68 says CLEAN writes T00018 differently from raw ("唯一差异是非 A 股代码
+-# T00018 的写法") without giving the CLEAN spelling. Until Data §14② confirms it and it is added to NON_A_SHARE_KNOWN,
+-# that row is an unknown format and load_sw_l1(CLEAN) raises (fail-closed).
++# r3c: the ONLY non-whitelisted id in CLEAN 89d4afa3, exact spelling (case-sensitive, after strip), 1 row — Data §14②
++# docs/v2/audit/sw14_2/sw14_clean_schema_check_20261018.txt (sha256 0a5a5197...77d2b) lines 31-32 (the non-A-share id
++# Data r2 lines 62 / 1016 / 1022 call "T00018"). Other 7919 rows are A_PFX (line 38).
++NON_A_SHARE_KNOWN = ("Tsh.00018",)
+ 
+ 
+ def _norm_a_share(codes: pd.Series) -> pd.Series:
+@@ -210,7 +253,7 @@ def normalize_sw_l1_layout(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+     if {"instrument_id", "sw_name"} <= cols:
+         got = tuple((c, str(df[c].dtype)) for c in df.columns)
+         if sorted(got) != sorted(SW_L1_CLEAN_COLUMNS):
+-            raise SwPitIntegrityError(f"CLEAN SW L1 schema != expected (pending Data §14②): got {list(got)}, "
++            raise SwPitIntegrityError(f"CLEAN SW L1 schema != expected (Data §14②): got {list(got)}, "
+                                       f"expected {list(SW_L1_CLEAN_COLUMNS)}")
+         iid = df["instrument_id"]
+         ts = _norm_a_share(iid)
+@@ -275,7 +318,8 @@ def _clean_manifest_check(root: Path, sw: pd.DataFrame, cal: "TradeCal", now_et:
+     """CLEAN integrity/coverage from data/v2/sw_l1_pit/manifest.json["tushare_candidate"] (top-level rows/n_instruments
+     describe the legacy vote table, not CLEAN). The manifest has NO sha256 and NO "built": integrity = code sha pin
+     + manifest metrics rows / n_instruments / in_date_min / in_date_max == raw table (before non-A exclusion;
+-    mismatch raises); coverage = SSE
++    mismatch raises; r3c: Data §14② lines 40-49 found manifest == table on all four, 7920 / 5914 / 1984-05-09 /
++    2026-09-24 — the numbers come from the manifest, not from code); coverage = SSE
+     session completed at manifest "fetch_time". Returns None if the manifest does not describe this file."""
+     mpath = Path(root) / SW_L1_CLEAN_MANIFEST_REL
+     try:
+@@ -312,41 +356,79 @@ def _clean_manifest_check(root: Path, sw: pd.DataFrame, cal: "TradeCal", now_et:
+ def sw_l1_table_check(root: Path, sw: pd.DataFrame, as_of, cal: "TradeCal", *, as_of_defaulted: bool = False,
+                       now_et: _dt.datetime | None = None) -> dict:
+     """C r3b freshness/integrity dispatch on the table actually read (sw = load_sw_l1 output):
+-    legacy sw_pit file -> research.sw_pit_freshness.ensure_checked (manifest data/v2/sw_pit; unchanged rules);
+-    CLEAN -> _clean_manifest_check (integrity raises; lag_tdays >= STALE_LAG_TDAYS and as_of > coverage_day warn);
+-    any other file -> warn "no manifest check" (stale=True, disclosure only). Aggregated per path across calls
+-    (latest as_of, union of warns); read back with sw_l1_table_check_last(path)."""
++    legacy sw_pit file -> research.sw_pit_freshness.ensure_checked (manifest data/v2/sw_pit; unchanged rules, stale at
++    lag >= STALE_LAG_TDAYS = 3); CLEAN -> _clean_manifest_check (integrity raises) and (Arch 11:11 / 11:13 / 11:20 ET):
++      lag_tdays <= CLEAN_STALE_LAG_TDAYS (10)  -> stale=False, stale_lag_only=False; days only in lag_notes;
++      lag_tdays > 10, no coverage_gap          -> warn, stale=True, stale_lag_only=True (reason "lag");
++      as_of > coverage_day                     -> warn, stale=True, stale_lag_only=False (reason "coverage_gap");
++    any other file -> warn "no manifest check" (stale=True, reason "no_manifest"). Disclosure only; nothing blocks
++    the run.
++    Aggregated per path across calls (latest as_of, union of warns / lag_notes); read back with
++    sw_l1_table_check_last(path)."""
+     p = Path(sw.attrs.get("path", "")).resolve()
+     a = None if as_of is None else str(as_of)[:10]
+     if p == (Path(root) / SW_L1_LEGACY_REL).resolve():
+         r = dict(_sw_pit_ensure_checked(Path(root), as_of=a, as_of_defaulted=as_of_defaulted),
+                  check="research.sw_pit_freshness (manifest data/v2/sw_pit)", path=str(p))
++        r.setdefault("stale_lag_only", False)  # legacy keeps its own rule (lag >= 3 -> stale)
+         _TABLE_CHECKS[str(p)] = r
+         return r
+     base = _clean_manifest_check(Path(root), sw, cal, now_et or _dt.datetime.now(_ET))
+-    warns = []
++    warns: list = []
++    notes: list = []
+     if base is None:
+         base = {"check": "none (no manifest describes this file)"}
+         warns.append("no manifest check for this table (sha pin only)")
+     else:
+-        if base["lag_tdays"] >= STALE_LAG_TDAYS:
+-            warns.append(f"lag_tdays={base['lag_tdays']}>={STALE_LAG_TDAYS}")
++        lag = base["lag_tdays"]
++        if lag > CLEAN_STALE_LAG_TDAYS:
++            warns.append(f"lag_tdays={lag}>{CLEAN_STALE_LAG_TDAYS}")
++        else:
++            notes.append(f"lag_tdays={lag} (<= {CLEAN_STALE_LAG_TDAYS}: not stale)")
+         if a is not None and a > base["coverage_day"]:
+             warns.append(f"coverage_gap: as_of={a} > coverage_day={base['coverage_day']}")
++        base = dict(base, stale_lag_tdays=CLEAN_STALE_LAG_TDAYS)
+     if as_of_defaulted:
+         warns.append("as_of 取默认值（调用方未传）")
+     prev = _TABLE_CHECKS.get(str(p))
+     r = dict(base, path=str(p), sha256=sw.attrs.get("sha256"), as_of=a, as_of_defaulted=as_of_defaulted,
+-             checked_at_et=(now_et or _dt.datetime.now(_ET)).isoformat(timespec="seconds"), warns=warns, n_calls=1)
++             checked_at_et=(now_et or _dt.datetime.now(_ET)).isoformat(timespec="seconds"), warns=warns,
++             lag_notes=notes, n_calls=1)
+     if prev is not None:
+         if prev.get("as_of") is not None and (a is None or prev["as_of"] > a):
+             r["as_of"], r["as_of_defaulted"] = prev["as_of"], prev["as_of_defaulted"]
+         r["warns"] = list(dict.fromkeys(prev["warns"] + warns))
++        r["lag_notes"] = list(dict.fromkeys(prev.get("lag_notes", []) + notes))
+         r["n_calls"] = prev["n_calls"] + 1
+     blocking = [w for w in r["warns"] if not w.startswith("as_of 取默认值")]
+     r["stale"] = bool(blocking)
+-    r["disclosure_zh"] = ("【披露】申万 L1 表检查：" + "；".join(r["warns"]) + f"（{r['check']}）。行业相关结果仅作带披露参考。"
+-                          if blocking else "")
++    reasons = []
++    if any(w.startswith("lag_tdays=") for w in blocking):
++        reasons.append("lag")
++    if any(w.startswith("coverage_gap") for w in blocking):
++        reasons.append("coverage_gap")
++    if any(w.startswith("no manifest check") for w in blocking):
++        reasons.append("no_manifest")
++    r["stale_reasons"] = reasons
++    # Arch 11:13 + 11:20 ET (merged reading, pending Arch confirmation): stale_lag_only = stale ONLY because of
++    # lag > CLEAN_STALE_LAG_TDAYS (no coverage_gap / no_manifest). lag <= 10 -> stale False, stale_lag_only False.
++    r["stale_lag_only"] = reasons == ["lag"]
++    if r["stale_lag_only"]:
++        r["disclosure_zh"] = (f"【披露】申万 L1 表（{r['check']}）抓取于 {r.get('fetch_time_et')}，覆盖至 "
++                              f"{r.get('coverage_day')}，距今 {r.get('lag_tdays')} 个交易日，超过 CLEAN 阈值 "
++                              f"{CLEAN_STALE_LAG_TDAYS}，记 stale（stale_lag_only=True：只有滞后）。"
++                              + (f"本次查询截至 {r['as_of']}，未超出覆盖日，as-of 行业取值本身不受滞后影响。"
++                                 if r.get("as_of") is not None else "未传 as_of，无法确认查询是否超出覆盖日。")
++                              + "行业相关结果仅作带披露参考。")
++    elif blocking:
++        r["disclosure_zh"] = ("【披露】申万 L1 表检查：" + "；".join(r["warns"] + r["lag_notes"]) + f"（{r['check']}）。"
++                              + ("查询日晚于表覆盖日，覆盖日之后的行业归属可能缺失或过时；" if "coverage_gap" in reasons else "")
++                              + (f"表滞后超过 {CLEAN_STALE_LAG_TDAYS} 个交易日；" if "lag" in reasons else "")
++                              + ("该表没有 manifest 校验，仅核 sha pin；" if "no_manifest" in reasons else "")
++                              + ("未传 as_of，无法确认查询是否超出覆盖日；" if r.get("as_of") is None else "")
++                              + "行业相关结果仅作带披露参考。")
++    else:
++        r["disclosure_zh"] = ""  # lag <= 10 only: days are disclosed in lag_notes
+     _TABLE_CHECKS[str(p)] = r
+     return r
+ 
+@@ -387,27 +469,39 @@ def _overlap_list(mm: pd.DataFrame, picked: pd.DataFrame) -> list:
+ 
+ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+             sess_col: str = "session", stats: dict | None = None, gap_carry: bool = False, *,
+-            cal: TradeCal | None = None, on_overlap: str = "raise") -> pd.Series:
++            cal: TradeCal | None = None, on_overlap: str = "raise",
++            max_keys: int = MAX_KEYS_PER_CALL) -> pd.Series:
+     """Vectorized as-of l1_name per (code, session) row of `keys`; index aligned to keys; None if no member.
+     gap_carry=False: pure Intel-identical rule (calendar unused). gap_carry=True: 主 Agent 10-18 exception (see module
+     doc); `cal` = TradeCal is REQUIRED (None -> SwPitIntegrityError); every session is checked by cal.prev_open.
+     If `stats` is a dict, fills n_rows_multi_match / n_codes_overlap_on_d, n_rows_gap_carry,
+     n_rows_gap_carry_no_successor, n_rows_gap_carry_out_on_closed_day, n_rows_gap_carry_multi_candidate,
+     n_rows_unknown, gap_carry_rule, trade_cal_sha256, on_overlap, overlap_tiebreak, overlap_codes.
+-    on_overlap: "raise" (default) | "count" (see module doc). Null/NaT/unparseable session -> SwPitIntegrityError."""
++    on_overlap: "raise" (default) | "count" (see module doc). Null/NaT/unparseable session -> SwPitIntegrityError.
++    r3c: gap-carry keys with > 1 candidate raise in "raise" mode, else n_codes_gap_carry_multi_candidate /
++    gap_carry_multi_candidate_codes (same OVERLAP_TIEBREAK). len(keys) > max_keys -> SwPitIntegrityError:
++    chunk by session (each (code, d) is independent, so per-chunk results concatenate exactly; row counts add up,
++    code counts / *_codes lists are re-merged by code; "raise" mode is decided per chunk) — sw_l1_asof_chunked."""
+     _check_on_overlap(on_overlap)
++    max_keys = _check_max_keys(max_keys)
++    if len(keys) > max_keys:  # r3c P3-6 (memory; Arch 016ae55e §7); limit is a parameter (Arch 11:11 ET ④)
++        raise SwPitIntegrityError(f"l1_asof: {len(keys)} keys > max_keys={max_keys}; split the "
++                                  "keys by session (sw_l1_asof_chunked; results are identical)")
+     if gap_carry and cal is None:
+         raise SwPitIntegrityError("gap_carry=True requires cal=TradeCal (no module default; use load_trade_cal(ROOT))")
+     if "_ord" not in sw.columns:
+         sw = prep_sw(sw)
++    # r3c (Arch 11:20 ET ③): both sides of every date comparison are explicitly TS_UNIT ([us]); sw dates via prep_sw
++    d_us = pd.to_datetime(keys[sess_col].astype(str).str[:10], errors="coerce").dt.normalize().astype(TS_UNIT).values
+     k = pd.DataFrame({"_code": keys[code_col].astype(str).values,
+                       # null/unparseable session -> NaT -> raise below, both paths (c6f97571 P3-3, 28eabd35 P3-r2-1)
+-                      "_d": pd.to_datetime(keys[sess_col].astype(str).str[:10], errors="coerce").dt.normalize().values,
++                      "_d": d_us,
+                       "_rid": np.arange(len(keys))})
+     if k["_d"].isna().any():
+         raise SwPitIntegrityError(f"session is NaT/unparseable ({int(k['_d'].isna().sum())} rows); "
+                                   "refusing to map to unknown industry")
+     s = sw[["ts_code", "l1_name", "in_date", "out_date", "_pri", "_ord"]].rename(columns={"ts_code": "_code"})
++    s = s.assign(in_date=s["in_date"].astype(TS_UNIT), out_date=s["out_date"].astype(TS_UNIT))  # same unit as _d
+     m = k.merge(s, on="_code", how="inner")
+     m = m[(m["in_date"] < m["_d"]) & (m["out_date"].isna() | (m["out_date"] >= m["_d"]))]
+     vc = m["_rid"].value_counts()
+@@ -427,6 +521,7 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+     out = np.full(len(keys), None, dtype=object)
+     out[m["_rid"].to_numpy()] = m["l1_name"].to_numpy()
+     n_carry = n_no_succ = n_closed = n_multi_cand = 0
++    gap_multi: list = []
+     if gap_carry:
+         k["_prev"] = cal.prev_open(k["_d"].to_numpy())  # raises: NaT / outside calendar / not open / no prior open day
+         miss = k[~k["_rid"].isin(m["_rid"])]
+@@ -435,8 +530,15 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+             # c72f0856 P3-2a: unparsed in_date never carried; c6f97571 P3-7: in_date <= out_date
+             g0 = g0[g0["in_date"].notna() & g0["out_date"].notna() & (g0["in_date"] <= g0["out_date"])]
+             g = g0[(g0["out_date"] >= g0["_prev"]) & (g0["out_date"] < g0["_d"])]  # C r2: prev_open(d) <= out < d
+-            n_multi_cand = int((g["_rid"].value_counts() > 1).sum())  # disclosed only; same tie order (open question)
++            gvc = g["_rid"].value_counts()
++            gm = g[g["_rid"].isin(gvc.index[gvc > 1])]  # r3c P3-1: keys with > 1 gap-carry candidate
++            n_multi_cand = int((gvc > 1).sum())
++            if len(gm) and on_overlap == "raise":
++                codes = sorted(str(c) for c in gm["_code"].unique())
++                raise SwPitIntegrityError(f"SW L1 gap carry: {len(codes)} codes / {n_multi_cand} key rows have > 1 "
++                                          f"carry candidate (on_overlap='raise'); first codes: {codes[:10]}")
+             g = g.sort_values(["_rid", "in_date", "_pri", "_ord"]).drop_duplicates("_rid", keep="last")
++            gap_multi = _overlap_list(gm, g)  # count mode: same fixed OVERLAP_TIEBREAK, disclosed per code
+             out[g["_rid"].to_numpy()] = g["l1_name"].to_numpy()
+             n_carry = int(len(g))
+             n_closed = int((g["out_date"] > g["_prev"]).sum())  # carried although out_date is a non-open day
+@@ -451,6 +553,8 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+             stats["n_rows_gap_carry_no_successor"] = n_no_succ
+             stats["n_rows_gap_carry_out_on_closed_day"] = n_closed
+             stats["n_rows_gap_carry_multi_candidate"] = n_multi_cand
++            stats["n_codes_gap_carry_multi_candidate"] = len(gap_multi)
++            stats["gap_carry_multi_candidate_codes"] = gap_multi  # r3c P3-1 (count mode only; raise mode raised)
+             stats["gap_carry_rule"] = ("prev SSE open day <= out_date < d, d open, 1 day "
+                                        "(主 Agent 2026-10-18 06:01 ET; window relaxed C r2 06:16 ET)")
+             stats["trade_cal_sha256"] = cal.sha256
+@@ -460,7 +564,8 @@ def l1_asof(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+ 
+ def sw_l1_asof_with_gap_carry(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
+                               sess_col: str = "session", stats: dict | None = None, *,
+-                              cal: TradeCal | None = None, on_overlap: str = "raise") -> pd.Series:
++                              cal: TradeCal | None = None, on_overlap: str = "raise",
++                              max_keys: int = MAX_KEYS_PER_CALL) -> pd.Series:
+     """SHARED PUBLIC FUNCTION (Strategy + Intel). As-of SW L1 name per (code, session):
+     active rows = in_date < d AND (out_date null OR out_date >= d); latest in_date wins (tie: is_new=Y / out null,
+     then file order). If no active row and an old row with parsed in_date <= out_date has
+@@ -470,7 +575,92 @@ def sw_l1_asof_with_gap_carry(sw: pd.DataFrame, keys: pd.DataFrame, code_col: st
+     `cal`: TradeCal, REQUIRED (None -> SwPitIntegrityError). Session NaT / outside the calendar / not open -> raises.
+     on_overlap: "raise" (default) | "count" (主 Agent 06:49 ET; see module doc).
+     `sw` = prep_sw()/load_sw_l1() output (raises SwPitIntegrityError on unparseable non-null out_date)."""
+-    return l1_asof(sw, keys, code_col, sess_col, stats=stats, gap_carry=True, cal=cal, on_overlap=on_overlap)
++    return l1_asof(sw, keys, code_col, sess_col, stats=stats, gap_carry=True, cal=cal, on_overlap=on_overlap,
++                   max_keys=max_keys)
++
++
++_CODE_LISTS = {"overlap_codes": "n_codes_overlap_on_d",
++               "gap_carry_multi_candidate_codes": "n_codes_gap_carry_multi_candidate"}
++
++
++def _merge_code_lists(lists: list) -> list:
++    """Merge per-chunk _overlap_list outputs by code (chunks hold disjoint sessions, so n_days add up)."""
++    by: dict = {}
++    for lst in lists:
++        for e in lst:
++            c = by.get(e["code"])
++            if c is None:
++                by[e["code"]] = dict(e, candidates=list(e["candidates"]), chosen=list(e["chosen"]))
++                continue
++            c["n_days"] += e["n_days"]
++            c["first_day"], c["last_day"] = min(c["first_day"], e["first_day"]), max(c["last_day"], e["last_day"])
++            c["candidates"] = sorted(set(c["candidates"]) | set(e["candidates"]))
++            c["chosen"] = sorted(set(c["chosen"]) | set(e["chosen"]))
++            c["conflict"] = len(c["candidates"]) > 1
++    return [by[k] for k in sorted(by)]
++
++
++def sw_l1_asof_chunked(sw: pd.DataFrame, keys: pd.DataFrame, code_col: str = "instrument",
++                       sess_col: str = "session", stats: dict | None = None, *,
++                       cal: TradeCal | None = None, on_overlap: str = "raise",
++                       max_keys: int = MAX_KEYS_PER_CALL) -> pd.Series:
++    """r3c (Arch 016ae55e P3-6; Arch 11:11 ET ④): sw_l1_asof_with_gap_carry split into chunks of WHOLE sessions
++    (a session is never split) of <= max_keys keys; max_keys is a parameter, default MAX_KEYS_PER_CALL = 1_000_000.
++    Same values as one call (rule is per (code, d)); stats: n_* row counts summed, overlap_codes /
++    gap_carry_multi_candidate_codes re-merged by code (their n_codes_* recomputed), other fields from the chunks
++    (identical), plus n_chunks. A single session with > max_keys keys -> SwPitIntegrityError (no partial session).
++    Sessions are grouped by the parsed day (same parsing as l1_asof); NaT/unparseable -> SwPitIntegrityError.
++    "raise" mode raises on the first chunk that has an overlap / multi-candidate key."""
++    lim = _check_max_keys(max_keys)
++    sess = pd.to_datetime(keys[sess_col].astype(str).str[:10], errors="coerce").dt.normalize().astype(TS_UNIT)
++    if sess.isna().any():
++        raise SwPitIntegrityError(f"session is NaT/unparseable ({int(sess.isna().sum())} rows); "
++                                  "refusing to map to unknown industry")
++    sizes = sess.value_counts(sort=False).sort_index()
++    if len(sizes) and int(sizes.max()) > lim:
++        raise SwPitIntegrityError(f"sw_l1_asof_chunked: session {sizes.idxmax().date()} alone has {int(sizes.max())} "
++                                  f"keys > max_keys={lim} (sessions are never split)")
++    if len(keys) <= lim:
++        r = sw_l1_asof_with_gap_carry(sw, keys, code_col, sess_col, stats=stats, cal=cal, on_overlap=on_overlap,
++                                      max_keys=lim)
++        if stats is not None:
++            stats["n_chunks"] = 1
++        return r
++    if "_ord" not in sw.columns:
++        sw = prep_sw(sw)
++    groups: list = []
++    cur: list = []
++    n = 0
++    for s_, c in sizes.items():
++        if cur and n + int(c) > lim:
++            groups.append(cur)
++            cur, n = [], 0
++        cur.append(s_)
++        n += int(c)
++    groups.append(cur)
++    out = np.full(len(keys), None, dtype=object)
++    sts: list = []
++    for g in groups:
++        mask = sess.isin(list(g)).to_numpy()
++        st: dict = {}
++        out[mask] = sw_l1_asof_with_gap_carry(sw, keys[mask], code_col, sess_col, stats=st, cal=cal,
++                                              on_overlap=on_overlap, max_keys=lim).to_numpy()
++        sts.append(st)
++    if stats is not None:
++        for st in sts:
++            for k, v in st.items():
++                if k in _CODE_LISTS or k in _CODE_LISTS.values():
++                    continue
++                if k.startswith("n_") and isinstance(v, int) and not isinstance(v, bool):
++                    stats[k] = stats.get(k, 0) + v
++                else:
++                    stats.setdefault(k, v)
++        for lk, nk in _CODE_LISTS.items():
++            if any(lk in st for st in sts):
++                stats[lk] = _merge_code_lists([st.get(lk, []) for st in sts])
++                stats[nk] = len(stats[lk])
++        stats["n_chunks"] = len(groups)
++    return pd.Series(out, index=keys.index, name="l1_name")
+ 
+ 
+ def l1_static_last(sw: pd.DataFrame) -> dict:
+@@ -486,8 +676,9 @@ class IndustryAsOf:
+     """Per-session industry map for hx2.build_topn / apply_ind_cap (which take a plain dict per session)."""
+ 
+     def __init__(self, sw: pd.DataFrame, static_map: dict | None = None, cal: TradeCal | None = None, *,
+-                 on_overlap: str = "raise"):
++                 on_overlap: str = "raise", max_keys: int = MAX_KEYS_PER_CALL):
+         self.on_overlap = _check_on_overlap(on_overlap)
++        self.max_keys = _check_max_keys(max_keys)  # r3c (Arch 11:11 ET ④): per-call key limit, whole-session chunks
+         self.sw = sw if "_ord" in sw.columns else prep_sw(sw)
+         self.static = static_map if static_map is not None else l1_static_last(self.sw)
+         if cal is None:
+@@ -505,8 +696,8 @@ class IndustryAsOf:
+         """{session: {code: l1_name}} for the given (code, session) pairs (unique-ified first)."""
+         p = pairs[[code_col, sess_col]].drop_duplicates().reset_index(drop=True)
+         st: dict = {}
+-        p = p.assign(l1_name=sw_l1_asof_with_gap_carry(self.sw, p, code_col, sess_col, stats=st, cal=self.cal,
+-                                                       on_overlap=self.on_overlap).values)
++        p = p.assign(l1_name=sw_l1_asof_chunked(self.sw, p, code_col, sess_col, stats=st, cal=self.cal,
++                                                on_overlap=self.on_overlap, max_keys=self.max_keys).values)
+         self.stats.update({f"by_session_{k}": v for k, v in st.items()})
+         p = p.dropna(subset=["l1_name"])
+         return {s: dict(zip(g[code_col], g["l1_name"])) for s, g in p.groupby(sess_col)}
+@@ -521,8 +712,8 @@ class IndustryAsOf:
+         if rows.empty:
+             return {"n_rows": 0, "share_rows_diff": None}
+         st: dict = {}
+-        a = sw_l1_asof_with_gap_carry(self.sw, rows, code_col, sess_col, stats=st, cal=self.cal,
+-                                      on_overlap=self.on_overlap)
++        a = sw_l1_asof_chunked(self.sw, rows, code_col, sess_col, stats=st, cal=self.cal,
++                               on_overlap=self.on_overlap, max_keys=self.max_keys)
+         s = rows[code_col].astype(str).map(self.static)
+         diff = (a.fillna("_UNK_") != s.fillna("_UNK_"))
+         a_miss, s_miss = a.isna(), s.isna()
+@@ -533,7 +724,11 @@ class IndustryAsOf:
+                "share_rows_asof_missing": float(a_miss.mean()), **st,
+                "share_rows_gap_carry": float(st["n_rows_gap_carry"] / len(rows)),
+                "n_reclass_gap_rows_table": self.stats.get("n_reclass_gap_rows"),
+-               "n_in_unparsed_table": self.stats.get("n_in_unparsed")}
++               "n_in_unparsed_table": self.stats.get("n_in_unparsed"),
++               # r3c P3-2 / P3-3: table-level counts (prep_sw), disclosure only
++               "n_rows_exact_duplicate_dropped_table": self.stats.get("n_rows_exact_duplicate_dropped"),
++               "n_rows_in_after_out_table": self.stats.get("n_rows_in_after_out"),
++               "n_codes_same_in_date_conflict_table": self.stats.get("n_codes_same_in_date_conflict")}
+         if weight_col:
+             w = rows[weight_col].astype(float)
+             out["share_weight_diff"] = float(w[diff].sum() / w.sum()) if w.sum() > 0 else None
+@@ -550,7 +745,14 @@ def sw_pit_required(ia: "IndustryAsOf", rs: dict, unknown_key: str = "n_rows_aso
+     return {"sw_pit_sha256": ia.sha256, "sw_pit_path": ia.path, "sw_pit_layout": ia.layout, "unknown_key": unknown_key,
+             "n_unknown_rows": rs.get(unknown_key), "n_overlap_codes": rs.get("n_codes_overlap_on_d"),
+             "n_overlap_key_rows": rs.get("n_rows_multi_match"), "on_overlap": ia.on_overlap,
+-            "overlap_tiebreak": rs.get("overlap_tiebreak"), "overlap_codes": rs.get("overlap_codes")}
++            "overlap_tiebreak": rs.get("overlap_tiebreak"), "overlap_codes": rs.get("overlap_codes"),
++            # r3c (Arch 016ae55e P3-1/2/3): disclosed only, NOT in SW_PIT_REQUIRED_INT_FIELDS (mandatory set unchanged)
++            "n_gap_carry_multi_candidate_codes": rs.get("n_codes_gap_carry_multi_candidate"),
++            "gap_carry_multi_candidate_codes": rs.get("gap_carry_multi_candidate_codes"),
++            "n_rows_exact_duplicate_dropped": ia.stats.get("n_rows_exact_duplicate_dropped"),
++            "n_rows_in_after_out": ia.stats.get("n_rows_in_after_out"),
++            "n_codes_same_in_date_conflict": ia.stats.get("n_codes_same_in_date_conflict"),
++            "same_in_date_conflict_codes": ia.stats.get("same_in_date_conflict_codes")}
+ 
+ 
+ def sw_pit_required_ok(d) -> bool:
+@@ -582,3 +784,66 @@ def pitfix_out_dir_guard(root: Path, out_dir) -> Path:
+     if p.exists() or p.is_symlink():
+         raise SystemExit(f"pitfix out_dir already exists (no overwrite): {p}")
+     return p
++
++
++_OK_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
++
++
++def check_allow_ok(path, field: str, *, root: Path, now_et: _dt.datetime | None = None,
++                   flag: str = "--allow-ok") -> dict:
++    """r3c (Arch 016ae55e P3-4): allow-switch .ok check, key=value only (the colon form is NOT accepted).
++    `path` absolute or relative to `root`; must be an existing UTF-8 file, not under a `_consumed` directory, and
++    neither its file name nor its content may contain "DRAFT" (case-insensitive; e.g. x.ok.draft; Arch 11:11 ET ③).
++    Blank lines and lines starting with '#' are ignored; a line `key=value` (key [A-Za-z_][A-Za-z0-9_]*, split at the
++    first '=', both sides stripped) is a pair; a key may appear at most once; a line `key: ...` for a required key
++    is rejected explicitly. Required: `field`=true, live=false, promotion=false, and expires_et=<ISO 8601 WITH UTC
++    offset> strictly later than now (ET). Values are exact lowercase strings. Any failure -> SystemExit.
++    Returns ok_path / ok_sha256 / field / expires_et / checked_at_et for the summary."""
++    p = Path(path)
++    p = p if p.is_absolute() else Path(root) / p
++    if not p.is_file():
++        raise SystemExit(f"{flag} {p}: not a file")
++    if "_consumed" in p.resolve().parts:
++        raise SystemExit(f"{flag} {p}: .ok under _consumed/ (already used)")
++    if any("DRAFT" in n.upper() for n in (p.name, p.resolve().name)):  # Arch 11:11 ET ③ (incl. *.ok.draft)
++        raise SystemExit(f"{flag} {p}: file name contains DRAFT (a draft .ok is not an authorisation)")
++    raw = p.read_bytes()
++    try:
++        text = raw.decode("utf-8")
++    except UnicodeDecodeError as e:
++        raise SystemExit(f"{flag} {p}: not UTF-8 ({e})")
++    if "DRAFT" in text.upper():  # Arch 11:11 ET ③: any DRAFT marker anywhere in the file (comments included)
++        raise SystemExit(f"{flag} {p}: content contains DRAFT (a draft .ok is not an authorisation)")
++    need = {field: "true", "live": "false", "promotion": "false"}
++    req = (*need, "expires_et")
++    kv: dict = {}
++    for ln in text.splitlines():
++        s = ln.strip()
++        if not s or s.startswith("#"):
++            continue
++        k, sep, v = s.partition("=")
++        k = k.strip()
++        if not sep or not _OK_KEY.fullmatch(k):
++            ck = s.partition(":")[0].strip()
++            if ck in req:
++                raise SystemExit(f"{flag} {p}: '{ck}: ...' colon form is not accepted; use {ck}=<value>")
++            continue
++        if k in kv:
++            raise SystemExit(f"{flag} {p}: key {k!r} appears more than once")
++        kv[k] = v.strip()
++    for k, want in need.items():
++        if kv.get(k) != want:
++            raise SystemExit(f"{flag} {p}: needs {k}={want}, got {kv.get(k)!r}")
++    try:
++        exp = _dt.datetime.fromisoformat(kv.get("expires_et", ""))
++    except ValueError as e:
++        raise SystemExit(f"{flag} {p}: expires_et missing/unparseable ({e})")
++    if exp.tzinfo is None:
++        raise SystemExit(f"{flag} {p}: expires_et must carry a UTC offset, got {kv['expires_et']!r}")
++    now = (now_et or _dt.datetime.now(_ET)).astimezone(_ET)
++    if exp <= now:
++        raise SystemExit(f"{flag} {p}: expired (expires_et={kv['expires_et']}, "
++                         f"now {now.isoformat(timespec='seconds')})")
++    return {"ok_path": str(p.resolve()), "ok_sha256": hashlib.sha256(raw).hexdigest(), "field": field,
++            "expires_et": exp.astimezone(_ET).isoformat(timespec="seconds"),
++            "checked_at_et": now.isoformat(timespec="seconds")}
+diff --git a/research/tests_sw_pit/test_sw_members_asof.py b/research/tests_sw_pit/test_sw_members_asof.py
+index c1ba9911a4c2e797cada47dd3edd0f5c6682048a..03810d36460146d19c950b3f3690dba474b2626c 100644
+--- a/research/tests_sw_pit/test_sw_members_asof.py
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -3,7 +3,12 @@ DIFF C: d-1 = previous SSE open day per 主 Agent 06:01 ET / Arch c72f0856 P3-1/
+ C r2: window prev_open(d) <= out_date < d, cal required, d must be open, NaT rejected, in_date <= out_date
+ — Arch c6f97571;
+ C r3: on_overlap='raise' default / 'count' disclosure (主 Agent 06:49 ET), pure-rule NaT raises, mandatory sw_pit fields,
+-load_sw_l1 path parameter — Arch 28eabd35; C r3b: CLEAN layout adapter + sw_l1_table_check, synthetic files only).
++load_sw_l1 path parameter — Arch 28eabd35; C r3b: CLEAN layout adapter + sw_l1_table_check, synthetic files only;
++r3c — Arch 016ae55e P3-1..P3-6: gap-carry multi-candidate raise/count, exact-duplicate drop, in>out count,
++key limit + session chunking, key=value allow .ok, lag-only stale disclosure; Arch 11:11 ET: CLEAN lag
++threshold 10 (lag > 10 alone -> stale + stale_lag_only, Arch 11:13/11:20), same-in_date conflict, DRAFT .ok
++rejected, max_keys parameter; Arch 11:20 ET: Tsh.00018 exact exclusion, [us]/[ns] precision equivalence;
++Data §14②: non-A id Tsh.00018).
+ Fixture O.SZ / T.SZ are DELIBERATE overlaps: tests that query them pass on_overlap="count" explicitly or assert the
+ default raise.
+ In-memory frames / tmp ROOT only; no real data (every gap-carry call passes the synthetic CAL explicitly)."""
+@@ -413,8 +418,9 @@ def test_clean_schema_constant_matches_fixture():
+ 
+ 
+ def test_load_sw_l1_clean_layout_adapter(tmp_path):
+-    # Data r2 norm_code variants (dot / prefix, any case, surrounding spaces) + one known non-A-share id (T00018)
+-    ids = ["sz.000001", "SH.600000", "832317.BJ", " 600001.sh ", "T00018"]
++    # Data r2 norm_code variants (dot / prefix, any case, surrounding spaces) + the known non-A-share id, exact CLEAN
++    # spelling per Data §14② (Tsh.00018)
++    ids = ["sz.000001", "SH.600000", "832317.BJ", " 600001.sh ", "Tsh.00018"]
+     real = _clean_frame(ids, ["银行", "银行", "国防军工", "银行", "交通运输"], ["2020-01-02"] * 5, [None] * 5, ["Y"] * 5)
+     fp = tmp_path / "clean.parquet"
+     real.to_parquet(fp, index=False)
+@@ -423,11 +429,11 @@ def test_load_sw_l1_clean_layout_adapter(tmp_path):
+     assert sw["l1_name"].tolist() == ["银行", "银行", "国防军工", "银行"]
+     lay = sw.attrs["layout"]
+     assert lay["layout"].startswith("sw_l1_pit tushare")
+-    assert lay["non_a_share_excluded"] == ["T00018"] and lay["n_rows_non_a_share_excluded"] == 1
++    assert lay["non_a_share_excluded"] == ["Tsh.00018"] and lay["n_rows_non_a_share_excluded"] == 1
+     assert lay["raw"] == {"rows": 5, "n_instruments": 5, "in_date_min": "2020-01-02", "in_date_max": "2020-01-02"}
+     ia = A.IndustryAsOf(sw, cal=CAL)
+     assert ia.layout == lay
+-    assert A.l1_asof(ia.sw, _k([("000001.SZ", "2025-01-02"), ("T00018", "2025-01-02")])).tolist() == ["银行", None]
++    assert A.l1_asof(ia.sw, _k([("000001.SZ", "2025-01-02"), ("Tsh.00018", "2025-01-02")])).tolist() == ["银行", None]
+     # same answers as the sw_pit layout on the full fixture (overlap codes in count mode)
+     fp2 = tmp_path / "clean_fixture.parquet"
+     _clean_layout(SW6).to_parquet(fp2, index=False)
+@@ -453,7 +459,9 @@ def test_clean_schema_mismatch_raises():
+             A.normalize_sw_l1_layout(bad)
+ 
+ 
+-@pytest.mark.parametrize("bad_id", ["Tsh.00018", "sh.60000", None, "801010.SI", "600000.SS"])
++# r3c: raw-table spelling T00018 and case variants of Tsh.00018 are NOT known (exact match only) -> raise
++@pytest.mark.parametrize("bad_id", ["T00018", "TSH.00018", "tsh.00018", "Tsz.00018", "sh.60000", None, "801010.SI",
++                                    "600000.SS"])
+ def test_clean_unknown_id_format_raises(bad_id):
+     d = _clean_frame(["sz.000001", bad_id], ["银行", "银行"], ["2020-01-02"] * 2, [None] * 2, ["Y"] * 2)
+     with pytest.raises(SwPitIntegrityError, match="whitelist"):
+@@ -481,7 +489,8 @@ def test_sw_l1_table_check_clean_manifest(tmp_path):
+     assert r["coverage_day"] == "2026-10-09" and r["ref_day"] == "2026-10-12" and r["lag_tdays"] == 1
+     assert r["warns"] == [] and r["stale"] is False and r["sha256"] == sw.attrs["sha256"]
+     r = A.sw_l1_table_check(tmp_path, sw, "2026-10-12", CAL, now_et=now + dt.timedelta(days=3))  # Thu: lag 4
+-    assert r["stale"] and any(w.startswith("coverage_gap") for w in r["warns"]) and "lag_tdays=4>=3" in r["warns"]
++    assert r["stale"] and any(w.startswith("coverage_gap") for w in r["warns"])
++    assert "lag_tdays=4 (<= 10: not stale)" in r["lag_notes"] and r["stale_lag_only"] is False  # r3c: lag <= 10 = note
+     assert r["n_calls"] == 2 and A.sw_l1_table_check_last(sw.attrs["path"]) is r
+     other = tmp_path / "other.parquet"  # a file the manifest does not describe -> disclosed as unchecked
+     _clean_layout(SW6).to_parquet(other, index=False)
+@@ -501,3 +510,267 @@ def test_sw_l1_table_check_clean_integrity_raises(tmp_path, override, fetch, mat
+     (tmp_path / A.SW_L1_CLEAN_MANIFEST_REL).write_text("{", encoding="utf-8")
+     with pytest.raises(SwPitIntegrityError, match="manifest unreadable"):
+         A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=dt.datetime(2026, 10, 12, 7, tzinfo=A._ET))
++
++
++# ---- r3c (Arch 016ae55e P3s + Arch 11:11 ET rulings) ----
++# M: two old rows, both out 2025-03-10 (Mon), no successor -> 2025-03-11 has TWO gap-carry candidates (P3-1)
++SW_M = pd.DataFrame({"ts_code": ["M.SZ", "M.SZ"], "l1_name": ["电子", "通信"], "in_date": ["20200101", "20210101"],
++                     "out_date": ["20250310", "20250310"], "is_new": ["N", "N"]})
++
++
++def test_gap_carry_multi_candidate_raise_and_count():
++    sw2 = pd.concat([SW, SW_M], ignore_index=True)
++    assert _q([("M.SZ", "2025-03-11")], sw=sw2) == [None]  # pure rule: nothing active, no raise
++    with pytest.raises(SwPitIntegrityError, match=r"gap carry.*M\.SZ"):
++        _q([("M.SZ", "2025-03-11")], carry=True, sw=sw2)  # default on_overlap="raise"
++    st = {}
++    got = _q([("M.SZ", "2025-03-11"), ("M.SZ", "2025-03-12"), ("G.SZ", "2025-03-11")], carry=True, sw=sw2, stats=st,
++             on_overlap="count")
++    assert got == ["通信", None, "电子"]  # fixed OVERLAP_TIEBREAK: latest in_date wins
++    assert st["n_rows_gap_carry"] == 2 and st["n_rows_gap_carry_multi_candidate"] == 1
++    assert st["n_codes_gap_carry_multi_candidate"] == 1
++    assert st["gap_carry_multi_candidate_codes"] == [
++        {"code": "M.SZ", "n_days": 1, "first_day": "2025-03-11", "last_day": "2025-03-11",
++         "candidates": ["电子", "通信"], "chosen": ["通信"], "conflict": True}]
++    assert st["n_codes_overlap_on_d"] == 0  # not mixed into the active-row overlap list
++    ia = A.IndustryAsOf(sw2, cal=CAL, on_overlap="count")
++    req = A.sw_pit_required(ia, ia.reclass_share(_k([("M.SZ", "2025-03-11")])))
++    assert req["n_gap_carry_multi_candidate_codes"] == 1 and req["gap_carry_multi_candidate_codes"][0]["code"] == "M.SZ"
++    with pytest.raises(SwPitIntegrityError, match="gap carry"):
++        A.IndustryAsOf(sw2, cal=CAL).by_session(_k([("M.SZ", "2025-03-11")]))
++
++
++def test_exact_duplicate_rows_dropped_and_counted():
++    dup = SW[SW["ts_code"] == "Y.SH"]
++    sw2 = pd.concat([SW, dup, dup], ignore_index=True)
++    p = A.prep_sw(sw2)
++    ps = p.attrs["prep_stats"]
++    assert ps["n_rows_exact_duplicate_dropped"] == 2 and ps["n_rows"] == len(SW) + 2 and len(p) == len(SW)
++    assert int((p["ts_code"] == "Y.SH").sum()) == 1  # one copy kept (identical contents)
++    assert A.prep_sw(SW).attrs["prep_stats"]["n_rows_exact_duplicate_dropped"] == 0
++    assert _q([("Y.SH", "2025-01-02")], sw=sw2) == ["银行"]  # default raise: exact duplicates no longer raise
++    near = dup.assign(is_new="N")  # same l1_name but not identical (is_new differs) -> still an overlap
++    with pytest.raises(SwPitIntegrityError, match=r"Y\.SH"):
++        _q([("Y.SH", "2025-01-02")], sw=pd.concat([SW, near], ignore_index=True))
++    ia = A.IndustryAsOf(sw2, cal=CAL, on_overlap="count")
++    rs = ia.reclass_share(_k([("Y.SH", "2025-01-02")]))
++    assert rs["n_rows_exact_duplicate_dropped_table"] == 2 and rs["n_codes_overlap_on_d"] == 0
++    assert A.sw_pit_required(ia, rs)["n_rows_exact_duplicate_dropped"] == 2
++
++
++def test_in_after_out_rows_counted_never_active():
++    bad = pd.DataFrame({"ts_code": ["R.SZ"], "l1_name": ["电子"], "in_date": ["20250310"], "out_date": ["20250301"],
++                        "is_new": ["N"]})
++    sw2 = pd.concat([SW, bad], ignore_index=True)
++    assert A.prep_sw(sw2).attrs["prep_stats"]["n_rows_in_after_out"] == 1
++    assert A.prep_sw(SW).attrs["prep_stats"]["n_rows_in_after_out"] == 0
++    assert _q([("R.SZ", "2025-03-05"), ("R.SZ", "2025-03-11")], carry=True, sw=sw2) == [None, None]
++    ia = A.IndustryAsOf(sw2, cal=CAL)
++    rs = ia.reclass_share(_k([("Y.SH", "2025-01-02")]))
++    assert rs["n_rows_in_after_out_table"] == 1 and A.sw_pit_required(ia, rs)["n_rows_in_after_out"] == 1
++
++
++def test_key_limit_param_and_whole_session_chunking():
++    sw = A.prep_sw(SW)
++    codes = sorted(set(SW["ts_code"]))  # 9 codes -> 9 keys per session
++    days = ("2025-03-07", "2025-03-10", "2025-03-11", "2025-03-18")
++    keys = _k([(c, d) for d in days for c in codes])
++    assert A.MAX_KEYS_PER_CALL == 1_000_000
++    st1 = {}
++    one = A.sw_l1_asof_chunked(sw, keys, stats=st1, cal=CAL, on_overlap="count")  # default limit -> 1 chunk
++    assert st1["n_chunks"] == 1
++    with pytest.raises(SwPitIntegrityError, match="max_keys=10"):
++        A.sw_l1_asof_with_gap_carry(sw, keys, cal=CAL, on_overlap="count", max_keys=10)
++    with pytest.raises(SwPitIntegrityError, match="max_keys=10"):
++        A.l1_asof(sw, keys, on_overlap="count", max_keys=10)
++    st2 = {}
++    two = A.sw_l1_asof_chunked(sw, keys, stats=st2, cal=CAL, on_overlap="count", max_keys=10)
++    assert two.tolist() == one.tolist() and list(two.index) == list(keys.index) and st2["n_chunks"] == 4
++    for k in ("n_rows_multi_match", "n_codes_overlap_on_d", "overlap_codes", "n_rows_gap_carry", "n_rows_unknown",
++              "n_rows_gap_carry_no_successor", "n_codes_gap_carry_multi_candidate", "gap_carry_multi_candidate_codes",
++              "trade_cal_sha256", "on_overlap"):
++        assert st2[k] == st1[k], k
++    st3 = {}
++    assert A.sw_l1_asof_chunked(sw, keys, stats=st3, cal=CAL, on_overlap="count", max_keys=18).tolist() == one.tolist()
++    assert st3["n_chunks"] == 2  # two whole sessions per chunk
++    # whole sessions by PARSED day: the same day written two ways stays in one chunk (9 keys each -> 4 chunks of 9)
++    mixed = keys.assign(session=[s if i % 2 else f"{s} 00:00:00" for i, s in enumerate(keys["session"])])
++    st4 = {}
++    assert A.sw_l1_asof_chunked(sw, mixed, stats=st4, cal=CAL, on_overlap="count", max_keys=9).tolist() == one.tolist()
++    assert st4["n_chunks"] == 4
++    with pytest.raises(SwPitIntegrityError, match="alone has 9 keys > max_keys=8"):  # one session over the limit
++        A.sw_l1_asof_chunked(sw, keys, cal=CAL, on_overlap="count", max_keys=8)
++    with pytest.raises(SwPitIntegrityError, match=r"O\.SZ"):  # "raise" mode decided per chunk
++        A.sw_l1_asof_chunked(sw, keys, cal=CAL, max_keys=10)
++    for bad in (0, -1, True, 2.5, "10", None):
++        with pytest.raises(ValueError, match="max_keys"):
++            A.sw_l1_asof_chunked(sw, keys, cal=CAL, max_keys=bad)
++        with pytest.raises(ValueError, match="max_keys"):
++            A.l1_asof(sw, keys, max_keys=bad)
++        with pytest.raises(ValueError, match="max_keys"):
++            A.IndustryAsOf(SW, cal=CAL, max_keys=bad)
++    ia = A.IndustryAsOf(SW, cal=CAL, on_overlap="count", max_keys=10)
++    assert ia.max_keys == 10 and ia.reclass_share(keys)["n_chunks"] == 4
++    assert ia.by_session(keys) == A.IndustryAsOf(SW, cal=CAL, on_overlap="count").by_session(keys)
++
++
++def test_sw_l1_table_check_clean_lag_thresholds(tmp_path):
++    # Arch 11:13 + 11:20 ET (merged reading): lag <= 10 -> not stale, not stale_lag_only, days in lag_notes only;
++    # lag > 10 without coverage_gap -> stale + stale_lag_only; coverage_gap -> stale, never stale_lag_only.
++    assert A.CLEAN_STALE_LAG_TDAYS == 10 and not hasattr(A, "CLEAN_LAG_DISCLOSE_TDAYS")
++    A._reset_table_checks_for_tests()
++    sw = _clean_root(tmp_path)
++    now = dt.datetime(2026, 10, 18, 11, 0, tzinfo=A._ET)  # SH Sun 23:00 -> ref 10-16; cov 10-09: lag 5 (§14②)
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now)
++    assert r["lag_tdays"] == 5 and r["stale"] is False and r["stale_lag_only"] is False
++    assert r["warns"] == [] and r["stale_reasons"] == [] and r["lag_notes"] == ["lag_tdays=5 (<= 10: not stale)"]
++    assert r["disclosure_zh"] == ""
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-12", CAL, now_et=now)  # + coverage gap -> always stale
++    assert r["stale"] is True and r["stale_reasons"] == ["coverage_gap"] and r["stale_lag_only"] is False
++    assert "查询日晚于表覆盖日" in r["disclosure_zh"] and "lag_tdays=5 (<= 10: not stale)" in r["disclosure_zh"]
++    A._reset_table_checks_for_tests()
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL,
++                            now_et=dt.datetime(2026, 10, 23, 7, 0, tzinfo=A._ET))  # Fri 19:00 SH -> lag 10
++    assert r["lag_tdays"] == 10 and r["stale"] is False and r["stale_lag_only"] is False and r["disclosure_zh"] == ""
++    A._reset_table_checks_for_tests()
++    now11 = dt.datetime(2026, 10, 26, 7, 0, tzinfo=A._ET)  # Mon 19:00 SH -> lag 11
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now11)
++    assert r["lag_tdays"] == 11 and r["stale"] is True and r["stale_reasons"] == ["lag"] and r["stale_lag_only"] is True
++    assert r["warns"] == ["lag_tdays=11>10"] and r["lag_notes"] == [] and "stale_lag_only=True" in r["disclosure_zh"]
++    assert "未超出覆盖日" in r["disclosure_zh"]
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-12", CAL, now_et=now11)  # lag 11 + coverage gap
++    assert r["stale"] is True and r["stale_reasons"] == ["lag", "coverage_gap"] and r["stale_lag_only"] is False
++    A._reset_table_checks_for_tests()
++
++
++def test_tsh00018_excluded_exactly_never_normalised():
++    # Arch 11:20 ET ①: 'Tsh.00018' (exact, after strip) is excluded + counted; it must not become 600018 / 000018
++    d = _clean_frame(["Tsh.00018", "sh.600018", "sz.000018", " Tsh.00018 "], ["综合", "钢铁", "银行", "综合"],
++                     ["2020-01-02"] * 4, [None] * 4, ["Y"] * 4)
++    out, info = A.normalize_sw_l1_layout(d)
++    assert out["ts_code"].tolist() == ["600018.SH", "000018.SZ"] and out["l1_name"].tolist() == ["钢铁", "银行"]
++    assert info["n_rows_non_a_share_excluded"] == 2 and sorted(info["non_a_share_excluded"]) == [" Tsh.00018 ",
++                                                                                                "Tsh.00018"]
++    assert info["raw"]["rows"] == 4 and "综合" not in set(out["l1_name"])
++    assert A.NON_A_SHARE_KNOWN == ("Tsh.00018",)
++    assert A._norm_a_share(pd.Series(["Tsh.00018"])).tolist() == [None]  # never mapped to any A-share code
++    sw = A.prep_sw(out)
++    got = A.l1_asof(sw, _k([("600018.SH", "2025-01-02"), ("000018.SZ", "2025-01-02"), ("Tsh.00018", "2025-01-02")]))
++    assert got.tolist() == ["钢铁", "银行", None]
++
++
++def test_us_ns_precision_equivalent():
++    # Arch 11:20 ET ③: one side [us], the other [ns] (sw dates and/or keys) -> identical answers; both cast to [us]
++    days = ("2025-03-07", "2025-03-10", "2025-03-11", "2025-03-18")
++    pairs = [(c, d) for c in sorted(set(SW["ts_code"])) for d in days]
++    base_carry = A.sw_l1_asof_with_gap_carry(A.prep_sw(SW), _k(pairs), cal=CAL, on_overlap="count").tolist()
++    base_pure = A.l1_asof(A.prep_sw(SW), _k(pairs), on_overlap="count").tolist()
++    assert A.TS_UNIT == "datetime64[us]" and str(CAL.open_days.dtype) == "datetime64[us]"
++    for unit in ("datetime64[ns]", "datetime64[us]"):
++        swu = SW.assign(in_date=pd.to_datetime(SW["in_date"]).astype(unit),
++                        out_date=pd.to_datetime(SW["out_date"]).astype(unit))
++        p = A.prep_sw(swu)
++        assert str(p["in_date"].dtype) == "datetime64[us]" and str(p["out_date"].dtype) == "datetime64[us]"
++        for kunit in ("datetime64[ns]", "datetime64[us]"):
++            k = _k(pairs)
++            k["session"] = pd.to_datetime(k["session"]).astype(kunit)
++            assert A.sw_l1_asof_with_gap_carry(p, k, cal=CAL, on_overlap="count").tolist() == base_carry, (unit, kunit)
++            assert A.l1_asof(p, k, on_overlap="count").tolist() == base_pure, (unit, kunit)
++            assert A.sw_l1_asof_chunked(p, k, cal=CAL, on_overlap="count", max_keys=9).tolist() == base_carry
++    pn = A.prep_sw(SW)  # prepared frame whose dates were re-cast to [ns] afterwards: l1_asof casts again
++    pn["in_date"], pn["out_date"] = pn["in_date"].astype("datetime64[ns]"), pn["out_date"].astype("datetime64[ns]")
++    assert A.sw_l1_asof_with_gap_carry(pn, _k(pairs), cal=CAL, on_overlap="count").tolist() == base_carry
++    assert CAL.prev_open(pd.Series(pd.to_datetime(["2025-03-18"])).astype("datetime64[ns]").to_numpy()).dtype == \
++        CAL.prev_open(pd.Series(pd.to_datetime(["2025-03-18"])).astype("datetime64[us]").to_numpy()).dtype
++
++
++# C: same code + same in_date, different l1_name (both out 2025-03-10) — a CONFLICT, never silently picked
++SW_C = pd.DataFrame({"ts_code": ["C.SZ", "C.SZ"], "l1_name": ["电子", "通信"], "in_date": ["20200101", "20200101"],
++                     "out_date": ["20250310", "20250310"], "is_new": ["N", "N"]})
++
++
++def test_same_in_date_different_name_is_conflict():
++    sw2 = pd.concat([SW, SW_C], ignore_index=True)
++    ps = A.prep_sw(sw2).attrs["prep_stats"]
++    assert ps["n_codes_same_in_date_conflict"] == 2 and ps["same_in_date_conflict_codes"] == ["C.SZ", "T.SZ"]
++    assert A.prep_sw(SW).attrs["prep_stats"]["same_in_date_conflict_codes"] == ["T.SZ"]
++    with pytest.raises(SwPitIntegrityError, match=r"C\.SZ"):  # active day, default raise
++        _q([("C.SZ", "2025-01-02")], sw=sw2)
++    st = {}
++    assert _q([("C.SZ", "2025-01-02")], sw=sw2, stats=st, on_overlap="count") == ["通信"]  # fixed tie order
++    assert st["overlap_codes"] == [{"code": "C.SZ", "n_days": 1, "first_day": "2025-01-02", "last_day": "2025-01-02",
++                                    "candidates": ["电子", "通信"], "chosen": ["通信"], "conflict": True}]
++    with pytest.raises(SwPitIntegrityError, match="gap carry"):  # gap-carry day: both rows are candidates
++        _q([("C.SZ", "2025-03-11")], carry=True, sw=sw2)
++    st = {}
++    _q([("C.SZ", "2025-03-11")], carry=True, sw=sw2, stats=st, on_overlap="count")
++    g = st["gap_carry_multi_candidate_codes"]
++    assert [e["code"] for e in g] == ["C.SZ"] and g[0]["conflict"] is True
++    sw3 = pd.concat([SW, SW_C.iloc[[0]], SW_C.iloc[[0]]], ignore_index=True)  # exact duplicate: NOT a conflict
++    ps3 = A.prep_sw(sw3).attrs["prep_stats"]
++    assert ps3["n_rows_exact_duplicate_dropped"] == 1 and ps3["same_in_date_conflict_codes"] == ["T.SZ"]
++    assert _q([("C.SZ", "2025-01-02")], sw=sw3) == ["电子"]
++    ia = A.IndustryAsOf(sw2, cal=CAL, on_overlap="count")
++    req = A.sw_pit_required(ia, ia.reclass_share(_k([("Y.SH", "2025-01-02")])))
++    assert req["n_codes_same_in_date_conflict"] == 2 and req["same_in_date_conflict_codes"] == ["C.SZ", "T.SZ"]
++
++
++_NOW_OK = dt.datetime(2026, 10, 18, 11, 0, tzinfo=A._ET)
++_GOOD_OK = ("# Arch run .ok (synthetic)\nallow_pitfix_compare=true\nlive=false\npromotion = false\n"
++            "expires_et=2026-10-19T16:00:00-04:00\nnote: free text is ignored\n")
++
++
++def _ok_file(tmp_path, text, rel="a.ok"):
++    p = tmp_path / rel
++    p.parent.mkdir(parents=True, exist_ok=True)
++    p.write_text(text, encoding="utf-8")
++    return p
++
++
++def test_check_allow_ok_valid(tmp_path):
++    p = _ok_file(tmp_path, _GOOD_OK)
++    r = A.check_allow_ok(p, "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
++    assert r["ok_sha256"] == hashlib.sha256(p.read_bytes()).hexdigest() and r["field"] == "allow_pitfix_compare"
++    assert r["expires_et"] == "2026-10-19T16:00:00-04:00" and r["ok_path"] == str(p.resolve())
++    r2 = A.check_allow_ok("a.ok", "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)  # relative to root
++    assert r2["ok_path"] == str(p.resolve())
++
++
++@pytest.mark.parametrize("old, new, match", [
++    ("allow_pitfix_compare=true", "allow_pitfix_compare: true", "colon form"),
++    ("allow_pitfix_compare=true", "pitfix_compare_allowed=true", "allow_pitfix_compare=true"),
++    ("allow_pitfix_compare=true", "allow_pitfix_compare=True", "allow_pitfix_compare=true"),
++    ("live=false", "live=true", "live=false"),
++    ("promotion = false\n", "", "promotion=false"),
++    ("note: free text is ignored\n", "live=false\n", "more than once"),
++    ("2026-10-19T16:00:00-04:00", "2026-10-18T10:59:59-04:00", "expired"),
++    ("2026-10-19T16:00:00-04:00", "2026-10-19T16:00:00", "UTC offset"),
++    ("expires_et=2026-10-19T16:00:00-04:00\n", "", "expires_et"),
++    ("expires_et=2026-10-19T16:00:00-04:00", "expires_et: 2026-10-19T16:00:00-04:00", "colon form"),
++])
++def test_check_allow_ok_rejects(tmp_path, old, new, match):
++    assert old in _GOOD_OK
++    p = _ok_file(tmp_path, _GOOD_OK.replace(old, new))
++    with pytest.raises(SystemExit, match=match):
++        A.check_allow_ok(p, "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
++
++
++def test_check_allow_ok_file_rules(tmp_path):
++    with pytest.raises(SystemExit, match="not a file"):
++        A.check_allow_ok(tmp_path / "missing.ok", "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
++    with pytest.raises(SystemExit, match="_consumed"):
++        A.check_allow_ok(_ok_file(tmp_path, _GOOD_OK, "_consumed/a.ok"), "allow_pitfix_compare", root=tmp_path,
++                         now_et=_NOW_OK)
++    bad = tmp_path / "latin1.ok"
++    bad.write_bytes(b"allow_pitfix_compare=true\n\xff\n")
++    with pytest.raises(SystemExit, match="UTF-8"):
++        A.check_allow_ok(bad, "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
++
++
++@pytest.mark.parametrize("rel, extra", [("a.ok.draft", None), ("ARCH_PITFIX_DRAFT.ok", None), ("a_Draft.ok", None),
++                                        ("a.ok", "# DRAFT — not signed\n"), ("a.ok", "status=draft\n")])
++def test_check_allow_ok_rejects_draft(tmp_path, rel, extra):
++    # Arch 11:11 ET ③: DRAFT in the file name (incl. .ok.draft) or anywhere in the content -> rejected
++    p = _ok_file(tmp_path, _GOOD_OK + (extra or ""), rel)
++    with pytest.raises(SystemExit, match="DRAFT"):
++        A.check_allow_ok(p, "allow_pitfix_compare", root=tmp_path, now_et=_NOW_OK)
+diff --git a/research/strategy_hiliq_capadv_b4_x2.py b/research/strategy_hiliq_capadv_b4_x2.py
+index 87b63ecfc540a09cb7cc57317d310aa810432683..b896e5a009920afadb4cf5ca1a73122c8173aece 100644
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -22,13 +22,14 @@ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
+ from research.sw_pit_freshness import SwPitIntegrityError
+-from research.sw_members_asof import (IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry,  # PIT fix (Arch 3f195231 r2)
++from research.sw_members_asof import (IndustryAsOf, load_sw_l1, sw_l1_asof_chunked,  # PIT fix (Arch 3f195231 r2)
+                                       pitfix_out_dir_guard, SW_L1_REL,
+                                       load_trade_cal)  # DIFF C: d-1 = prev SSE open day (主 Agent 10-18 06:01 ET)
+ from research.sw_members_asof import (sw_pit_required, sw_pit_required_ok,  # C r3: 主 Agent 06:49 ET mandatory fields
+                                       OVERLAP_TIEBREAK)
+ from research.sw_members_asof import (SW_L1_LEGACY_REL, sw_l1_table_check,  # C r3b: default CLEAN + per-table check
+                                       sw_l1_table_check_last)
++from research.sw_members_asof import check_allow_ok  # r3c: Arch 016ae55e P3-4 key=value .ok parser
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -50,7 +51,7 @@ SW_L1_PATH_DEFAULT = ROOT / SW_L1_REL  # C r3 (Arch 06:50): table path is a para
+ SW_L1_LEGACY_PATH = ROOT / SW_L1_LEGACY_REL
+ SW_L1_LEGACY_SHA_PIN = "0b1d3432e30f7cdd907df393299cd2f552e1121899239985a00113c4dfcd89f6"
+ PITFIX_PAUSED = True  # 主 Agent 06:49 ET: paused until sw_l1_pit_v2 is reviewed (re-plan with v2 sha + new .ok)
+-PITFIX_ALLOW_FIELD = "pitfix_compare_allowed"  # C r3b: PROPOSED .ok field (value true); Arch to fix
++PITFIX_ALLOW_FIELD = "allow_pitfix_compare"  # r3c: Arch 016ae55e P3-4 (key=value, value true)
+ ON_OVERLAP_RESEARCH = "count"  # 主 Agent 06:49 ET: research runs disclose overlaps instead of raising
+ 
+ 
+@@ -397,8 +398,8 @@ def smallcap_and_industry(W: pd.DataFrame, tag: str, *, sw_path=None) -> dict:
+     )
+     ia = _check_loaded_pin(load_industry_asof(as_of=str(Wx["session"].max())[:10], sw_path=sw_path))  # C r3b
+     m2 = Wx.copy()
+-    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session", cal=ia.cal,
+-                                              on_overlap=ia.on_overlap).values  # as-of (PIT)
++    m2["l1_name"] = sw_l1_asof_chunked(ia.sw, Wx, "instrument", "session", cal=ia.cal,  # r3c P3-6: chunk by session
++                                       on_overlap=ia.on_overlap).values  # as-of (PIT)
+     reclass = ia.reclass_share(Wx, weight_col="weight")  # disclosure only
+     ind_share = (m2.groupby("l1_name")["weight"].sum() / m2["weight"].sum()).sort_values(ascending=False)
+     ind_share = ind_share[ind_share.index.notna()]
+@@ -559,7 +560,8 @@ def main(sw_path=None):
+     t0 = time.time()
+     print("=== BANNER: transitional Top-N; main path = OPTIMIZER_V1 DRAFT; FROZEN/paper untouched; live=false ===")
+     for k, p in P.items():
+-        assert p.exists(), f"missing leg {k}: {p}"
++        if not p.exists():  # r3c: was a bare assert (Arch c72f0856 P3-6; asserts vanish under python -O)
++            raise SystemExit(f"missing leg {k}: {p}")
+     check_sw_l1_pin(sw_path)  # C r3: pin checked on the table file actually used, before any write
+ 
+     # 1) capacity_adv pos weights + smoke
+@@ -745,6 +747,7 @@ def main(sw_path=None):
+         # C r3b: freshness/integrity of the table actually read (CLEAN -> sw_l1_pit manifest check)
+         "sw_pit_freshness": sw_l1_table_check_last(ind_map.path),
+         "industry_cap_on_stale_sw_pit": bool((sw_l1_table_check_last(ind_map.path) or {}).get("stale")),
++        "sw_l1_stale_lag_only": bool((sw_l1_table_check_last(ind_map.path) or {}).get("stale_lag_only")),
+         "disclosure_zh": (sw_l1_table_check_last(ind_map.path) or {}).get("disclosure_zh", ""),
+         "frozen_config_touched": False,
+         "paper_tracks_touched": False,
+@@ -796,30 +799,14 @@ def _arm_ok(sm: dict, m: dict, req: dict | None = None) -> bool:
+ 
+ 
+ def _pitfix_allow_check(allow_ok) -> dict:
+-    """C r3b (Arch 07:16 ET item 3): while PITFIX_PAUSED, pitfix-compare runs only with --pitfix-allow-ok <path>:
+-    the file must exist (absolute or relative to ROOT), be UTF-8, and contain exactly one line
+-    `PITFIX_ALLOW_FIELD: true` (or `= true`). Field name / value are PROPOSED; Arch to fix them. Checked before any
+-    data read or write; its path + sha256 go into summary.json."""
++    """While PITFIX_PAUSED, pitfix-compare runs only with --pitfix-allow-ok <path> (C r3b; r3c Arch 016ae55e P3-4):
++    research.sw_members_asof.check_allow_ok — key=value only (colon form rejected), exactly
++    allow_pitfix_compare=true, live=false, promotion=false, expires_et (with UTC offset) not yet passed, not under
++    _consumed/. Checked before any data read or write; path + sha256 + expiry go into summary.json."""
+     if allow_ok is None:
+         raise SystemExit("pitfix-compare PAUSED (主 Agent 2026-10-18 06:49 ET): pass --pitfix-allow-ok <Arch .ok> with "
+-                         f"a line '{PITFIX_ALLOW_FIELD}: true'")
+-    p = Path(allow_ok)
+-    p = p if p.is_absolute() else ROOT / p
+-    if not p.is_file():
+-        raise SystemExit(f"--pitfix-allow-ok {p}: not a file")
+-    raw = p.read_bytes()
+-    try:
+-        text = raw.decode("utf-8")
+-    except UnicodeDecodeError as e:
+-        raise SystemExit(f"--pitfix-allow-ok {p}: not UTF-8 ({e})")
+-    hits = []
+-    for ln in text.splitlines():
+-        k, sep, v = ln.replace("=", ":", 1).partition(":")
+-        if sep and k.strip() == PITFIX_ALLOW_FIELD:
+-            hits.append(v.strip())
+-    if hits != ["true"]:
+-        raise SystemExit(f"--pitfix-allow-ok {p}: needs exactly one line '{PITFIX_ALLOW_FIELD}: true', got {hits}")
+-    return {"ok_path": str(p.resolve()), "ok_sha256": hashlib.sha256(raw).hexdigest(), "field": PITFIX_ALLOW_FIELD}
++                         f"{PITFIX_ALLOW_FIELD}=true, live=false, promotion=false, expires_et=<ISO 8601 with offset>")
++    return check_allow_ok(allow_ok, PITFIX_ALLOW_FIELD, root=ROOT, flag="--pitfix-allow-ok")
+ 
+ 
+ def pitfix_compare(out_dir_arg: str, sw_path=None, allow_ok=None) -> int:
+diff --git a/research/strategy_fulla_b4_x2.py b/research/strategy_fulla_b4_x2.py
+index 89fa1fb9eb2e34f7210acbb3b78cfbefadac910d..9013824224804a0f045ab3be4d998c38cabac5d7 100644
+--- a/research/strategy_fulla_b4_x2.py
++++ b/research/strategy_fulla_b4_x2.py
+@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ # C r3b: sw_pit_freshness (主 Agent 10-18 05:06; Arch ccc7546f) is now reached via sw_members_asof.sw_l1_table_check
+-from research.sw_members_asof import IndustryAsOf, load_sw_l1, sw_l1_asof_with_gap_carry  # PIT fix (Arch 10-18 P2; r2 3f195231)
++from research.sw_members_asof import IndustryAsOf, load_sw_l1, sw_l1_asof_chunked  # PIT fix (Arch 10-18 P2; r2 3f195231)
+ from research.sw_members_asof import load_trade_cal  # C r2: calendar passed explicitly (no module default; Arch c6f97571 P3-5)
+ from research.sw_members_asof import SW_L1_REL, sw_pit_required, sw_pit_required_ok  # C r3 (主 Agent 06:49 ET)
+ from research.sw_members_asof import sw_l1_table_check, sw_l1_table_check_last  # C r3b: check on the table read
+@@ -276,8 +276,8 @@ def smallcap_and_industry(W: pd.DataFrame, tag: str, *, sw_path=None) -> dict:
+     if ia.sha256 != SW_L1_SHA_PIN:  # C r3: pin enforced on the bytes actually parsed
+         raise SwPitIntegrityError(f"sw_pit l1 sha {ia.sha256} ({ia.path}) != pinned {SW_L1_SHA_PIN}")
+     m2 = Wx.copy()
+-    m2["l1_name"] = sw_l1_asof_with_gap_carry(ia.sw, Wx, "instrument", "session", cal=ia.cal,
+-                                              on_overlap=ia.on_overlap).values  # + 主 Agent 10-18 gap carry
++    m2["l1_name"] = sw_l1_asof_chunked(ia.sw, Wx, "instrument", "session", cal=ia.cal,  # r3c P3-6: chunk by session
++                                       on_overlap=ia.on_overlap).values  # + 主 Agent 10-18 gap carry
+     reclass = ia.reclass_share(Wx, weight_col="weight")  # disclosure only
+     ind_share = (
+         m2.groupby("l1_name")["weight"].sum() / m2["weight"].sum()
+@@ -519,6 +519,7 @@ def main(sw_path=None):
+         "mdd25_flag": {},
+         "sw_pit_freshness": sw_l1_table_check_last(_sw_path(sw_path)),  # C r3b: table actually read
+         "disclosure_zh": (sw_l1_table_check_last(_sw_path(sw_path)) or {}).get("disclosure_zh", ""),
++        "sw_l1_stale_lag_only": bool((sw_l1_table_check_last(_sw_path(sw_path)) or {}).get("stale_lag_only")),
+         # C r3 (主 Agent 06:49 ET item 3): mandatory sw_pit fields (sha of the file actually read, unknown, overlap)
+         "sw_pit_path": str(_sw_path(sw_path)),
+         "sw_pit_required_by_arm": {f"B4_{k}w": v.get("sw_pit_required") for k, v in attrs.items()},
+diff --git a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+index 37eaeeb088d2b90c8f5794ca7713bc1934ea425d..fe4591e0d5d0531194e0f983942402d7d4b3c9e6 100644
+--- a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -38,6 +38,15 @@ hx2 合成 B4 时，行业 25% 上限用的是“每只股票最后一次出现
+ 
+ ## 5. 披露与限制
+ - sw_pit 表 built 是 10-14，按 R4 口径已 stale（落后 3 个交易日）。summary 带 industry_cap_on_stale_sw_pit=true 和 disclosure_zh，凡引用这次结果的报告，标题行都要带 disclosure_zh。
++- **滞后阈值（Arch 2026-10-18 11:11 ET 裁定①，r3c 起；常量在 research/sw_members_asof.py）**：
++  - legacy sw_pit 表（0b1d3432）：沿用 research/sw_pit_freshness.py 的 STALE_LAG_TDAYS = 3，lag_tdays ≥ 3 即 stale。
++  - CLEAN 表（89d4afa3）：CLEAN_STALE_LAG_TDAYS = 10（Arch 11:11 ①，以及 11:13 / 11:20 两条补充裁定的合并理解，待 Arch 确认）：
++    - lag_tdays ≤ 10：stale=False，stale_lag_only=False，滞后天数只写进 lag_notes；
++    - lag_tdays > 10 且没有 coverage_gap：stale=True，stale_lag_only=True（summary 字段 sw_l1_stale_lag_only），写 disclosure_zh；
++    - 有 coverage_gap：一律 stale=True，stale_lag_only=False。
++  - 按 Data §14②（docs/v2/audit/sw14_2/sw14_clean_schema_check_20261018.txt，sha256 0a5a5197…77d2b），当前 lag = 5 个交易日（收盘覆盖日 20261009，截至 20261016），因此不算 stale，也不算 stale_lag_only。
++  - 没有 manifest 描述的表一律置 stale=True。
++  - stale 只影响披露（industry_cap_on_stale_sw_pit、disclosure_zh），不阻断运行。阈值改动须重新预注册。
+ - 结果只作披露：不调参，不据此改 B4 规则，不进纸面。如果要改规则，按 B4 规则流程走：主 Agent 裁定、Leo 决定、新的预注册，从 2026-11-02 起在 FWD 上测试。
+ - 导入 hx2 的脚本：
+   - optimizer_core_x2_run.py 只 import run_smoke，而且那一行是死代码。run_smoke 现在会检查 returncode 和 summary 是否新鲜，判定更严，但不影响它。

@@ -1,0 +1,26 @@
+ts_et,api,params,elapsed_s,http_status,rows,error
+2026-10-18 10:15:54,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",1.94,200,7,
+2026-10-18 11:17:12,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",6.72,200,7,
+2026-10-18 11:17:21,index_member_all,"{""limit"":5000,""offset"":0}",8.21,200,5,
+2026-10-18 11:39:59,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",2.71,200,7,
+2026-10-18 11:43:41,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",221.28,,,"ConnectionError: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out."
+2026-10-18 11:43:45,index_member_all,"{""limit"":5000,""offset"":0}",3.97,200,5,
+2026-10-18 12:15:23,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",2.5,200,7,
+2026-10-18 12:15:39,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",15.51,,,"ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)"
+2026-10-18 12:15:41,index_member_all,"{""limit"":5000,""offset"":0}",2.5,200,5,
+2026-10-18 12:57:58,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",13.51,200,7,
+2026-10-18 12:58:27,stock_basic,"{""list_status"":""L"",""limit"":100,""offset"":0}",25.51,200,100,
+2026-10-18 13:17:09,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",15.51,,,"ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)"
+2026-10-18 13:18:33,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",83.55,200,5000,
+2026-10-18 13:18:38,index_member_all,"{""limit"":5000,""offset"":0}",5.0,200,5,
+2026-10-18 14:23:47,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",2.5,200,7,
+2026-10-18 14:25:15,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",87.1,200,5000,
+2026-10-18 14:25:18,index_member_all,"{""limit"":5000,""offset"":0}",3.5,200,5,
+2026-10-18 15:20:58,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",2.5,200,7,
+2026-10-18 15:21:13,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",15.51,,,"ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)"
+2026-10-18 15:21:22,index_member_all,"{""limit"":5000,""offset"":0}",8.51,200,5,
+2026-10-18 16:16:10,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",5.5,200,7,
+2026-10-18 16:17:32,stock_basic,"{""list_status"":""L"",""limit"":5000,""offset"":0}",82.04,200,5000,
+2026-10-18 16:17:35,index_member_all,"{""limit"":5000,""offset"":0}",3.5,200,5,
+2026-10-25 00:23:55,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261014"",""end_date"":""20261020""}",15.51,,,"ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)"
+2026-10-25 00:24:09,stock_basic,"{""list_status"":""L"",""limit"":100,""offset"":0}",14.02,200,100,

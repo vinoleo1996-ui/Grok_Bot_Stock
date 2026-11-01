@@ -1,0 +1,44 @@
+# Arch run auth: SD0 paper parity, SD1 r3.1a (runner sd0_parity_runner.py 7e3cc6ef). Paper suite ONLY. Writes only output/_sd0_parity/paper_r3_1a_20261018_7e3cc6ef/.
+# Issued only after Arch reviewed selftest receipt SD1_SELFTEST_R3_1A_RECEIPT_ZH.md e2c3ad6c (DONE: docs/v2/ARCH_SD1_R3_1A_RECEIPT_REVIEW_ZH.md d023f51749f5d1be03693a127fbf10e48c6b78202340a67009e105204da2e8f9).
+# Start no later than 14:00 ET on 2026-10-18 (latest_start_et; not machine-enforced). Runner refuses 16:40-18:40 ET (checked at start and before every child).
+# Never concurrent with Data fix_sd1 or D1-D4 execute, nightly_update, relay_outage_backfill, tier3 snapshot, or any other heavy run: pgrep before start, put the output in the receipt.
+# Run ONCE. Serial, one child at a time, RSS cap 1536MB. Receipt to Arch; no research or unit suite under this .ok. Supersedes VOID eb3c3587 (_superseded/ARCH_SD1_EXEC.r2_eb3c3587_VOID.ok).
+# Command: cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 python3 scripts_eng/sd0_parity_runner.py --suite paper --out-tag r3_1a_20261018_7e3cc6ef
+format=quantlab_run_auth_v1
+signed_by=arch
+signed_et=2026-10-18T03:12:39-04:00
+scope=sd0_parity_paper
+allow_parity_paper=true
+allow_parity_research=false
+allow_parity_unit=false
+allow_smoke=false
+allow_full=false
+allow_selftest=false
+allow_dryrun=false
+allow_diagnostic=false
+allow_disclosure_only=false
+live=false
+promotion=false
+runner_sha256[scripts_eng/sd0_parity_runner.py]=7e3cc6ef0f4a3cf645d64b641834198d5cbea1cce313c505d74a3d3962823542
+dep_sha256_execution=373fed309f055888e83572d3fbef8f5b5052ebfcb208307962a272bca6fc486c
+dep_sha256_execution_sd1=8c7615f7376b4482fe2f011fe08d47b2f2292c28be315659da5c0c5db74b00b1
+dep_sha256_tradability=968def30059826fa80846531b28ce514c9ed548d3c924034f3db31e3091b892e
+dep_sha256_delist_accounting=222b63aee4c47827a9f459dc3145bf254a3b8c9e9cd872e66578af44ce87062a
+dep_sha256_platform_init=bfdfa63cbd7f39d7f0b1eb5a9b91ca00a30bdbd21e31ef3b90d89ac6080e99fc
+dep_sha256_ok_runner_pin=c7805d9a78e4f5478fa4c9e3becda48e76453ee0889b4f7027009a676c3e2485
+dep_sha256_book_smoke=1a5fa1aa6ab847bd1ecda4d01bd4bda88b23535edceb91021520261be3e8251b
+dep_sha256_v2_multisleeve_book=6adefbeb4e66bdd8856c748180b09fa0fbf071d8fe20f6ccdd70ff37a4a603b4
+dep_sha256_w_capadv_20261013=4348877ef927c85197a0068c219ab5a5f5957c7d11451a3ca68b73fd985d5caf
+dep_sha256_w_capadv_paper_20261014_r2=e03028ee04f43aa33bc584a7846134d7e9001659655f49ecaaa3e6e5c1afd44c
+dep_sha256_w_b4_60w=efcef7c43f919317baf2106f14c704a0d6d9351c910e8776a1d1f4cabf4f4480
+dep_sha256_w_b4_100w=4736c030996fc631ec40ddaff9ae0dfb93c147f6191a346f3c0476edd57debf0
+dep_sha256_w_s6_60w=6ce63a7939a26e410ff2382d42b58988da4d8ace078f477f85f532c2c344cd9d
+dep_sha256_w_s6_100w=b1f9ae65483f0ffd161bc5a69e97b905cf634c26e9a58a88058afbd78f363a41
+out_root=output/_sd0_parity
+out_tag=r3_1a_20261018_7e3cc6ef
+exec_serial=true
+exec_nice=10
+rss_cap_mb=1536
+requires_prior_receipt=SD1_SELFTEST_R3_1A_RECEIPT_ZH.md:e2c3ad6c1c012b94b422d242b4aa91e0e95cf948aa8ea41ec51df9a5b8eca83b
+latest_start_et=2026-10-18T14:00:00-04:00
+expires_et=2026-10-18T14:00:00-04:00

@@ -1,0 +1,41 @@
+cur (7573, 11) 5600 bak (7743, 11) 5759 ['available_at', 'source', 'promotion_approved'] raw (11028, 15) 5600
+perL1 pulls rows 7920 codes 5914 ['l1_code', 'l1_name', 'l2_code', 'l2_name', 'l3_code', 'l3_name', 'ts_code', 'name', 'in_date', 'out_date', 'is_new', 'pullfile']
+(a) n codes multi-open: 12
+        ts_code  name    l1_code l1_name    in_date out_date is_new
+4992  002420.SZ  毅昌科技  801110.SI    家用电器 2010-06-01      NaT      Y
+4993  002420.SZ  毅昌科技  801230.SI      综合 2026-07-01      NaT      Y
+5070  002481.SZ  双塔食品  801120.SI    食品饮料 2011-10-10      NaT      Y
+5068  002481.SZ  双塔食品  801010.SI    农林牧渔 2021-07-30      NaT      Y
+5237  002597.SZ  金禾实业  801030.SI    基础化工 2011-07-14      NaT      Y
+5239  002597.SZ  金禾实业  801120.SI    食品饮料 2020-11-17      NaT      Y
+5775  003030.SZ  祖名股份  801120.SI    食品饮料 2021-01-13      NaT      Y
+5773  003030.SZ  祖名股份  801010.SI    农林牧渔 2021-07-30      NaT      Y
+6724  300699.SZ  光威复材  801030.SI    基础化工 2017-09-08      NaT      Y
+6725  300699.SZ  光威复材  801740.SI    国防军工 2021-07-30      NaT      N
+6774  300741.SZ  华宝股份  801030.SI    基础化工 2018-03-08      NaT      Y
+6776  300741.SZ  华宝股份  801120.SI    食品饮料 2018-03-08      NaT      Y
+6824  300777.SZ  中简科技  801030.SI    基础化工 2019-05-23      NaT      Y
+6825  300777.SZ  中简科技  801740.SI    国防军工 2021-07-30      NaT      N
+6922  300858.SZ  科拓生物  801030.SI    基础化工 2020-08-03      NaT      Y
+6924  300858.SZ  科拓生物  801120.SI    食品饮料 2020-08-03      NaT      Y
+7056  300972.SZ  万辰集团  801010.SI    农林牧渔 2021-04-26      NaT      Y
+7058  300972.SZ  万辰集团  801200.SI    商贸零售 2026-03-05      NaT      Y
+1988  603020.SH  爱普股份  801030.SI    基础化工 2015-04-01      NaT      Y
+1990  603020.SH  爱普股份  801120.SI    食品饮料 2015-04-01      NaT      Y
+2729  605077.SH  华康股份  801030.SI    基础化工 2021-02-23      NaT      Y
+2731  605077.SH  华康股份  801120.SI    食品饮料 2021-02-23      NaT      Y
+2851  688002.SH  睿创微纳  801740.SI    国防军工 2019-06-26      NaT      Y
+2849  688002.SH  睿创微纳  801080.SI      电子 2026-08-21      NaT      Y
+raw_union open rows per code: {'002420.SZ': 2, '002481.SZ': 2, '002597.SZ': 2, '003030.SZ': 2, '300699.SZ': 2, '300741.SZ': 2, '300777.SZ': 2, '300858.SZ': 2, '300972.SZ': 2, '603020.SH': 2, '605077.SH': 2, '688002.SH': 2}
+perL1_pulls open rows per code: {'002420.SZ': 1, '002481.SZ': 1, '002597.SZ': 1, '003030.SZ': 1, '300699.SZ': 1, '300741.SZ': 1, '300777.SZ': 1, '300858.SZ': 1, '300972.SZ': 1, '603020.SH': 1, '605077.SH': 1, '688002.SH': 1}
+missing at 2026-09-24 349 listed 5222
+missing at 2026-10-16 349 listed 5224
+code-days missing 09-24..10-16: 3839 codes 349 days 11
+in_cur_any  in_bak  in_raw_union  in_perL1
+False       False   False         True         68
+            True    False         True        235
+True        True    True          True         46
+dtype: int64
+list_date>=2026-06 among missing: 0
+codes in bak but not cur: 254
+['VmHWM:\t  259080 kB', 'VmRSS:\t  259080 kB']

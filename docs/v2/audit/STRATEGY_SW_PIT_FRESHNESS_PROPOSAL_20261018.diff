@@ -1,0 +1,108 @@
+--- a/research/strategy_fulla_b4_x2.py
++++ b/research/strategy_fulla_b4_x2.py
+@@ -15,6 +15,7 @@
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
++from research.sw_pit_freshness import check_sw_pit  # 主 Agent 10-18 05:06 ET: consumer self-check
+ OUT = ROOT / "output/strategy_fulla/b4"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = ROOT / "output/strategy_fulla/legs"
+@@ -391,6 +392,7 @@
+ 
+ 
+ def main():
++    SW_FRESH = check_sw_pit(ROOT)  # before any sw_pit read (L253 path); stale -> disclosure, not stop
+     print("=== synthesize topN weights ===")
+     synth_meta = {}
+     weight_files = {}
+@@ -504,6 +506,7 @@
+                           for k, v in attrs.items()},
+         "charts": charts,
+         "mdd25_flag": {},
++        "sw_pit_freshness": SW_FRESH,
+         "note_zh": "FULLA=研究轨；纸面=HI_LIQ（并行）；未动 FROZEN_CONFIG/纸面轨。S6/叶 为影子研究，不晋级。",
+     }
+     for tag, by in results.items():
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -20,6 +20,7 @@
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
++from research.sw_pit_freshness import check_sw_pit  # 主 Agent 10-18 05:06 ET: consumer self-check
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -470,6 +471,7 @@
+ 
+ def main():
+     t0 = time.time()
++    SW_FRESH = check_sw_pit(ROOT)  # before L73 (ind cap, decision path) and L312 (disclosure) reads
+     print("=== BANNER: transitional Top-N; main path = OPTIMIZER_V1 DRAFT; FROZEN/paper untouched; live=false ===")
+     for k, p in P.items():
+         assert p.exists(), f"missing leg {k}: {p}"
+@@ -650,6 +652,7 @@
+         "banner_zh": "过渡 Top-N；主路径 = OPTIMIZER_V1 DRAFT（等 Leo）；未动 FROZEN/纸面轨；live/promotion=false",
+         "live": False,
+         "promotion": False,
++        "sw_pit_freshness": SW_FRESH,
+         "frozen_config_touched": False,
+         "paper_tracks_touched": False,
+         "track": "HI_LIQ_V1.1_TRANSITIONAL_TOPN",
+--- /dev/null
++++ b/research/sw_pit_freshness.py
+@@ -0,0 +1,53 @@
++"""SW PIT (data/v2/sw_pit) freshness self-check — 主 Agent 2026-10-18 05:06 ET ruling.
++
++Consumers of sw_pit must check the table themselves before use; freshness overall=ok does NOT cover sw_pit.
++Read-only: reads manifest.json and hashes the parquet. Never raises on staleness; returns a disclosure dict
++that the caller prints and writes into its run receipt (stale -> disclosure label, not a silent pass).
++"""
++from __future__ import annotations
++
++import datetime as _dt
++import hashlib
++import json
++from pathlib import Path
++
++STALE_BUILT_MAX_DAYS = 3  # DRAFT threshold, pending Arch ruling
++
++
++def check_sw_pit(root: Path, level: str = "l1", today: _dt.date | None = None) -> dict:
++    today = today or _dt.date.today()
++    mpath = root / "data/v2/sw_pit/manifest.json"
++    out: dict = {"manifest": str(mpath.relative_to(root)), "level": level, "checked_on": today.isoformat()}
++    try:
++        man = json.loads(mpath.read_text(encoding="utf-8"))
++    except Exception as e:  # missing / malformed manifest -> stale with reason
++        out.update(stale=True, reasons=[f"manifest_unreadable:{type(e).__name__}"])
++        return out
++    lv = man.get(level, {})
++    fpath = root / "data/v2/sw_pit" / f"industry_members_sw_{level}_pit.parquet"
++    rel = f"sw_pit/{fpath.name}"
++    actual = hashlib.sha256(fpath.read_bytes()).hexdigest() if fpath.exists() else None
++    listed = (man.get("sha256") or {}).get(rel)
++    built = man.get("built")
++    rng = lv.get("in_date_range") or [None, None]
++    reasons = []
++    built_age = None
++    if built:
++        built_age = (today - _dt.date.fromisoformat(str(built)[:10])).days
++        if built_age > STALE_BUILT_MAX_DAYS:
++            reasons.append(f"built_age_days={built_age}>{STALE_BUILT_MAX_DAYS}")
++    else:
++        reasons.append("built_missing")
++    if actual is None:
++        reasons.append("parquet_missing")
++    elif listed != actual:
++        reasons.append("sha_mismatch_vs_manifest")
++    out.update(built=built, built_age_days=built_age, in_date_range=rng, in_date_max=rng[-1],
++               sha256_actual=actual, sha256_manifest=listed,
++               promotion_approved=man.get("promotion_approved"),
++               stale=bool(reasons), reasons=reasons,
++               disclosure_zh=("申万 sw_pit 表可能过期：" + "；".join(reasons) +
++                              f"（built={built}，in_date 最大 {rng[-1]}）。行业相关结果仅作带披露参考。")
++               if reasons else "")
++    print("[sw_pit_freshness]", json.dumps(out, ensure_ascii=False))
++    return out

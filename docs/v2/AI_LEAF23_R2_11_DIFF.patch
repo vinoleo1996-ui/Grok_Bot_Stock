@@ -1,0 +1,175 @@
+diff --git a/research/g1g5_sue_desens_cs_alpha.py b/research/g1g5_sue_desens_cs_alpha.py
+index 07677a3..cfcd6a4 100644
+--- a/research/g1g5_sue_desens_cs_alpha.py
++++ b/research/g1g5_sue_desens_cs_alpha.py
+@@ -42,6 +42,14 @@ r2.10 (Arch 06:03 after the r2.9 X2 stop at stage 04, eval exit 137 RSS guard; N
+     (d) watchdog checks VmRSS and VmHWM; explicit peak check (VmHWM and ru_maxrss) at the end of each pool_benchmarks year and each
+         uni eval / merge → RSS_GUARD_KILL, os._exit(137);
+     Arch r2.9 review P3s: to_session NaT fill uses the calendar's own unit; build casts ev/evo merge keys once, before the year loop.
++r2.11 (Arch B3 diagnosis 561219c7 + leaf-24 r9 review b771b4be P1-1; NOT RUN — static checks only): pool_benchmarks membership carry on
++    EVERY mask-suspended day, panel row or not: carry_nc = (sus == 1) & (~has | restored) (restored = panel row_origin == "restored");
++    float-mcap anchors B / B_dd follow the same carry (restored rows carry the pre-suspension mcap, never their own logmv); A_nc / carry_dd
++    derive from the new carry_nc; hard stop unless, on every panel row, mask suspended=True <=> row_origin=restored, and a panel row
++    without a mask row also stops; carried name-days by mask reason counted on (S & sus==1). Delist cut, P2-B, cut_fail and both B3
++    checks unchanged; no data change, no whitelist. Also r2.10 P3s: watchdog no longer swallows errors (prints RSS_WATCHDOG_ERROR and
++    exits 137, fail-closed); resume re-checks the upstream (r2.9) .ok data/panel/fund-build pins against this .ok. Shared functions
++    byte-identical with leaf 24 r10 (docstrings of rss_watchdog / peak_check / trim / merge made neutral).
+     No numerical change intended in any stage.
+     Resume (主 Agent 06:16, primary only, needs Arch sha check of the r2.9 fund/build outputs): .ok keys resume_upstream_script_sha256 /
+         resume_upstream_arch_ok_sha256 / resume_{fund,build_hiliq,build_fulla}_meta_sha256 = "none" (fresh chain, default) or the pinned
+@@ -135,20 +143,21 @@ def vm_status():
+ 
+ 
+ def rss_watchdog():
+-    """r2.10 (d): kill on current RSS or on the high-water mark (VmHWM), so a peak between two samples is not missed."""
++    """Kill on current RSS or on the high-water mark (VmHWM), so a peak between two samples is not missed; any read error also kills (fail-closed)."""
+     def loop():
+         while True:
+             try:
+                 v = vm_status()
+                 if v["VmRSS"] > RSS_LIMIT_KB or v["VmHWM"] > RSS_LIMIT_KB:
+                     print(f"RSS_GUARD_KILL rss_kb={v['VmRSS']} hwm_kb={v['VmHWM']} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
+-            except Exception: pass
++            except Exception as ex:   # r2.11 (P3): fail-closed instead of silently disabling the guard
++                print(f"RSS_WATCHDOG_ERROR {type(ex).__name__}: {ex}", flush=True); os._exit(137)
+             time.sleep(1)
+     threading.Thread(target=loop, daemon=True).start()
+ 
+ 
+ def peak_check(tag):
+-    """r2.10 (d): explicit peak check at segment ends (VmHWM and ru_maxrss); over the limit → same kill as the watchdog."""
++    """Explicit peak check at segment ends (VmHWM and ru_maxrss); over the limit → same kill as the watchdog."""
+     v = vm_status(); mx = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+     if v["VmHWM"] > RSS_LIMIT_KB or mx > RSS_LIMIT_KB:
+         print(f"RSS_GUARD_KILL at {tag} hwm_kb={v['VmHWM']} maxrss_kb={mx} (limit {RSS_LIMIT_KB})", flush=True); os._exit(137)
+@@ -160,7 +169,7 @@ except OSError: _LIBC = None
+ 
+ 
+ def trim():
+-    """r2.10 (c): hand freed memory back to the OS (gc + pyarrow pool + glibc heap); no effect on any value."""
++    """Hand freed memory back to the OS (gc + pyarrow pool + glibc heap); no effect on any value."""
+     gc.collect(); pa.default_memory_pool().release_unused()
+     if _LIBC is not None: _LIBC.malloc_trim(0)
+ 
+@@ -306,6 +315,7 @@ def authorize(a):
+     if resume:   # applies to the primary variant only (sensitivities ignore it and run their own fresh chain); primary fund/build are not re-run
+         checks["resume_upstream_is_other_script"] = ok["resume_upstream_script_sha256"] != me
+         checks["resume_no_primary_fund_build"] = not (is_primary(a) and a.stage in ("fund", "build"))
++        checks["resume_upstream_ok_pins_equal"] = resume_pins_equal(ok) if is_primary(a) else True   # r2.11 (P3)
+     resume = resume and is_primary(a)
+     if not is_primary(a):   # P1-2: single-factor variant, exactly one item of sensitivity_specs
+         checks["allow_sensitivity_true"] = ok["allow_sensitivity"] == "true"
+@@ -323,6 +333,22 @@ def authorize(a):
+                        resume={k: ok[k] for k in OK_RESUME} if resume else None)
+ 
+ 
++RESUME_PIN_KEYS = ("prereg_sha256", "cs_panel_dir", "cs_panel_manifest_sha256", "cs_panel_build_version", "data_mask_sha256", "data_delisted_sha256",
++                   "data_forecast_sha256", "data_financials_sha256", "data_etf_daily_adj_sha256", "dep_fe_sha256", "dep_l19_hiliq_sha256",
++                   "dep_l19_fulla_sha256", "dep_l20_hiliq_sha256", "dep_l20_fulla_sha256", "dep_capadv_leg_sha256")
++
++
++def resume_pins_equal(ok):
++    """r2.11 (r2.10 review P3): the upstream .ok (found by its pinned sha under output/ai_factory or output/ai_factory/_consumed) must carry the
++    same data / panel / prereg / fund-build input pins as this .ok; otherwise the resumed fund/build metas were made on other inputs → refuse."""
++    want = ok["resume_upstream_arch_ok_sha256"]
++    hits = [p for d in (AIF, AIF/"_consumed") for p in sorted(d.glob(f"ARCH_RUN_AUTH_LEAF{LEAF_NO}_*.ok")) if sha(p) == want]
++    if not hits: raise SystemExit(f"refused: resume upstream .ok {want[:12]} not found under {AIF} or {AIF/'_consumed'}")
++    up = read_ok(hits[0]); bad = [k for k in RESUME_PIN_KEYS if up.get(k) != ok.get(k)]
++    if bad: raise SystemExit(f"refused: resume upstream .ok {hits[0].name} pins differ from this .ok {bad}")
++    return True
++
++
+ def repin(auth, *keys):
+     """Arch N2: re-hash pinned inputs right before they are read (no gap between authorize and use)."""
+     for k in keys:
+@@ -468,8 +494,9 @@ AUTH_TOOLS = {}
+ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     """Arch P1-1 (129d67c5 §3; replaces the r2.2 'no row = carry'). Membership state S(i,d), recursed year by year from 2018
+     (one state vector carried across years, no seed window):
+-      panel row                                  → S = that row's col (restored rows are False);
+-      no panel row, mask row with suspended=True → S = previous S (carry through the suspension);
++      mask suspended=True (no panel row, or a restored panel row) → S = previous S (carry through the suspension; Arch 561219c7);
++      other panel row                            → S = that row's col;
++      panel row: mask suspended=True <=> row_origin=restored; panel row without mask row → STOP (hard assert);
+       no panel row, mask row with suspended=False (ST / adv / young) → S = False and the carry chain breaks;
+       no mask row                                → S = False (defensive only: the mask is a rectangular grid, Arch bd3abe5c §5-1);
+       day > delist_date in delisted_master       → S = False and the MV chain breaks (主 Agent 02:44 / Arch spec: PRIMARY cut = delist_date;
+@@ -492,7 +519,8 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     sp_dd, mp_dd = pd.Series(dtype="float64"), pd.Series(dtype="float64")
+     for y in PANEL_YEARS:
+         if pd.Timestamp(f"{y}-01-01") > idx[-1]: break
+-        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind"]); pr["date"] = pd.to_datetime(pr.date)
++        pr = pd.read_parquet(panel/f"cs_panel_{y}.parquet", columns=["date", "instrument", col, "logmv", "ind", "row_origin"]); pr["date"] = pd.to_datetime(pr.date)
++        pr["_rs"] = pr.row_origin.eq("restored").astype("float64"); pr = pr.drop(columns=["row_origin"])   # Arch 561219c7: restored flag only
+         mk = pd.read_parquet(MASK, columns=["date", "instrument", "suspended", "st", "young", "adv_fail"],
+                              filters=[("date", ">=", pd.Timestamp(f"{y}-01-01").to_pydatetime()), ("date", "<=", pd.Timestamp(f"{y}-12-31").to_pydatetime())])
+         mk["date"] = pd.to_datetime(mk.date)
+@@ -504,10 +532,18 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         val = pv(pr.assign(_v=pr[col].fillna(False).astype("float64")), "_v")
+         lmv = pv(pr, "logmv", "mean")
+         sus = pv(mk.assign(_s=mk.suspended.astype("float64")), "_s")          # NaN = no mask row
++        rst = pv(pr, "_rs").fillna(0.0) == 1.0                                 # restored panel row (Arch 561219c7)
++        bad_rs = (has & ((sus == 1.0) != rst)) | (has & sus.isna())            # hard assert: suspended <=> restored; panel row without mask row
++        if bool(bad_rs.to_numpy().any()):
++            st_b = bad_rs.stack(); st_b = st_b[st_b]
++            raise SystemExit(f"STOP (B3 assert, Arch 561219c7): {int(len(st_b))} panel rows in {y} where mask suspended != (row_origin == restored) or no mask row "
++                             f"(e.g. {[(str(d_.date()), i_) for d_, i_ in st_b.index[:5]]}) — report to Arch")
++        del bad_rs
+         pre = pr[pr.date < lo].sort_values("date").groupby("instrument").tail(1).set_index("instrument")   # r2.2 seed / N4 ind seed (r2.10 (c): taken here, then pr freed)
+         del pr
+         gone = pd.DataFrame(days.values[:, None] > cut.reindex(names).values[None, :], index=days, columns=names)   # NaT → False
+-        carry_nc = (~has) & (sus == 1.0); carry = carry_nc & ~gone                 # primary: no carry after delist_date
++        carry_nc = (sus == 1.0) & (~has | rst); carry = carry_nc & ~gone        # every mask-suspended day carries (restored rows too); no carry after delist_date
++        del rst
+         A_nc = val.where(has, 0.0).mask(carry_nc)                              # r2.3 rule (no delisting cut) — only to count the cut
+         gone_dd = pd.DataFrame(days.values[:, None] > cut_dd.reindex(names).values[None, :], index=days, columns=names)
+         carry_dd = carry_nc & ~gone_dd                                          # shadow: cut at last_trade_date (disclosure only)
+@@ -520,7 +556,7 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         S_nc = pd.concat([pd.DataFrame([sp_nc.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A_nc]).ffill().iloc[1:].fillna(0.0)
+         S_dd = pd.concat([pd.DataFrame([sp_dd.reindex(names).fillna(0.0).to_numpy()], index=[p0], columns=names), A_dd]).ffill().iloc[1:].fillna(0.0)
+         MV_dd = pd.concat([pd.DataFrame([mp_dd.reindex(names).fillna(-np.inf).to_numpy()], index=[p0], columns=names), B_dd]).ffill().iloc[1:]
+-        del A, B, sus   # r2.10 (c)
++        del A, B   # sus kept for the carried-reason count
+         sp, mp_, sp_nc = S.iloc[-1], MV.iloc[-1].fillna(-np.inf), S_nc.iloc[-1]
+         sp_dd, mp_dd = S_dd.iloc[-1], MV_dd.iloc[-1].fillna(-np.inf); MV_dd = MV_dd.replace(-np.inf, np.nan)
+         cx = (S_nc.astype(bool) & ~S.astype(bool) & gone & ~has); cx = cx.loc[(cx.index >= s) & (cx.index <= e)].sum()
+@@ -532,7 +568,7 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+         if len(pre): lr_v = pre[col].fillna(False).astype("float64").combine_first(lr_v); lr_m = pre.logmv.combine_first(lr_m); lr_i = pre.ind.astype("float64").combine_first(lr_i)
+         w = (days >= lo)
+         if w.any():
+-            cw = (S.astype(bool) & ~has).loc[w]                                 # carried name-days
++            cw = (S.astype(bool) & (sus == 1.0)).loc[w]                         # carried name-days: S & mask-suspended (restored rows included)
+             st_ = cw.loc[(cw.index >= s) & (cw.index <= e)].stack(); st_ = st_[st_].reset_index().iloc[:, :2]; st_.columns = ["date", "instrument"]
+             if len(st_):
+                 r = st_.merge(mk, on=["date", "instrument"], how="left")
+@@ -540,7 +576,7 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+                 reasons["not_suspended"] += int((~r.suspended.fillna(False).astype(bool)).sum())
+                 for c_ in ("st", "young", "adv_fail"): reasons[c_] += int(r[c_].fillna(False).astype(bool).sum())
+             for k_, f_ in (("S", S), ("MV", MV), ("VAL", val.where(has)), ("LMV", lmv.where(has)), ("S_dd", S_dd), ("MV_dd", MV_dd)): parts[k_].append(f_.loc[w])
+-        del mk, has, val, lmv, carry, S, MV, S_dd, MV_dd, pre, w; trim(); peak_check(f"pool_benchmarks {carry_col} year {y}")   # r2.10 (c)/(d)
++        del mk, has, val, lmv, carry, S, MV, S_dd, MV_dd, pre, w, sus; trim(); peak_check(f"pool_benchmarks {carry_col} year {y}")   # r2.10 (c)/(d)
+ 
+     def cat(k):   # r2.10 (c): pop each key's parts as it is concatenated (no second copy of the per-year frames)
+         return pd.concat(parts.pop(k)).reindex(index=idx)
+@@ -578,10 +614,10 @@ def pool_benchmarks(panel, PX, col, carry_col, rr, s, e):
+     ri, ci = idx.get_indexer(rs.date), U.get_indexer(rs.instrument); okk = (ri >= 0) & (ci >= 0)
+     mpv = np.zeros(len(rs), bool); mpv[okk] = Mp.to_numpy()[ri[okk], ci[okk]]
+     bad = (mpv != rs[carry_col].fillna(False).astype(bool).to_numpy()) | ~okk
+-    diag = dict(carry_col=carry_col, rule="Arch 129d67c5 §3 (carry only on mask-suspended no-row days, recursed from 2018)",
++    diag = dict(carry_col=carry_col, rule="Arch 561219c7: carry on every mask-suspended day (no row or restored row), recursed from 2018; mask suspended <=> restored asserted",
+                 resume_rows_checked=int(len(rs)), carry_mismatch=int(bad.sum()), carry_unindexed=int((~okk).sum()),
+                 mismatch_examples=rs[bad].head(10).astype(str).to_dict("records"), carried_by_mask_reason_x2=dict(reasons),
+-                not_suspended_note="P3-A: by construction carried name-days are mask-suspended, so not_suspended is always 0 (self-consistency only); "
++                not_suspended_note="P3-A: carried name-days are counted on (S & mask suspended), so not_suspended is always 0 (self-consistency only); "
+                                    "independent checks are Mp != carry_col and P2-B",
+                 delisted_cut_name_days_x2=dict(sorted(dl_cut.items())), delisted_cut_total_x2=int(sum(dl_cut.values())), delisted_cut_names_x2=len(dl_cut),
+                 delisted_cut_name_days_x2_shadow_last_trade_date=dict(sorted(dl_cut_sh.items())),
+@@ -979,7 +1015,7 @@ def evaluate(a, panel, out, auth, up):
+ 
+ 
+ def merge(a, panel, out, auth, up):
+-    """r2.10 (a): combine summary_HILIQ_<s1>.json and summary_FULLA_<s2>.json (both listed and sha-verified in their eval_<uni>_meta,
++    """Combine summary_HILIQ_<s1>.json and summary_FULLA_<s2>.json (both listed and sha-verified in their eval_<uni>_meta,
+     already chain-checked by verify_upstream) into summary_<stamp>.json; writes eval_meta.json (stage "eval": what P2-2 / CMC expect)."""
+     panel_recheck(auth, panel)
+     parts, stamps, metas = {}, {}, {}

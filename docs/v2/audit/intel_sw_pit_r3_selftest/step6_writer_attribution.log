@@ -1,0 +1,4 @@
+    PID STAT                  STARTED CMD
+  94322 Ssl  Sun Oct 18 01:22:39 2026 python3 scripts/acquire/remaining_after_stk_surv.py
+-rw-r--r--  1 box box 20738 2026-10-18 05:42:30.581122197 -0400 000675000.parquet
+-rw-r--r--  1 box box 21473 2026-10-18 05:42:34.257122197 -0400 000676000.parquet

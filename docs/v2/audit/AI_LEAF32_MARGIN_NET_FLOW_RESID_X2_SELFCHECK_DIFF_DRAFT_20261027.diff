@@ -1,0 +1,227 @@
+# 派生自 research/leaf31_amihud_impact_slow_x2_selfcheck_v1.py sha8 e1fe578c（只读；勿改模板）
+# unified diff: leaf31_amihud_impact_slow_x2_selfcheck_v1.py → leaf32_margin_net_flow_resid_x2_selfcheck_v1.py
+# DRAFT ONLY · EXECUTED=false · 禁实跑 / 禁申.ok
+# 钉：alpha 13eee6fd / meta e510f346 / overlap a643d71a / build 4e0f3c00 / gate 1aa432a5 / consume a1a5e35a / x2_run f3e8f991
+# mechanism=g1g5_ashare_margin_net_flow_resid_v1；forbid∋02426b73+4bb141c9+fdbaa512+aa25e989+7e239487+5af20222+5ae077fa
+# 禁 --arch-ok-path；rss=1500+peak_proof；盯 decay KEEP；0087c928 另队
+
+--- research/leaf31_amihud_impact_slow_x2_selfcheck_v1.py	2026-10-27 14:59:32.916668665 +0800
++++ research/leaf32_margin_net_flow_resid_x2_selfcheck_v1.py	2026-10-27 17:00:52.033786779 +0800
+@@ -1,15 +1,16 @@
+ #!/usr/bin/env python3
+-"""叶31 Amihud Impact Slow X2 selfcheck_v1：钉既有冻结 alpha → 生成评价权重 → leaf_selfcheck_common.evaluate。
++"""叶32 Margin Net Flow Resid X2 selfcheck_v1：钉既有冻结 alpha → 生成评价权重 → leaf_selfcheck_common.evaluate。
+ 
+-本票 ≠ 复跑 leaf31 alpha 构建（08f37fd2 UNCHANGED）；≠ Book-Smoke；≠ X2 ACCEPT；≠升纸面。
++本票 ≠ 复跑 leaf32 alpha 构建（4e0f3c00 UNCHANGED）；≠ Book-Smoke；≠ X2 ACCEPT；≠升纸面。
+ live=false；promotion_approved=false；禁自签 .ok；禁抬帽。
+-§3.3 / 叶18/25/27/30 同类：NAME_W=0.04 · MAX_NAMES=20 · REBAL_EVERY=5 · IND_CAP(HILIQ)=0.25 · BALLAST=510300.SH
++§3.3 / 叶18/25/27/30/31 同类：NAME_W=0.04 · MAX_NAMES=20 · REBAL_EVERY=5 · IND_CAP(HILIQ)=0.25 · BALLAST=510300.SH
+ 硬排除 600519.SH / 002371.SZ；无单独 gate 列（按当日 alpha 表 α 降序）。
+-PIN_GAP：IC/ICIR/WF 由本票 evaluate 补齐；Alpha 闸 a476567d 仅 ACCEPT 构建过程（收益过程 ABSENT）。
+-机制：g1g5_ashare_amihud_impact_slow_v1；构建侧 Amihud W/rebal=20/20；本票只钉 alpha 做组合闸。
+-Gate 口径：leaf_selfcheck_common.evaluate → decay KEEP/DOWNGRADE + portfolio A/B/current。
+-派生自 leaf30_crr_x2_selfcheck_v1.py（797724d4）；勿盲抄路径。
+-CLI 禁 --arch-ok-path（未实现；流程门=外挂新 .ok+主窗，对齐叶25/30 P0）。
++PIN_GAP：IC/ICIR/WF 由本票 evaluate 补齐；Alpha 闸 1aa432a5 仅 ACCEPT 构建过程（收益过程 ABSENT）。
++机制：g1g5_ashare_margin_net_flow_resid_v1；构建侧 flow W/rebal=20/20；本票只钉 alpha 做组合闸。
++Gate 口径：leaf_selfcheck_common.evaluate → decay KEEP 三闸（KEEP/DOWNGRADE）+ portfolio A/B/current。
++盯 decay KEEP：叶30/31 均 DECAY_DOWNGRADE HOLD；decay 三闸是关键路径（latest_resid_alpha>0 ∧ not 5Q decline ∧ H2_net_cagr>510300）。
++派生自 leaf31_amihud_impact_slow_x2_selfcheck_v1.py（e1fe578c）；勿盲抄路径。
++CLI 禁 --arch-ok-path（未实现；流程门=外挂新 .ok+主窗，对齐叶25/30/31 P0）。
+ 0087c928 另队：本脚本不读该路径。
+ """
+ from __future__ import annotations
+@@ -28,27 +29,28 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ 
+-# --- 硬钉（PRIMARY HILIQ × x2；叶31 Amihud Impact Slow alpha CONSUMED 产物）---
++# --- 硬钉（PRIMARY HILIQ × x2；叶32 Margin Net Flow Resid alpha CONSUMED 产物）---
+ PIN_ALPHA = (
+     ROOT
+-    / "output/ai_factory/_leaf31_amihud/20261027_024204/alpha_HILIQ_x2_20261027_024422.parquet"
++    / "output/ai_factory/_leaf32_margin_flow/20261027_042805/alpha_HILIQ_x2_20261027_044214.parquet"
+ )
+-PIN_META = ROOT / "output/ai_factory/_leaf31_amihud/20261027_024204/run_meta.json"
++PIN_META = ROOT / "output/ai_factory/_leaf32_margin_flow/20261027_042805/run_meta.json"
+ PIN_OVERLAP = (
+-    ROOT / "output/ai_factory/_leaf31_amihud/20261027_024204/overlap_vs_leaf19_25_27_30.json"
++    ROOT
++    / "output/ai_factory/_leaf32_margin_flow/20261027_042805/overlap_vs_leaf19_25_27_30_31_margin_delta.json"
+ )
+-PIN_ALPHA_SHA = "d4ceb78b1d4b7c5516149a74bad87141083695ac6c4b7be43e3fa9a64c4452ce"
+-PIN_META_SHA = "696ab1cc25eed077cf7171b4461e8e6946677901c3fbfaf68be5cd55c4d9ab12"
+-PIN_OVERLAP_SHA = "8396f2111411dd0f9040d0215369394e83e646adca2dac15072b1003289df75b"
+-BUILD_SCRIPT_SHA8 = "08f37fd2"  # research/leaf31_amihud_impact_slow_alpha_build.py UNCHANGED
+-ARCH_CONSUME_SHA8 = "7bd6f33a"
+-ALPHA_GATE_SHA8 = "a476567d"  # ACCEPT 仅构建过程；IC/ICIR/WF ABSENT
+-AI_RUN_RECEIPT_SHA8 = "49d6641c"
+-MECHANISM = "g1g5_ashare_amihud_impact_slow_v1"
++PIN_ALPHA_SHA = "13eee6fdf0922b14756cf22985964dcd177810772a2ee4ec3bdb7c1668646ed2"
++PIN_META_SHA = "e510f346bed46e6ca64f802de3aaed5f28f469f0a2fbf68ee2d5f2fffc4f6610"
++PIN_OVERLAP_SHA = "a643d71ad77e3ae06eab2dc1fb20a0b99bf3d572db9310821b00ba8627bfe5fe"
++BUILD_SCRIPT_SHA8 = "4e0f3c00"  # research/leaf32_margin_net_flow_resid_alpha_build.py UNCHANGED
++ARCH_CONSUME_SHA8 = "a1a5e35a"
++ALPHA_GATE_SHA8 = "1aa432a5"  # ACCEPT 仅构建过程；IC/ICIR/WF ABSENT
++AI_RUN_RECEIPT_SHA8 = "f3e8f991"
++MECHANISM = "g1g5_ashare_margin_net_flow_resid_v1"
+ 
+-OUT_DIR = ROOT / "output/ai_factory/_leaf31_amihud/20261027_024204"
++OUT_DIR = ROOT / "output/ai_factory/_leaf32_margin_flow/20261027_042805"
+ SELFCHECK_SUB = OUT_DIR / "_selfcheck"
+-REPORT_DIR = ROOT / "output/ai_factory/leaf_reports/leaf31_amihud"
++REPORT_DIR = ROOT / "output/ai_factory/leaf_reports/leaf32_margin_flow"
+ SW_L1_PATH = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
+ 
+ BALLAST = "510300.SH"
+@@ -60,13 +62,15 @@
+ RSS_SOFT_MB = 1500  # 软/硬同钉；禁抬
+ RSS_HARD_MB = 1500
+ PEAK_PROOF_REQUIRED = True
+-SAMPLER_PREFIX = "/tmp/quantlab_leaf31_x2_selfcheck_"
++SAMPLER_PREFIX = "/tmp/quantlab_leaf32_x2_selfcheck_"
+ PROPOSED_OK = (
+-    "output/ai_factory/ARCH_RUN_AUTH_LEAF31_AMIHUD_IMPACT_SLOW_X2_SELFCHECK_V1_HILIQ_X2.ok"
++    "output/ai_factory/ARCH_RUN_AUTH_LEAF32_MARGIN_NET_FLOW_RESID_X2_SELFCHECK_V1_HILIQ_X2.ok"
+ )
+-# 叶31 build CONSUMED + 叶30/既有 forbid；至少含 fdbaa512+aa25e989+7e239487+5af20222+5ae077fa
++# 叶32 X2 build CONSUMED + 叶31 selfcheck + 叶31/30 forbid；至少含七票
+ FORBID_RESTORED = (
+-    "fdbaa512",  # 叶31 X2 build CONSUMED；禁 RESTORED
++    "02426b73",  # 叶32 X2 build CONSUMED；禁 RESTORED
++    "4bb141c9",  # 叶31 X2 selfcheck CONSUMED；禁 RESTORED
++    "fdbaa512",  # 叶31 X2 build CONSUMED
+     "aa25e989",  # 叶30 selfcheck CONSUMED
+     "7e239487",  # 叶30 R3 peakcut CONSUMED
+     "5af20222",  # 叶30 R2 VOID
+@@ -133,7 +137,7 @@
+             raise SystemExit(f"FATAL sha MISMATCH {p.name}: got={got} expect={exp}")
+         out[p.name] = got
+     # 构建脚本 UNCHANGED
+-    build = ROOT / "research/leaf31_amihud_impact_slow_alpha_build.py"
++    build = ROOT / "research/leaf32_margin_net_flow_resid_alpha_build.py"
+     bsha = sha256_file(build)
+     if not bsha.startswith(BUILD_SCRIPT_SHA8):
+         raise SystemExit(f"FATAL build script sha drift: {bsha[:8]} ≠ {BUILD_SCRIPT_SHA8}")
+@@ -142,7 +146,7 @@
+ 
+ 
+ def _normalize_alpha(alpha: pd.DataFrame) -> pd.DataFrame:
+-    """叶31 schema → selfcheck 通用列（date/instrument/alpha）。"""
++    """叶32 schema → selfcheck 通用列（date/instrument/alpha）。"""
+     a = alpha.copy()
+     colmap = {}
+     if "trade_date" in a.columns and "date" not in a.columns:
+@@ -156,7 +160,7 @@
+     if miss:
+         raise SystemExit(f"FATAL alpha 缺列: {sorted(miss)}")
+     raw_date = a["date"]
+-    # 叶31 trade_date 为 ISO YYYY-MM-DD；兼容 YYYYMMDD / Timestamp
++    # trade_date 为 ISO YYYY-MM-DD；兼容 YYYYMMDD / Timestamp
+     d1 = pd.to_datetime(raw_date.astype(str), format="%Y%m%d", errors="coerce")
+     if d1.isna().mean() > 0.5:
+         d1 = pd.to_datetime(raw_date, errors="coerce")
+@@ -200,7 +204,9 @@
+     """§3.3：每 5 交易日按当日 base-α 重算；每名≤4%、≤20 名；行业帽；余额 510300；硬排除。
+ 
+     无单独 gate 列：只从当日 alpha 表有的票里按 α 降序取。
+-    ind：叶31 alpha 无行业列 → 执行路径用 SW L1 asof；缺则 UNK（仍受 IND_CAP）。
++    ind：叶32 alpha 无行业列 → 执行路径用 SW L1 asof；缺则 UNK（仍受 IND_CAP）。
++    组合评价侧沿用 leaf_selfcheck_common / 叶31 口径（NAME_W/MAX_NAMES/REBAL=0.04/20/5）；
++    构建侧 W/rebal=20/20（FROZEN）与本票评价节奏分离。
+     """
+     if universe not in IND_CAP:
+         raise SystemExit(f"FATAL universe 不支持: {universe}")
+@@ -257,15 +263,19 @@
+     return {
+         "overall": PIN_GAP_OVERALL,
+         "gap_fields": list(PIN_GAP_FIELDS),
+-        "gap_fields_zh": "IC/ICIR/walk-forward（Alpha 闸 a476567d 标明 ABSENT；本票 evaluate 补齐）",
++        "gap_fields_zh": "IC/ICIR/walk-forward（Alpha 闸 1aa432a5 标明 ABSENT；本票 evaluate 补齐）",
+         "alpha_gate_sha8": ALPHA_GATE_SHA8,
+         "alpha_gate_verdict": "ACCEPT_BUILD_PROCESS_ONLY",
+         "arch_consume_sha8": ARCH_CONSUME_SHA8,
+         "ai_run_receipt_sha8": AI_RUN_RECEIPT_SHA8,
+-        "overlap_sha8": "8396f211",
++        "overlap_sha8": "a643d71a",
+         "mechanism": MECHANISM,
+         "claim_x2_accept": False,
+         "leaf30_keep_repair_sha8_separate": LEAF30_KEEP_REPAIR_SHA8_SEPARATE,
++        "decay_keep_watch_zh": (
++            "decay KEEP 三闸是关键路径（latest_resid_alpha>0 ∧ not_five_quarter_decline "
++            "∧ H2_net_cagr>510300）；叶30/31 均 DECAY_DOWNGRADE HOLD；本票 evaluate 裁定"
++        ),
+         "note_zh": "Alpha ACCEPT 仅构建过程；IC/ICIR/WF 由 selfcheck evaluate 产出；≠X2 ACCEPT；0087c928 另队不夹带",
+     }
+ 
+@@ -294,7 +304,7 @@
+         "ai_run_receipt_sha8": AI_RUN_RECEIPT_SHA8,
+         "mechanism": MECHANISM,
+         "x2_end": "20261009",
+-        "leaf": "leaf31_amihud",
++        "leaf": "leaf32_margin_flow",
+         "selfcheck_version": "v1",
+         "name_w": NAME_W,
+         "max_names": MAX_NAMES,
+@@ -309,15 +319,18 @@
+         "pin_gap": pin_gap_disclosure(),
+         "alpha_build_consumed_not_x2_accept": True,
+         "leaf30_keep_repair_sha8_separate": LEAF30_KEEP_REPAIR_SHA8_SEPARATE,
+-        "gate_policy_zh": "leaf_selfcheck_common.evaluate：decay KEEP/DOWNGRADE + portfolio gates A/B/current",
+-        "cli_note_zh": "禁 --arch-ok-path（未实现；流程门=外挂新 .ok+主窗）",
++        "gate_policy_zh": (
++            "leaf_selfcheck_common.evaluate：decay KEEP 三闸（KEEP/DOWNGRADE）"
++            "+ portfolio gates A/B/current；盯 decay KEEP（叶30/31 均 DECAY_DOWNGRADE HOLD）"
++        ),
++        "cli_note_zh": "禁 --arch-ok-path（未实现；流程门=外挂新 .ok+主窗；对齐叶25/30/31 P0）",
+         "note_zh": "dry-compile-only：不读大行情、不写权重实数、不调用 evaluate",
+     }
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+     ap = argparse.ArgumentParser(
+-        description="叶31 Amihud Impact Slow X2 selfcheck_v1（钉既有冻结 alpha；DRAFT/签窗后实跑）"
++        description="叶32 Margin Net Flow Resid X2 selfcheck_v1（钉既有冻结 alpha；DRAFT/签窗后实跑）"
+     )
+     ap.add_argument("--universe", default="HILIQ", choices=["HILIQ"])
+     ap.add_argument("--window", default="x2", choices=["x2"])
+@@ -333,7 +346,7 @@
+         action="store_true",
+         help="正式跑：需外部新 .ok + 主令；本开关 alone 仍 live=false",
+     )
+-    # 故意不实现 --arch-ok-path（对齐叶25/30 P0：流程门外挂，不进 CLI）
++    # 故意不实现 --arch-ok-path（对齐叶25/30/31 P0：流程门外挂，不进 CLI）
+     args = ap.parse_args(argv)
+ 
+     if args.dry_compile_only:
+@@ -376,7 +389,7 @@
+     result = LC.evaluate(wp)
+     peak = check_rss_hard("post_evaluate")
+     result_meta = {
+-        "leaf": "leaf31_amihud",
++        "leaf": "leaf32_margin_flow",
+         "mechanism": MECHANISM,
+         "universe": args.universe,
+         "window": args.window,
+@@ -392,7 +405,7 @@
+         "build_script_sha8_unchanged": BUILD_SCRIPT_SHA8,
+         "eval_weights_path": str(wp),
+         "eval_weights_sha256": w_sha,
+-        "eval_weights_dir_note": "output/ai_factory/_leaf31_amihud/20261027_024204/_selfcheck/",
++        "eval_weights_dir_note": "output/ai_factory/_leaf32_margin_flow/20261027_042805/_selfcheck/",
+         "overlap_path": str(PIN_OVERLAP),
+         "overlap_sha256": PIN_OVERLAP_SHA,
+         "arch_consume_sha8": ARCH_CONSUME_SHA8,
+@@ -406,7 +419,10 @@
+         "ind_cap": IND_CAP[args.universe],
+         "ballast": BALLAST,
+         "hard_exclude": sorted(HARD_EXCLUDE),
+-        "gate_policy_zh": "leaf_selfcheck_common.evaluate：decay KEEP/DOWNGRADE + portfolio gates A/B/current；无单独 alpha gate 列",
++        "gate_policy_zh": (
++            "leaf_selfcheck_common.evaluate：decay KEEP 三闸（KEEP/DOWNGRADE）"
++            "+ portfolio gates A/B/current；无单独 alpha gate 列；盯 decay KEEP"
++        ),
+         "forbid_restored_ok_sha8": list(FORBID_RESTORED),
+         "proposed_ok_path": PROPOSED_OK,
+         "alpha_build_consumed_not_x2_accept": True,

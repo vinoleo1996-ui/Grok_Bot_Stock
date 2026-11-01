@@ -1,0 +1,38 @@
+# Arch run auth: SD0 paper parity (ARCH_SD1_R2_REVIEW_ZH.md). Paper suite ONLY. Writes only output/_sd0_parity/paper_r2_20261018_c4d2411c/.
+# Order: only after Arch has reviewed the ARCH_SD1_TEST.ok selftest receipt and said so in writing (requires_prior_receipt below; not machine-enforced by v1 gate).
+# Start no later than 14:00 ET on any day (runner refuses 16:40-18:40 ET only at start); never concurrent with Data fix_sd1 / other runs.
+# Command: cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 python3 scripts_eng/sd0_parity_runner.py --suite paper --out-tag r2_20261018_c4d2411c
+format=quantlab_run_auth_v1
+signed_by=arch
+signed_et=2026-10-18T02:20:30-04:00
+scope=sd0_parity_paper
+allow_parity_paper=true
+allow_parity_research=false
+allow_parity_unit=false
+allow_smoke=false
+allow_full=false
+live=false
+promotion=false
+runner_sha256[scripts_eng/sd0_parity_runner.py]=c4d2411cec8047182029561aaa10ba1097e57d3b719b8bfb5f6e26e65055e825
+dep_sha256_execution=373fed309f055888e83572d3fbef8f5b5052ebfcb208307962a272bca6fc486c
+dep_sha256_execution_sd1=35b46c2ba1bc0ea90bc7c97b173fc034c261a910d1cf20097a891a015bc14059
+dep_sha256_tradability=4d684a48ca159783e74097e1264d926ad6cebc186ae1a1c5af6710c884bf6ecb
+dep_sha256_delist_accounting=222b63aee4c47827a9f459dc3145bf254a3b8c9e9cd872e66578af44ce87062a
+dep_sha256_platform_init=bfdfa63cbd7f39d7f0b1eb5a9b91ca00a30bdbd21e31ef3b90d89ac6080e99fc
+dep_sha256_ok_runner_pin=c7805d9a78e4f5478fa4c9e3becda48e76453ee0889b4f7027009a676c3e2485
+dep_sha256_book_smoke=1a5fa1aa6ab847bd1ecda4d01bd4bda88b23535edceb91021520261be3e8251b
+dep_sha256_v2_multisleeve_book=6adefbeb4e66bdd8856c748180b09fa0fbf071d8fe20f6ccdd70ff37a4a603b4
+dep_sha256_w_capadv_20261013=4348877ef927c85197a0068c219ab5a5f5957c7d11451a3ca68b73fd985d5caf
+dep_sha256_w_capadv_paper_20261014_r2=e03028ee04f43aa33bc584a7846134d7e9001659655f49ecaaa3e6e5c1afd44c
+dep_sha256_w_b4_60w=efcef7c43f919317baf2106f14c704a0d6d9351c910e8776a1d1f4cabf4f4480
+dep_sha256_w_b4_100w=4736c030996fc631ec40ddaff9ae0dfb93c147f6191a346f3c0476edd57debf0
+dep_sha256_w_s6_60w=6ce63a7939a26e410ff2382d42b58988da4d8ace078f477f85f532c2c344cd9d
+dep_sha256_w_s6_100w=b1f9ae65483f0ffd161bc5a69e97b905cf634c26e9a58a88058afbd78f363a41
+out_root=output/_sd0_parity
+out_tag=r2_20261018_c4d2411c
+exec_serial=true
+exec_nice=10
+rss_cap_mb=1536
+requires_prior_receipt=ARCH_SD1_TEST_receipt_reviewed_by_arch
+latest_start_et_daily=14:00
+expires_et=2026-10-19T02:00:00-04:00

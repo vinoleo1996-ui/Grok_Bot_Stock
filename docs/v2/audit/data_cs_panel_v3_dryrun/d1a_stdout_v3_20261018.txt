@@ -1,0 +1,13 @@
+RUN_CONDITION_MATCHES [{"pid": 94403, "state": "T", "patterns": ["relay_outage_backfill"], "verdict": "allowed_stopped", "cmd": "python3 scripts/acquire/relay_outage_backfill.py"}]
+GATE_PASS step=D1a_fixesnone_check mode=dryrun ok_sha256=dac5f6dd7ee6e011101a6201db7a1b113d8fb1f12f8824711da86787ba2b2124
+2018 {"rows_v1": 783166, "rows": 783166, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 703}
+2019 {"rows_v1": 846470, "rows": 846470, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 877}
+2020 {"rows_v1": 880720, "rows": 880720, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 957}
+2021 {"rows_v1": 983990, "rows": 983990, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1025}
+2022 {"rows_v1": 1087168, "rows": 1087168, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1077}
+2023 {"rows_v1": 1163879, "rows": 1163879, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1153}
+2024 {"rows_v1": 1198136, "rows": 1198136, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1212}
+2025 {"rows_v1": 1204295, "rows": 1204295, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1231}
+2026 {"rows_v1": 924485, "rows": 924485, "v1_frame_equals": true, "v1_table_equals": true, "rss_mb": 1231}
+DRY-RUN PASS: nothing written
+WRAPPER_EXIT 0 PEAK_RSS_KB 1260656

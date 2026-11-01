@@ -1,0 +1,154 @@
+# DIFF C r3d (FORMAL) — INCREMENTAL vs r3c (PRIMARY review item). Base /tmp/swr5/c3c = r3c (e204ce4c: 52b0332f /
+#   9d5b00df / 7b8235dc / fa2e4629 / prereg c95c9138). hx2 / fulla unchanged. Full notes + landing appendix: see
+#   ..._r3d.diff header.
+# STATUS: FORMAL r3d, based on Arch review 016ae55e (ARCH_STRATEGY_DIFF_C_R3B_REVIEW_ZH.md), Arch 2026-10-18 11:11 ET
+#   rulings ①-④ (+ 11:13 / 11:20 ET supplements), Arch 11:28 ET confirmation, Arch 11:29 ET rulings on r3c and Data
+#   §14② (docs/v2/audit/sw14_2/sw14_clean_schema_check_20261018.txt, sha256
+#   0a5a51976b516212e492bdbab56f2907063f2769759515587da6b12b63577d2b). Not applied to the real tree, not committed.
+# r3d DELTA vs r3c (e204ce4c), Arch 11:29 ET:
+#   ① prereg §5 CLEAN lag rule: "待 Arch 确认" -> "Arch 2026-10-18 11:28 ET 确认" (rule text unchanged).
+#   ② CLEAN manifest check also compares tushare_candidate.metrics.n_l1 and .available_at_nulls (key names: Data §14②
+#      L42 "manifest metrics: ... n_l1=31 ... available_at_nulls=0"). Table side per Data §14② L43-49 algorithm, on the
+#      raw table BEFORE the Tsh.00018 exclusion: n_l1 = nunique(sw_code) (Data L43 "nunique(sw_code)=31"),
+#      available_at_nulls = available_at null count. Values read from the manifest, nothing pinned; mismatch ->
+#      SwPitIntegrityError. Missing key: handled like the existing keys (mt.get(k) -> None != table value -> raises).
+#   ③ no change.
+# Carried from r3c: NON_A_SHARE_KNOWN = ("Tsh.00018",) exact after strip, never normalised, count disclosed, every
+#   other non-whitelisted id raises; A_PFX + A_DOT, re.I; SW_L1_CLEAN_COLUMNS = Data §14② L13-27 (unchanged); TS_UNIT
+#   datetime64[us] on both sides (no merge_asof); CLEAN lag: <= 10 -> notes only, > 10 alone -> stale +
+#   stale_lag_only, coverage_gap -> stale, stale_lag_only=False; legacy keeps 3; today lag = 5.
+# TESTS WERE NOT RUN. pgrep via script `bash /tmp/swr5/pgrep_check.sh` (pgrep -af same pattern; a script file cannot
+#   match its own command line) at 2026-10-18 11:31:09 ET -> no match, EXIT=1; then ONE `PYTHONDONTWRITEBYTECODE=1
+#   nice -n 10 pytest --collect-only -q -p no:cacheprovider` on a fresh /tmp copy -> EXIT=0, "83 tests collected":
+#   test_sw_members_asof.py 71 + test_sw_pit_freshness.py (cee59fc5) 12. py_compile EXIT=0; pyflakes 4.0.3 EXIT=1 =
+#   only the 2 baseline findings (hx2 charts2, fulla nav_path); /workspace/ql-enrich-venv (Python 3.13.5), 11:31:03
+#   ET. No real data read; copy, __pycache__ / .pytest_cache removed. Receipts: /tmp/swr5/r3d_static/.
+diff --git a/research/sw_members_asof.py b/research/sw_members_asof.py
+index 06afc0d5208cf7f96e0504c6859714c047231a06..836af2b19bc3f5ef9ffc4b49a4d244c78b287ead 100644
+--- a/research/sw_members_asof.py
++++ b/research/sw_members_asof.py
+@@ -56,6 +56,7 @@ r3c (Arch 016ae55e P3s, Arch 2026-10-18 11:11 ET rulings ①-④, Data §14② 0
+   - check_allow_ok(): key=value .ok parser for allow_* switches (pitfix) (P3-4);
+   - CLEAN manifest lag (P3-5; Arch 11:11 ET ①): stale only if lag_tdays > CLEAN_STALE_LAG_TDAYS (10) or coverage_gap;
+     lag <= 10 -> lag_notes only; lag > 10 alone -> stale + stale_lag_only (Arch 11:13 / 11:20); legacy keeps 3.
++  - r3d (Arch 11:29 ET ②): CLEAN manifest check also compares n_l1 (nunique sw_code) and available_at_nulls.
+   - Arch 11:20 ET: Tsh.00018 excluded only on an exact (stripped) match and never normalised to an A share (①); dates
+     and keys cast explicitly to TS_UNIT = datetime64[us] on both sides before any comparison (③; no merge_asof).
+ """
+@@ -269,7 +270,11 @@ def normalize_sw_l1_layout(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+                 "non_a_share_excluded": sorted(str(x) for x in iid[known].unique()),
+                 "n_rows_non_a_share_excluded": int(known.sum()),
+                 "raw": {"rows": int(len(df)), "n_instruments": int(iid.nunique()),
+-                        "in_date_min": str(ind.min().date()), "in_date_max": str(ind.max().date())}}
++                        "in_date_min": str(ind.min().date()), "in_date_max": str(ind.max().date()),
++                        # r3d (Arch 11:29 ET ②), Data §14② L42-49 algorithm, raw table BEFORE the non-A exclusion:
++                        # n_l1 = nunique(sw_code); available_at_nulls = available_at null count
++                        "n_l1": int(df["sw_code"].nunique()),
++                        "available_at_nulls": int(df["available_at"].isna().sum())}}
+         keep = ~known
+         return df[keep].assign(ts_code=ts[keep], l1_name=df.loc[keep, "sw_name"]), info
+     raise SwPitIntegrityError(f"SW L1 table layout not recognised (need ts_code/l1_name or instrument_id/sw_name): "
+@@ -317,9 +322,10 @@ def _completed_open_day(ts_sh: _dt.datetime, cal: "TradeCal", what: str) -> pd.T
+ def _clean_manifest_check(root: Path, sw: pd.DataFrame, cal: "TradeCal", now_et: _dt.datetime) -> dict:
+     """CLEAN integrity/coverage from data/v2/sw_l1_pit/manifest.json["tushare_candidate"] (top-level rows/n_instruments
+     describe the legacy vote table, not CLEAN). The manifest has NO sha256 and NO "built": integrity = code sha pin
+-    + manifest metrics rows / n_instruments / in_date_min / in_date_max == raw table (before non-A exclusion;
+-    mismatch raises; r3c: Data §14② lines 40-49 found manifest == table on all four, 7920 / 5914 / 1984-05-09 /
+-    2026-09-24 — the numbers come from the manifest, not from code); coverage = SSE
++    + manifest metrics rows / n_instruments / in_date_min / in_date_max / n_l1 / available_at_nulls == raw table
++    (before non-A exclusion; r3d adds n_l1 + available_at_nulls, Arch 11:29 ET ②; a missing key compares as None ->
++    mismatch -> raises, same as the other keys; Data §14② lines 40-49 found manifest == table on all six, 7920 /
++    5914 / 31 / 1984-05-09 / 2026-09-24 / 0 — the numbers come from the manifest, not from code); coverage = SSE
+     session completed at manifest "fetch_time". Returns None if the manifest does not describe this file."""
+     mpath = Path(root) / SW_L1_CLEAN_MANIFEST_REL
+     try:
+diff --git a/research/tests_sw_pit/test_sw_members_asof.py b/research/tests_sw_pit/test_sw_members_asof.py
+index 03810d36460146d19c950b3f3690dba474b2626c..24261b1ca4335b355185f5598ae15c829ed667d9 100644
+--- a/research/tests_sw_pit/test_sw_members_asof.py
++++ b/research/tests_sw_pit/test_sw_members_asof.py
+@@ -8,7 +8,7 @@ r3c — Arch 016ae55e P3-1..P3-6: gap-carry multi-candidate raise/count, exact-d
+ key limit + session chunking, key=value allow .ok, lag-only stale disclosure; Arch 11:11 ET: CLEAN lag
+ threshold 10 (lag > 10 alone -> stale + stale_lag_only, Arch 11:13/11:20), same-in_date conflict, DRAFT .ok
+ rejected, max_keys parameter; Arch 11:20 ET: Tsh.00018 exact exclusion, [us]/[ns] precision equivalence;
+-Data §14②: non-A id Tsh.00018).
++Data §14②: non-A id Tsh.00018; r3d (Arch 11:29 ET ②): manifest n_l1 + available_at_nulls compared).
+ Fixture O.SZ / T.SZ are DELIBERATE overlaps: tests that query them pass on_overlap="count" explicitly or assert the
+ default raise.
+ In-memory frames / tmp ROOT only; no real data (every gap-carry call passes the synthetic CAL explicitly)."""
+@@ -430,7 +430,8 @@ def test_load_sw_l1_clean_layout_adapter(tmp_path):
+     lay = sw.attrs["layout"]
+     assert lay["layout"].startswith("sw_l1_pit tushare")
+     assert lay["non_a_share_excluded"] == ["Tsh.00018"] and lay["n_rows_non_a_share_excluded"] == 1
+-    assert lay["raw"] == {"rows": 5, "n_instruments": 5, "in_date_min": "2020-01-02", "in_date_max": "2020-01-02"}
++    assert lay["raw"] == {"rows": 5, "n_instruments": 5, "in_date_min": "2020-01-02", "in_date_max": "2020-01-02",
++                          "n_l1": 1, "available_at_nulls": 0}  # r3d: fixture sw_code is constant 801000.SI
+     ia = A.IndustryAsOf(sw, cal=CAL)
+     assert ia.layout == lay
+     assert A.l1_asof(ia.sw, _k([("000001.SZ", "2025-01-02"), ("Tsh.00018", "2025-01-02")])).tolist() == ["银行", None]
+@@ -474,7 +475,8 @@ def _clean_root(tmp_path, metrics_override=None, fetch_time="2026-10-10T10:01:23
+     _clean_layout(SW6).to_parquet(fp, index=False)
+     sw = A.load_sw_l1(tmp_path)
+     metrics = {"rows": len(SW6), "n_instruments": int(SW6["ts_code"].nunique()), "in_date_min": "2018-01-01",
+-               "in_date_max": "2025-03-18", **(metrics_override or {})}
++               "in_date_max": "2025-03-18", "n_l1": 1, "available_at_nulls": 0,  # r3d: constant fixture sw_code
++               **(metrics_override or {})}
+     man = {"rows": 7115, "fetch_time": fetch_time,
+            "tushare_candidate": {"path": str(fp), "promotion_approved": True, "metrics": metrics}}
+     (tmp_path / A.SW_L1_CLEAN_MANIFEST_REL).write_text(json.dumps(man), encoding="utf-8")
+@@ -512,6 +514,43 @@ def test_sw_l1_table_check_clean_integrity_raises(tmp_path, override, fetch, mat
+         A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=dt.datetime(2026, 10, 12, 7, tzinfo=A._ET))
+ 
+ 
++def _clean_root_frame(tmp_path, frame, metrics):
++    fp = tmp_path / A.SW_L1_REL
++    fp.parent.mkdir(parents=True, exist_ok=True)
++    frame.to_parquet(fp, index=False)
++    sw = A.load_sw_l1(tmp_path)
++    man = {"rows": 7115, "fetch_time": "2026-10-10T10:01:23.213525-04:00",
++           "tushare_candidate": {"path": str(fp), "promotion_approved": True, "metrics": metrics}}
++    (tmp_path / A.SW_L1_CLEAN_MANIFEST_REL).write_text(json.dumps(man), encoding="utf-8")
++    return sw
++
++
++@pytest.mark.parametrize("key, bad", [("n_l1", 2), ("available_at_nulls", 0)])
++def test_clean_manifest_n_l1_and_available_at_nulls(tmp_path, key, bad):
++    # r3d (Arch 11:29 ET ②), Data §14② L42-49: n_l1 = nunique(sw_code), available_at_nulls = null count, both on the
++    # raw table BEFORE the non-A exclusion (Tsh.00018 row carries the 3rd sw_code and the only null available_at, so
++    # the after-exclusion values 2 / 0 must fail). Values are read from manifest tushare_candidate.metrics.
++    d = _clean_frame(["sz.000001", "sh.600000", "sh.600001", "Tsh.00018"], ["银行", "银行", "电子", "综合"],
++                     ["2020-01-02"] * 4, [None] * 4, ["Y"] * 4)
++    d["sw_code"] = pd.Series(["801780.SI", "801780.SI", "801080.SI", "801230.SI"], dtype="str")
++    d["available_at"] = d["available_at"].where(d.index != 3).astype("datetime64[us]")
++    good = {"rows": 4, "n_instruments": 4, "in_date_min": "2020-01-02", "in_date_max": "2020-01-02", "n_l1": 3,
++            "available_at_nulls": 1}
++    now = dt.datetime(2026, 10, 12, 7, tzinfo=A._ET)
++    A._reset_table_checks_for_tests()
++    sw = _clean_root_frame(tmp_path, d, good)  # consistent -> passes
++    r = A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now)
++    assert r["metrics"]["n_l1"] == 3 and r["metrics"]["available_at_nulls"] == 1 and r["stale"] is False
++    A._reset_table_checks_for_tests()
++    sw = _clean_root_frame(tmp_path, d, dict(good, **{key: bad}))  # inconsistent -> raises
++    with pytest.raises(SwPitIntegrityError, match=f"metrics != table.*{key}"):
++        A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now)
++    sw = _clean_root_frame(tmp_path, d, {k: v for k, v in good.items() if k != key})  # key missing -> raises too
++    with pytest.raises(SwPitIntegrityError, match=f"metrics != table.*{key}"):
++        A.sw_l1_table_check(tmp_path, sw, "2026-10-09", CAL, now_et=now)
++    A._reset_table_checks_for_tests()
++
++
+ # ---- r3c (Arch 016ae55e P3s + Arch 11:11 ET rulings) ----
+ # M: two old rows, both out 2025-03-10 (Mon), no successor -> 2025-03-11 has TWO gap-carry candidates (P3-1)
+ SW_M = pd.DataFrame({"ts_code": ["M.SZ", "M.SZ"], "l1_name": ["电子", "通信"], "in_date": ["20200101", "20210101"],
+diff --git a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+index fe4591e0d5d0531194e0f983942402d7d4b3c9e6..6060c70f5c8dd3d36d4db855020fb439d2b3f158 100644
+--- a/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
++++ b/docs/v2/STRATEGY_SW_PIT_ASOF_FIX_PREREG_ZH.md
+@@ -40,7 +40,7 @@ hx2 合成 B4 时，行业 25% 上限用的是“每只股票最后一次出现
+ - sw_pit 表 built 是 10-14，按 R4 口径已 stale（落后 3 个交易日）。summary 带 industry_cap_on_stale_sw_pit=true 和 disclosure_zh，凡引用这次结果的报告，标题行都要带 disclosure_zh。
+ - **滞后阈值（Arch 2026-10-18 11:11 ET 裁定①，r3c 起；常量在 research/sw_members_asof.py）**：
+   - legacy sw_pit 表（0b1d3432）：沿用 research/sw_pit_freshness.py 的 STALE_LAG_TDAYS = 3，lag_tdays ≥ 3 即 stale。
+-  - CLEAN 表（89d4afa3）：CLEAN_STALE_LAG_TDAYS = 10（Arch 11:11 ①，以及 11:13 / 11:20 两条补充裁定的合并理解，待 Arch 确认）：
++  - CLEAN 表（89d4afa3）：CLEAN_STALE_LAG_TDAYS = 10（Arch 11:11 ①，以及 11:13 / 11:20 两条补充裁定的合并理解，Arch 2026-10-18 11:28 ET 确认）：
+     - lag_tdays ≤ 10：stale=False，stale_lag_only=False，滞后天数只写进 lag_notes；
+     - lag_tdays > 10 且没有 coverage_gap：stale=True，stale_lag_only=True（summary 字段 sw_l1_stale_lag_only），写 disclosure_zh；
+     - 有 coverage_gap：一律 stale=True，stale_lag_only=False。

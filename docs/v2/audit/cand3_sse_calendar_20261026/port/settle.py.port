@@ -1,0 +1,226 @@
+"""Settle pending research decisions vs 510300 (A-share book benchmark).
+
+PIT rules:
+- Decision session date is the as-of cutoff; entry uses first trading bar ON OR AFTER session.
+- Only bars with available_at <= decision asof+... wait: for *settlement* we use
+  subsequent realized closes (ex-post). The decision itself must not have used
+  future info; settlement is allowed to look at later prices to score the call.
+- Never writes Strategy NAV or places orders.
+- strategy_promotion_approved remains False.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from quantlab.agents.trading_loop.schemas import force_research_flags
+
+PROMOTION_APPROVED = False
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ETF_DAILY = REPO_ROOT / "data" / "v2" / "etf" / "etf_daily_adj.parquet"
+DEFAULT_LOG = REPO_ROOT / "output" / "trading_loop" / "decision_log.jsonl"
+BENCHMARK = "510300.SH"
+
+
+def _load_closes(ts_code: str, path: Path) -> pd.Series:
+    """Return trade_date-indexed close for one ts_code from etf_daily_adj."""
+    if not path.exists():
+        raise FileNotFoundError(f"ETF daily missing: {path}")
+    cols = ["ts_code", "trade_date", "close", "available_at"]
+    df = pd.read_parquet(path, columns=cols)
+    sub = df[df["ts_code"] == ts_code].copy()
+    if sub.empty:
+        return pd.Series(dtype=float)
+    sub["trade_date"] = pd.to_datetime(sub["trade_date"].astype(str), format="%Y%m%d")
+    sub = sub.sort_values("trade_date")
+    sub = sub[sub["close"].notna() & (sub["close"] > 0)]
+    return sub.set_index("trade_date")["close"]
+
+
+def compute_horizon_returns(
+    instrument: str,
+    session: str,
+    horizon_trading_days: int,
+    *,
+    benchmark: str = BENCHMARK,
+    etf_path: Path | None = None,
+    allow_mock: bool = True,
+) -> dict[str, Any]:
+    """Score raw & alpha vs 510300 over horizon trading days after session.
+
+    Returns dict with status settled|pending|unavailable and metrics.
+    """
+    path = etf_path or DEFAULT_ETF_DAILY
+    session_ts = pd.Timestamp(session)
+
+    try:
+        inst = _load_closes(instrument, path)
+        bench = _load_closes(benchmark, path)
+        source = "etf_daily_adj"
+    except FileNotFoundError:
+        inst = pd.Series(dtype=float)
+        bench = pd.Series(dtype=float)
+        source = "missing"
+
+    if inst.empty or bench.empty:
+        if not allow_mock:
+            return {
+                "status": "unavailable",
+                "settle_source": source or "none",
+                "reflection_zh": "无行情：无法结算",
+            }
+        # Deterministic mock path — labeled clearly for research demos.
+        source = "mock"
+        # Cand3 port: SSE open days only (never pd.bdate_range; CN holidays matter).
+        from quantlab.portfolio.trade_calendar import open_day_range
+        dates = open_day_range(session_ts, horizon_trading_days + 2)
+        # instrument drifts +0.2%/day, bench +0.1%/day
+        inst = pd.Series(
+            [100 * (1.002**i) for i in range(len(dates))], index=dates, dtype=float
+        )
+        bench = pd.Series(
+            [100 * (1.001**i) for i in range(len(dates))], index=dates, dtype=float
+        )
+
+    # Entry: first bar on/after session
+    inst_after = inst[inst.index >= session_ts]
+    if len(inst_after) <= horizon_trading_days:
+        return {
+            "status": "pending",
+            "settle_source": source,
+            "reflection_zh": "持有窗尚未走完，留待下次 settle",
+        }
+
+    entry_dt = inst_after.index[0]
+    exit_dt = inst_after.index[horizon_trading_days]
+    # Benchmark must cover [entry, exit]
+    if bench.index[0] > entry_dt or bench.index[-1] < exit_dt:
+        return {
+            "status": "pending",
+            "settle_source": source,
+            "reflection_zh": "基准覆盖不足，暂不结算",
+        }
+
+    px0 = float(inst_after.iloc[0])
+    px1 = float(inst_after.iloc[horizon_trading_days])
+    raw = (px1 - px0) / px0
+    b0 = float(bench.asof(entry_dt))
+    b1 = float(bench.asof(exit_dt))
+    if b0 is None or b1 is None or b0 <= 0:
+        return {
+            "status": "unavailable",
+            "settle_source": source,
+            "reflection_zh": "基准价格无效",
+        }
+    bret = (b1 - b0) / b0
+    alpha = raw - bret
+
+    sign = "正" if alpha >= 0 else "负"
+    reflection = (
+        f"相对 {benchmark} 的 {horizon_trading_days} 日窗口 alpha={alpha:.4%}（{sign}）；"
+        f"标的收益 {raw:.4%}，基准 {bret:.4%}；来源={source}。"
+        f"仅决策质量记忆，不改主书、不晋级。"
+    )
+    return {
+        "status": "settled",
+        "settle_source": source,
+        "entry_date": entry_dt.strftime("%Y-%m-%d"),
+        "exit_date": exit_dt.strftime("%Y-%m-%d"),
+        "raw_return": raw,
+        "bench_return": bret,
+        "alpha_vs_510300": alpha,
+        "reflection_zh": reflection,
+    }
+
+
+def load_log(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def pending_entries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [r for r in rows if r.get("status", "pending") == "pending"]
+
+
+def settle_log(
+    log_path: Path | None = None,
+    *,
+    etf_path: Path | None = None,
+    allow_mock: bool = True,
+    rewrite: bool = True,
+) -> dict[str, Any]:
+    """Settle all pending rows in decision log; rewrite JSONL in place."""
+    path = log_path or DEFAULT_LOG
+    rows = load_log(path)
+    settled: list[dict[str, Any]] = []
+    still_pending: list[dict[str, Any]] = []
+    unavailable: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+    out_rows: list[dict[str, Any]] = []
+    for r in rows:
+        r = force_research_flags(r)
+        if r.get("status") != "pending":
+            out_rows.append(r)
+            continue
+        metrics = compute_horizon_returns(
+            str(r.get("instrument", "")),
+            str(r.get("session", "")),
+            int(r.get("horizon_trading_days") or 5),
+            benchmark=str(r.get("benchmark") or BENCHMARK),
+            etf_path=etf_path,
+            allow_mock=allow_mock,
+        )
+        status = metrics["status"]
+        if status == "settled":
+            r.update(
+                {
+                    "status": "settled",
+                    "entry_date": metrics["entry_date"],
+                    "exit_date": metrics["exit_date"],
+                    "raw_return": metrics["raw_return"],
+                    "bench_return": metrics["bench_return"],
+                    "alpha_vs_510300": metrics["alpha_vs_510300"],
+                    "reflection_zh": metrics["reflection_zh"],
+                    "settled_at": now,
+                    "settle_source": metrics["settle_source"],
+                    "strategy_promotion_approved": False,
+                }
+            )
+            settled.append(r)
+        elif status == "pending":
+            r["reflection_zh"] = metrics.get("reflection_zh", "")
+            still_pending.append(r)
+        else:
+            r["status"] = "unavailable"
+            r["reflection_zh"] = metrics.get("reflection_zh", "")
+            r["settle_source"] = metrics.get("settle_source", "")
+            unavailable.append(r)
+        out_rows.append(r)
+
+    if rewrite:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            for row in out_rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    return {
+        "log_path": str(path),
+        "settled_n": len(settled),
+        "pending_n": len(still_pending),
+        "unavailable_n": len(unavailable),
+        "settled_ids": [x.get("decision_id") for x in settled],
+        "strategy_promotion_approved": False,
+    }

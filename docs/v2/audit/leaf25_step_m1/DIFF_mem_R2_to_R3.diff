@@ -1,0 +1,11 @@
+--- docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R2_MEM_ESTIMATE.md	2026-10-18 10:45:34.011931890 -0400
++++ docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R3_MEM_ESTIMATE.md	2026-10-18 10:52:39.691931890 -0400
+@@ -1,6 +1,6 @@
+-# Leaf 25 step -1 r2 memory estimate (file sizes, Arch-verified schema/row counts in review fc5fa937 L48-57; no data read)
++# Leaf 25 step -1 r3 memory estimate (file sizes, Arch-verified schema/row counts in review fc5fa937 L48-57; no data read)
+ 
+-- Script: research/leaf25_ttm_recon_step_m1_r2.py sha256 f46e0fb5898ba58566c4c6fa6ed05b370a36a38941f766ffcbbee56d316956da. Supersedes LEAF25_STEP_M1_MEM_ESTIMATE.md (bf2c29fe; kept unchanged).
++- Script: research/leaf25_ttm_recon_step_m1_r3.py sha256 eb979015b9cfb85f8bda97ebfc6ee0e402d92d5cd53fed0c9d64bcc01b977e2e. Supersedes LEAF25_STEP_M1_R2_MEM_ESTIMATE.md (e95db81d; kept unchanged). _r3 changes only the case (i) pick (availability-only E on two days, per-code groupby of U; Arch efb013d8 L77: within worst case) and one case (ii) check; numbers unchanged.
+ - Runtime (Arch L99): pandas 3.0.6 + pyarrow 25.0.1; strings come back Arrow-backed (str dtype), not per-cell Python objects.
+ - Rows: income 422,129; cashflow 315,718; balance 451,857 (one row group each); calendar 8,035.
+ 

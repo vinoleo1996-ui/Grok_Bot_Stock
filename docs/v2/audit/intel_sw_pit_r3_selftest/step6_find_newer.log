@@ -1,0 +1,24 @@
+--- find output data research -newermt 2026-10-18T05:42:00-04:00
+data/v2/tushare_raw/fund_portfolio_dh/20240630
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000664000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000665000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000666000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000667000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000668000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000669000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000670000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000671000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000672000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000673000.parquet
+data/v2/tushare_raw/fund_portfolio_dh/20240630/000674000.parquet
+research/intel
+research/intel/intel_common.py
+research/intel/intel_run.py
+research/intel/intel_event_study.py
+research/intel/intel_c1_gap_split.py
+research/intel/test_sw_freshness.py
+--- research __pycache__ newer than T0
+--- /tmp/arch_intel_r3_selftest
+total 16
+drwxr-xr-x  2 box  box   4096 Oct 18 05:42 .
+drwxrwxrwt 87 root root 12288 Oct 18 05:42 ..

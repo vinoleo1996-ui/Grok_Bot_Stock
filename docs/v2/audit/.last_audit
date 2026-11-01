@@ -1,0 +1,15 @@
+file=docs/v2/audit/AUDIT_20261101_0015_ET_ZH.md
+baseline=docs/v2/audit/AUDIT_20261028_0014_ET_ZH.md
+ts_et=2026-11-01T00:15:00-04:00
+max_severity=P1
+p0=0
+p1=P1-2_94322_gone_no_fundport_DONE
+p2=P2-1_fundport_merge_rss_await_stream_run,P2-2_eng_A3_paper_appendonly_nav_gap
+p3=P3-1_settle_mock_resolution_date
+closed=P1-1_5td_nightly_paper_gap_since_20261016,P1-3_leaf25_full_factor_alpha_CONSUMED_PASS,P1-5_leaf27_x2_selfcheck_v2_CONSUMED_PASS,P1-4_leaf27_baseline_evac_CONSUMED_PASS,P3-6_leaf27_baseline_evac_H2A_status_READY_vs_SUBMITTED,P3-5_leaf27_gateA_HAND_oral_vs_disk_sha_drift,P3-4_leaf27_ndays40_H2A_oral_vs_disk_sha_drift,P3-3_leaf27_month_draft_team_state_sha_drift,P2-2_BACKUP_PIN,P2-3_daily_basic_v3_1_design_overdue,P3-3_team_state_stale_dual_threshold,P3-2_pitfix_req_live,P3-2_alphalens_plan_team_state_sha_drift
+execution_py=373fed30
+sw_l1_pit=89d4afa3
+trade_cal=141078fa
+sha=57b780a0
+sha256=57b780a0cf1d2052125e06157eeff3487aedbd6de17d266d880866c7b20f0f2f
+bus_event=queued:2026-11-01T00:16:35-04:00

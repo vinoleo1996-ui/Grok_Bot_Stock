@@ -1,0 +1,45 @@
+--- docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_PIN_LIST_v2.md	2026-10-18 13:25:15.851931890 -0400
++++ docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_PIN_LIST_v3.md	2026-10-18 13:27:08.575931890 -0400
+@@ -1,6 +1,6 @@
+-# 叶25 步骤 −1 R5 签发钉单 v2（供 Arch 签 ARCH_RUN_AUTH_LEAF25_TTM_RECON_STEP_M1_R5.ok）
++# 叶25 步骤 −1 R5 签发钉单 v3（供 Arch 签 ARCH_RUN_AUTH_LEAF25_TTM_RECON_STEP_M1_R5.ok）
+ 
+-- 编写：AI，2026-10-18T13:25:15-04:00（取自 `date`）。v2 按 Arch 13:24 核对 v1（1d952cd7，保留不动）后的要求修改：r3e 项、.cmd 改钉 R5b、§5.2/§5.3 顺序与写法、回执内容、STOP 窗口、.ok 有效期。依据仍为主 Agent 13:20 裁定。
++- 编写：AI，2026-10-18T13:27:08-04:00（取自 `date`）。v3 只按 Arch 13:27 选定 R5c 修改：.cmd 改钉 R5c，R5b 作废并写明原因，补 rc=124 判失败。v1（1d952cd7）、v2（4d50f75a）保留不动。依据仍为主 Agent 13:20 裁定。
+ - 本文只做静态整理：读脚本/.cmd/manifest JSON/文档文本，对文件算 sha256（逐字节哈希，不解析）、取 mtime 与大小。没有打开 parquet、没有读 schema 或页脚元数据、没有运行任何脚本、没有提交。live=false，promotion=false。
+ 
+ ## 一、钉住的代码与文档（全长 sha256）
+@@ -8,8 +8,8 @@
+ |---|---|---|
+ | 预注册 r5 | docs/v2/AI_LEAF25_ACCRUALS_PREREG_DRAFT_r5.md | 81123646382f7bb188a135e0d9142372b373c079e289d47066f5587a1fde40e1 |
+ | 脚本 _r5 | research/leaf25_ttm_recon_step_m1_r5.py | f43b901671728204437279da1f49c7729ec11f11d8070e73434b5d6288953d68 |
+-| .cmd R5b | docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5b.cmd | 8d0d35d93da729021a1e96f27f49b496ac48e6f2c279f8fc7a4c1fb49dbdb2a6 |
+-| （备选）.cmd R5c | docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5c.cmd | a6c36ad1a4d1e8aeab3ed72c1f8cf4976e713b52df050e423de3dbe5dc9a5c0b |
++| .cmd R5c | docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5c.cmd | a6c36ad1a4d1e8aeab3ed72c1f8cf4976e713b52df050e423de3dbe5dc9a5c0b |
++| ~~.cmd R5b~~（作废，不得使用） | docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5b.cmd | 8d0d35d93da729021a1e96f27f49b496ac48e6f2c279f8fc7a4c1fb49dbdb2a6 |
+ | 内存估计 R5 | docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_MEM_ESTIMATE.md | c2fef26b1911b061b6c61137737cc5c52ebb6233e98d7566239de06525822e24 |
+ | Arch 差异复核 R5 | docs/v2/ARCH_AI_LEAF25_STEP_M1_R5_DIFF_REVIEW_ZH.md | 9fb4fccbcdf44cd1e4b4bbd0bb37211d5c06215b2e87e000ec7ebdf5cf7ebebd |
+ | 包装器 v4 | docs/v2/audit/cmc_v1_1_leaf24/cmc_wrapper_v4_6174eacb.sh | 6174eacb4ff2d0905634477430b96bf155d3606794cd66f23a5a38a4f85e4169 |
+@@ -50,15 +50,11 @@
+ 6. 运行窗口：只在 Data 的 94322 STOP 窗口内跑。窗口须落在 10-18 18:30–23:00 ET 之间、时长 ≥45 分钟；建议 19:00–19:45 ET，**待 Data 确认**。禁止窗：10-19 04:25 ET 起直到当日纸面各轨跑完，尤其 16:40–18:40 ET。
+ 7. .ok 的 expires_et 须早于 2026-10-19T04:25:00-04:00。
+ 8. 退出码 0 不等于成功：逐个核对三份输出、triggers（E_before/E_after、same_day）、每例 rule_exercised、report_type 计数；rc≠0 到 output/ai_factory/_void/ 取件。.ok 用后由 Arch 归档（AI 不归档，写“待 Arch 归档”）。
++9. rc=124（R5c 内层 timeout 900 秒到时）一律判失败，不重跑；产物按 rc≠0 由包装器移入 _void，停下报 Arch。
+ 
+-## 六、timeout 与包装器 v4 的交互（静态阅读包装器源码，未改包装器、未运行）
+-- R5b（外层 `timeout 900 bash 包装器 …`）有一个确定会出的问题：
+-  - 包装器的 C5 只排除自己的进程树（mytree：包装器 $$ 及其子孙，L46）。timeout 是包装器的父进程，不在树内。
+-  - timeout 的命令行原样含 `… /workspace/qlvenv/bin/python research/leaf25_ttm_recon_step_m1_r5.py …`，命中 C5 命令行模式 `*python*research/*`（L56）。
+-  - 结论：C5 每次都会把 timeout 判为外来进程 → killgrp → rc=96，.ok 白白作废。
+-  - 另外：GNU timeout 9.7 到时只向自己的进程组发 TERM；python 已被包装器 setsid 放进新会话（L60），不在该组内，收不到信号。包装器 bash 被 TERM 后没有 trap，直接退出，跳过峰值汇总和 rc≠0 时移入 _void（L80–L98），python 继续无人监管地跑，外层 rc=124。
+-- R5c（备选，timeout 放在包装器 `--` 之后）：
+-  - setsid 直接 exec timeout，timeout 就是 PID，PGID=PID（timeout 自己的 setpgid 对会话首进程无效，组不变），PGID 检查通过。
+-  - timeout 的命令行含脚本路径，--assert 子串匹配通过；它在包装器树内，C5 排除。
+-  - python 是其子进程、同组，VmHWM 采样覆盖。到时 timeout 先 TERM python 再 TERM 全组，rc=124 经包装器 `wait` 返回，峰值读取与 _void 移动照常。
+-- 建议：签 R5c（a6c36ad1…）而不是 R5b。本钉单按要求写 R5b，由 Arch 定；若选 R5c，.ok 的 cmd_path/cmd_sha256 改为 R5c。
++## 六、R5b 作废原因与 R5c（Arch 13:27 选定 R5c a6c36ad1）
++- R5b（外层 `timeout 900 bash 包装器 …`）作废，原因有两条：
++  - 外层 timeout 不在包装器的 mytree（包装器 $$ 及其子孙，L46）内，它的命令行含「python research/leaf25_ttm_recon_step_m1_r5.py」，命中 C5 模式 `*python*research/*`（L56）→ killgrp → rc=96，每次必然自触。
++  - 即使没有 C5，timeout 到时的 TERM 只发给它自己的进程组；python 已被包装器 setsid（L60）放进新会话，收不到信号；包装器 bash 被 TERM 后没有 trap，跳过峰值汇总和 _void 移动，python 无人监管继续运行。
++- R5c：timeout 900 在包装器 `--` 之后。setsid 直接 exec timeout，PID=PGID，--assert 子串匹配和 C5 树内排除都成立；到时 timeout TERM python 和全组，rc=124 经包装器 wait 返回，峰值和 _void 照常。
++- .ok 的 cmd_path=/workspace/QuantLab/docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5c.cmd，cmd_sha256=a6c36ad1a4d1e8aeab3ed72c1f8cf4976e713b52df050e423de3dbe5dc9a5c0b。

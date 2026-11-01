@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""QuantLab Data 每晚更新入口 (无 crontab 依赖, 由外部调度或手动触发).
+顺序串行(一次一个重拉数, MemAvailable<2GB 暂停): 日线套件 → 指数 → bars/daily_basic/index 物化 → etf_daily_adj → Eng 面板(510300/X2 asof_extend/分红,写 output/daily_update_status.json) → mid_large_universe → 事件窗 → hsgt_top10 → SW 刷新 → cyq_perf 当月 → 第三档快照 → bundle 复制 → 数据新鲜度(output/data_freshness_status.json). 交易日历(trade_cal)在最前.
+不启 uvicorn/8787, 不动 moneyflow, 不碰策略/live; 所有产物 promotion_approved=false.
+用法:
+  python3 scripts/nightly_update.py                 # 全部
+  python3 scripts/nightly_update.py --steps bars,hsgt --date 20261013
+  python3 scripts/nightly_update.py --dry-run
+"""
+import argparse, json, os, subprocess, sys, time, pathlib, shutil
+from datetime import datetime
+from zoneinfo import ZoneInfo
+ROOT=pathlib.Path("/workspace/QuantLab"); PY=sys.executable; SH=ZoneInfo("Asia/Shanghai")
+LOGD=ROOT/"logs/nightly"; LOGD.mkdir(parents=True,exist_ok=True)
+BUNDLE=ROOT/"output/data_v2_bundle"
+
+def mem_gb():
+    for l in open("/proc/meminfo"):
+        if l.startswith("MemAvailable"): return int(l.split()[1])/1e6
+def wait_mem():
+    while mem_gb()<2.0: print(f"MemAvailable {mem_gb():.2f}GB <2GB, pause 60s",flush=True); time.sleep(60)
+
+def steps_for(d):
+    ymd=d; iso=f"{d[:4]}-{d[4:6]}-{d[6:]}"; ym=d[:6]
+    mat=lambda f: [PY,"-c",f"import sys;sys.path.insert(0,'scripts/acquire');sys.path.insert(0,'.');import tier1_materialize as m;{f}"]
+    return {
+     "trade_cal":    [[PY,"scripts/acquire/trade_cal_pit.py"]],  # data/v2/calendar/trade_cal_sse_pit.parquet SSE 2005-2026, manifest sha256
+     "daily_pull":   [[PY,"scripts/acquire/tier1_pull.py","extend",ymd]],
+     "index_pull":   [[PY,"scripts/acquire/tier1_pull.py","index"]],
+     "adj_factor":   [[PY,"scripts/acquire/adj_factor_incr.py","--date",ymd]],  # 2026-10-18: data/v2/adj/adj_factor_2023h2plus.parquet 只追加 (此前无步骤维护)
+     "bars":         [mat(f"m.materialize_bars(start='{ym}01',end='{ymd}')")],
+     # daily_basic v3.1: explicit --mode incremental (design §2.1); paths explicit (P1-8); not CLI default
+     "daily_basic":  [mat(
+         f"raise SystemExit(m.materialize_daily_basic_cli(["
+         f"'--mode','incremental','--end','{ymd}',"
+         f"'--raw-dir',str(m.RAW/'daily_basic'),"
+         f"'--dest',str(m.ROOT/'data/v2/valuation/daily_basic_full_tushare.parquet'),"
+         f"'--manifest',str(m.ROOT/'data/v2/valuation/daily_basic_full_tushare_manifest.json'),"
+         f"'--status',str(m.ROOT/'output/daily_update_status.json'),"
+         f"'--bak-dir',str(m.ROOT/'backups/valuation'),"
+         f"'--diff-dir',str(m.ROOT/'data/v2/valuation/history_diff')]))"
+     )],
+     "index":        [mat("m.materialize_index()")],
+     "etf_daily_adj":[[PY,"scripts/acquire/etf_daily_adj_incr.py","--date",ymd]],  # data/v2/etf/etf_daily_adj.parquet (Eng 引擎 close_hfq/adj_factor), 写 status.tables.etf_daily_adj
+     "eng_panels":   [[PY,"scripts/acquire/eng_daily_panels.py","--date",ymd]],  # 510300 ETF / X2 asof_extend / dividend_by_exdate + output/daily_update_status.json
+     "mid_large_universe":[[PY,"scripts/acquire/mid_large_universe_incr.py","--date",ymd]],  # D3 data/v2/universe/mid_large_members_pit.parquet 只追加, 写 status.tables.mid_large_universe (纳入 ok 判定)
+     "events":       [[PY,"scripts/acquire/_light_event_windows_pull.py"],[PY,"scripts/acquire/forecast_manifest_declare.py"]],  # 2026-10-18: forecast manifest 声明(Arch P1-5)
+     "hsgt":         [[PY,"scripts/acquire/fill_hsgt_top10_extend.py"]],
+     "sw":           [[PY,"scripts/acquire/sw_pit_refresh.py"]],
+     "cyq":          [[PY,"scripts/acquire/cyq_perf_monthly.py",ym,ym]],
+     "tier3":        [[PY,"scripts/acquire/tier3_daily_snapshot.py","--date",ymd]],
+     "bundle":       "bundle",
+     "freshness":    [[PY,"scripts/acquire/data_freshness_status.py"]],  # 末步: output/data_freshness_status.json (Eng 闸门)
+    }, {"QL_TODAY":iso,"TOP10_START":str(int(ymd[:4])-1)+ymd[4:],"CHUNK_DAYS":"30","TOP10_END":ymd}
+
+BUNDLE_MAP=[  # (src, bundle subdir)  小表 <8MB 直接复制
+ ("data/v2/northbound/hsgt_top10_daily_2018plus.parquet","northbound"),
+ ("data/v2/northbound/northbound_summary.json","northbound"),
+ ("data/v2/index_members/csi_review_calendar.parquet","index_members"),
+ ("data/v2/index_members/index_member_events.parquet","index_members"),
+ ("data/v2/index_members/manifest_d5.json","index_members"),
+ ("data/v2/corporate_actions/rights_issue_em.parquet","corporate_actions"),
+ ("data/v2/corporate_actions/manifest_d6_rights_issue.json","corporate_actions"),
+ ("data/v2/sw_pit/industry_members_sw_l1_pit.parquet","sw_pit"),
+ ("data/v2/sw_pit/industry_members_sw_l2_pit.parquet","sw_pit"),
+ ("data/v2/sw_pit/sw2021_classify_l1.parquet","sw_pit"),
+ ("data/v2/sw_pit/sw2021_classify_l2.parquet","sw_pit"),
+ ("data/v2/sw_pit/manifest.json","sw_pit"),
+ ("data/v2/index/index_daily_pit.parquet","index"),
+ ("data/v2/index/index_daily_pit_manifest.json","index"),
+ ("data/v2/cyq/manifest.json","cyq"),
+]
+def _cp(p,dst):
+    t=dst/p.name
+    if t.exists() and os.path.samefile(p,t): return  # 已是硬链接
+    shutil.copy2(p,t)
+def bundle(d):
+    out=[]
+    for src,sub in BUNDLE_MAP:
+        p=ROOT/src
+        if not p.exists(): continue
+        dst=BUNDLE/sub; dst.mkdir(parents=True,exist_ok=True)
+        if p.stat().st_size<8e6: _cp(p,dst); out.append(f"{sub}/{p.name}")
+        else: out.append(f"SKIP>8MB {src}")
+    for p in sorted((ROOT/"data/v2/cyq").glob("cyq_perf_*.parquet")):  # 按月, 每月约 3-6MB
+        dst=BUNDLE/"cyq"; dst.mkdir(parents=True,exist_ok=True)
+        if p.stat().st_size<8e6: _cp(p,dst); out.append(f"cyq/{p.name}")
+        else: out.append(f"SKIP>8MB {p.name}")
+    for kind in ["concept_dc_index","concept_dc_member","concept_ths_index","anns","news","research_report"]:
+        p=ROOT/f"data/v2/tier3_daily/{kind}/{d}.parquet"
+        if p.exists() and p.stat().st_size<8e6:
+            dst=BUNDLE/"tier3_daily"/kind; dst.mkdir(parents=True,exist_ok=True); _cp(p,dst); out.append(f"tier3_daily/{kind}/{p.name}")
+    return out
+
+RELAY_STEPS={"hsgt","cyq","tier3","sw"}  # 只能走 Tushare 中转的步骤: 中转不通时跳过记 partial
+def register_backfill(k,d):
+    f=ROOT/"output/relay_outage_backfill_queue.json"
+    try: q=json.loads(f.read_text())
+    except Exception: q=dict(items=[],extra=[])
+    q.setdefault("extra",[])
+    iid=f"nightly_step|{k}|{d}"
+    if not any(i.get("id")==iid for i in q["extra"]):
+        q["extra"].append(dict(id=iid,api=k,failed_source="relay",params=dict(step=k,date=d),status="pending",
+            retry_cmd=f"python3 scripts/nightly_update.py --date {d} --steps {k}"))
+        f.write_text(json.dumps(q,ensure_ascii=False,indent=1))
+
+def main():
+    ap=argparse.ArgumentParser(); ap.add_argument("--date"); ap.add_argument("--steps"); ap.add_argument("--dry-run",action="store_true"); a=ap.parse_args()
+    d=a.date or datetime.now(SH).strftime("%Y%m%d")
+    S,env_extra=steps_for(d); order=list(S)
+    sel=a.steps.split(",") if a.steps else order
+    env=dict(os.environ,**env_extra); res={}
+    print(f"NIGHTLY date={d} steps={sel}",flush=True)
+    for k in sel:
+        t0=time.time()
+        if a.dry_run: res[k]={"cmd":S[k] if S[k]!="bundle" else "bundle"}; continue
+        if S[k]=="bundle":
+            res[k]={"status":"ok","files":bundle(d)}; continue
+        if k in RELAY_STEPS:
+            sys.path.insert(0,str(ROOT/"scripts/acquire")); from relay_health import relay_up
+            if not relay_up():
+                res[k]={"status":"partial","skipped":"RELAY_DOWN fast-fail","sec":0}; register_backfill(k,d); print(k,res[k],flush=True); continue
+        wait_mem(); rc=0
+        log=LOGD/f"{d}_{k}.log"
+        for cmd in S[k]:
+            with open(log,"a") as fh:
+                fh.write(f"\n=== {datetime.now().isoformat()} {' '.join(cmd)[:300]}\n"); fh.flush()
+                rc=subprocess.call(cmd,cwd=ROOT,env=env,stdout=fh,stderr=subprocess.STDOUT)
+            # daily_basic incremental: exit>=20 on fail; 0 only = ok (design: 2/3 never for incr)
+            if k == "daily_basic":
+                if rc != 0: break
+            elif rc not in (0,2):
+                break   # hsgt 脚本 exit 2 = 仍有剩余; exit 3 = 中转宕机快速失败(partial)
+        if k == "daily_basic":
+            st = "ok" if rc == 0 else f"fail rc={rc}"
+        else:
+            st="ok" if rc in (0,2) else ("partial" if rc==3 else f"fail rc={rc}")
+        if k=="events" and rc==0:
+            try:
+                sm=json.loads((ROOT/"data/v2/events/light_event_windows_summary.json").read_text())
+                if sm.get("n_fails"): st="partial"
+            except Exception: pass
+        res[k]={"status":st,"sec":round(time.time()-t0),"log":str(log)}
+        print(k,res[k],flush=True)
+    sts=[v.get("status") for v in res.values() if isinstance(v,dict) and "status" in v]
+    overall="ok" if all(x=="ok" for x in sts) else "partial"
+    sf=LOGD/f"{d}_summary.json"
+    if a.steps and sf.exists():  # 2026-10-18: --steps 子集重跑时合并进当日 summary, 不覆盖其它步骤
+        try:
+            prev=json.loads(sf.read_text()).get("steps",{}); prev.update(res); res=prev
+            sts=[v.get("status") for v in res.values() if isinstance(v,dict) and "status" in v]; overall="ok" if all(x=="ok" for x in sts) else "partial"
+        except Exception: pass
+    man=dict(date=d,overall=overall,steps=res,promotion_approved=False,finished=datetime.now(SH).isoformat())
+    if not a.dry_run: (LOGD/f"{d}_summary.json").write_text(json.dumps(man,ensure_ascii=False,indent=2))
+    print(json.dumps(man,ensure_ascii=False,indent=1))
+if __name__=="__main__": main()

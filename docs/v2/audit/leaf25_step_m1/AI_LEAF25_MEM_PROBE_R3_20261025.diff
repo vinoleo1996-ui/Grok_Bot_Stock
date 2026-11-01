@@ -1,0 +1,194 @@
+--- research/leaf25_full_factor_mem_probe_r2.py
++++ research/leaf25_full_factor_mem_probe_r3.py
+@@ -1,13 +1,16 @@
+ #!/usr/bin/env python3
+-"""Leaf25 full-factor mem_probe r2 — real_peak_path filled (column-projected PIT).
++"""Leaf25 full-factor mem_probe r3 — PIT end_date filter type fix (timestamp).
+ 
+-SUPERSEDES r1 real-path NotImplemented for calibrated peak measurement.
+-r1 remains valid for dry-only skeleton (Arch PASS_WITH_CONDITIONS dry .ok).
+-This r2 reuses leaf25_full_factor_chunk_plan_r1; does NOT modify r5 / r1.
++SUPERSEDES r2 real-path for calibrated peak measurement after r2 FAIL.
++r2 FAIL receipt sha8 d01f95c0 (ArrowNotImplementedError: greater_equal
++timestamp[us] vs string YYYYMMDD in _read_pit_projected). Main order:
++docs/v2/audit/MAIN_LEAF25_MEM_PROBE_R2_FAIL_R3_ORDER_20261025_ZH.md.
++Reuses leaf25_full_factor_chunk_plan_r1; does NOT modify r5 / r1 / r2 file.
++Ban reuse r2 .ok cd230f9c… and step_m1 .ok 1c32ab1e….
+ 
+ HARD RULES:
+   - Default --dry-run. Real PIT path requires --allow-real-data + existing --arch-ok-path.
+-  - Ban reuse step_m1 .ok 1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0.
++  - Ban reuse step_m1 .ok 1c32ab1e… and r2 probe .ok cd230f9c….
+   - C4/stop/hard: 1331200 / 1484800 / 1536000 kB; ban raise; >=0.85*C4 exit 94; >=hard exit 95.
+   - Sampler / sample-dir: /tmp/quantlab_* only.
+   - Ban whole-window densify; HI_LIQ single chunk; missing HI_LIQ mask → STOP (no silent FULLA).
+@@ -44,6 +47,9 @@
+ HARD_KB = 1536000
+ SPLIT_THRESH_KB = int(0.85 * C4_KB)  # 1131520
+ BANNED_OK_SHA = "1c32ab1e5ffb9eb3ddf466f15b0cd778a1579eaca678f2f5fbe1dd1ae00e66f0"
++# r2 single_use .ok (FAIL receipt d01f95c0…) — VOID pending; ban reuse for r3
++BANNED_OK_SHA_R2 = "cd230f9c2aa9fc8de7fc538fb1f04ded8d9c20463f24b88b6c0f76950ec34279"
++BANNED_OK_SHAS = frozenset({BANNED_OK_SHA, BANNED_OK_SHA_R2})
+ 
+ FP = ROOT / "data/v2/financials_pit"
+ PIT_INPUTS = {
+@@ -193,17 +199,31 @@
+ 
+ 
+ def _norm_pit(df):
++    """Normalize PIT keys for asof.
++
++    Disk end_date / available_at are timestamp[us] (available_at tz=Asia/Shanghai).
++    Pandas to_datetime promotes us→datetime64[ns]; asof compares day-normalized
++    naive Timestamps on both sides (avail_sh_date vs trade day d; end_s sort key).
++    Avoid feeding YYYYMMDD strings into pyarrow filters (r2 FAIL); string
++    roundtrip here is fallback only when native parse fails.
++    """
+     import pandas as pd
+ 
+     df = df.copy()
+     df["ts_code"] = df["ts_code"].astype(str)
+-    df["end_s"] = pd.to_datetime(
+-        df["end_date"].astype(str).str.replace("-", "").str[:8],
+-        format="%Y%m%d",
+-        errors="coerce",
+-    )
++    # Native parse first (timestamp[us] → datetime64[ns]); day-normalize.
++    end_dt = pd.to_datetime(df["end_date"], errors="coerce")
++    if end_dt.isna().all() and df["end_date"].notna().any():
++        # string / YYYYMMDD schema fallback only
++        end_dt = pd.to_datetime(
++            df["end_date"].astype(str).str.replace("-", "").str[:8],
++            format="%Y%m%d",
++            errors="coerce",
++        )
++    df["end_s"] = end_dt.dt.normalize()
+     for c in ("report_type", "update_flag"):
+         df[c] = df[c].astype(object).where(df[c].notna(), NULL).astype(str).str.strip()
++    # available_at: timestamp[us, tz=Asia/Shanghai] → UTC → SH calendar date (naive)
+     av = pd.to_datetime(df["available_at"], errors="coerce", utc=True)
+     df["avail_sh_date"] = (
+         av.dt.tz_convert(SH).dt.tz_localize(None).dt.normalize()
+@@ -211,6 +231,30 @@
+     return df
+ 
+ 
++def _end_date_filter_value(end_type, end_lo: str):
++    """Build parquet filter RHS for end_date matching on-disk Arrow type.
++
++    Disk financials_pit / cashflow_pit / balancesheet_pit store end_date as
++    timestamp[us] (r2 FAIL d01f95c0… / Arch 6ef34f99…: string YYYYMMDD →
++    ArrowNotImplementedError greater_equal(timestamp[us], string)).
++    For timestamp/date: return pd.Timestamp (Arrow compares vs datetime64[us]).
++    Ban feeding YYYYMMDD string into pyarrow filters against timestamp columns.
++    YYYYMMDD string RHS only if schema itself is string/large_string.
++    Same pattern as _load_hiliq_chunk_members date filters.
++    """
++    import pandas as pd
++    import pyarrow as pa
++
++    if pa.types.is_timestamp(end_type) or pa.types.is_date(end_type):
++        return pd.Timestamp(end_lo)
++    if pa.types.is_string(end_type) or pa.types.is_large_string(end_type):
++        return end_lo.replace("-", "")[:8]
++    raise SystemExit(
++        f"STOP: unsupported end_date Arrow type {end_type!s}; "
++        f"expected timestamp/date or string (r3 filter fix)"
++    )
++
++
+ def _read_pit_projected(name: str, codes: list[str], end_lo: str, pin_sha: bool):
+     """Column-project one PIT table; filter by codes + end_date lower bound. No densify."""
+     import pyarrow.parquet as pq
+@@ -225,15 +269,17 @@
+                 f"STOP: {name} sha mismatch actual={actual} pinned={expect}"
+             )
+     cols = KEY1 + VAL[name]
+-    have = set(pq.read_schema(path).names)
++    schema = pq.read_schema(path)
++    have = set(schema.names)
+     miss = [c for c in cols if c not in have]
+     if miss:
+         raise SystemExit(f"STOP: {name} missing columns {miss}")
+-    # end_date stored as YYYYMMDD string in these tables
+-    end_lo_s = end_lo.replace("-", "")[:8]
++    # Schema-aware: disk end_date is timestamp[us] (not YYYYMMDD string).
++    # r2 used string filter → ArrowNotImplementedError (receipt d01f95c0…).
++    end_lo_v = _end_date_filter_value(schema.field("end_date").type, end_lo)
+     filt = [
+         ("ts_code", "in", codes),
+-        ("end_date", ">=", end_lo_s),
++        ("end_date", ">=", end_lo_v),
+     ]
+     df = pq.read_table(path, columns=cols, filters=filt).to_pandas()
+     return _norm_pit(df)
+@@ -347,7 +393,7 @@
+ 
+     if universe != "HI_LIQ":
+         raise SystemExit(
+-            f"STOP: real_peak_path r2 probe prioritizes HI_LIQ; got universe={universe} "
++            f"STOP: real_peak_path r3 probe prioritizes HI_LIQ; got universe={universe} "
+             f"(FULLA not authorized for this probe package)"
+         )
+ 
+@@ -459,7 +505,7 @@
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+-    ap = argparse.ArgumentParser(description="Leaf25 full-factor mem_probe r2")
++    ap = argparse.ArgumentParser(description="Leaf25 full-factor mem_probe r3")
+     ap.add_argument(
+         "--dry-run",
+         action="store_true",
+@@ -561,8 +607,12 @@
+             )
+             return 2
+         ok_sha = sha256_file(args.arch_ok_path)
+-        if ok_sha == BANNED_OK_SHA:
+-            print(f"STOP: ban reuse step_m1 .ok {BANNED_OK_SHA}", file=sys.stderr)
++        if ok_sha in BANNED_OK_SHAS:
++            print(
++                f"STOP: ban reuse consumed/VOID .ok {ok_sha} "
++                f"(step_m1 1c32ab1e… / r2 probe cd230f9c…)",
++                file=sys.stderr,
++            )
+             return 2
+ 
+     stage("start")
+@@ -616,7 +666,9 @@
+     pk = check_rss("after_chunk", args.c4_kb, args.hard_kb, split_kb)
+ 
+     meta = {
+-        "schema": "leaf25_full_factor_mem_probe_r2",
++        "schema": "leaf25_full_factor_mem_probe_r3",
++        "supersedes_r2_end_date_filter": True,
++        "r2_fail_receipt_sha8": "d01f95c0",
+         "supersedes_r1_real_path": True,
+         "r1_dry_still_valid": True,
+         "live": False,
+@@ -640,12 +692,13 @@
+         },
+         "sampler_policy": "/tmp/quantlab_* only",
+         "sample_dir": str(args.sample_dir) if args.sample_dir else None,
+-        "banned_ok_sha": BANNED_OK_SHA,
++        "banned_ok_shas": sorted(BANNED_OK_SHAS),
+         "created_et": datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z"),
+         "notes": [
+-            "r2 real_peak_path: col-proj PIT → HI_LIQ CS crude accrual zscore → float32 part → gc",
++            "r3: schema-aware end_date timestamp filter (fix r2 FAIL d01f95c0…)",
++            "r3 real_peak_path: col-proj PIT → HI_LIQ CS crude accrual zscore → float32 part → gc",
+             "NOT full-leaf CFACC; densify=false; ban raise RSS; peak>=0.85*C4 → exit 94",
+-            "Do not apply for X2 .ok from this package alone; await Arch probe .ok + Main window",
++            "Ban reuse cd230f9c… / 1c32ab1e…; await Arch NEW probe .ok + Main window",
+         ],
+     }
+     meta_path = out / "run_meta.json"
+@@ -659,7 +712,7 @@
+     )
+ 
+     print(
+-        f"OK mem_probe_r2 dry={dry} universe={args.universe} chunk_id={chunk['chunk_id']} "
++        f"OK mem_probe_r3 dry={dry} universe={args.universe} chunk_id={chunk['chunk_id']} "
+         f"peak_kb={pk} meta={meta_path}",
+         flush=True,
+     )

@@ -1,0 +1,29 @@
+--- _recovery/eng/scripts_eng/s2_3_exec_layer.py	2026-10-18 01:17:36.676683904 -0400
++++ scripts_eng/s2_3_exec_layer.py	2026-10-18 01:14:23.832683904 -0400
+@@ -43,7 +43,7 @@
+ import numpy as np, pandas as pd
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "research"))
++sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "research")); sys.path.insert(0, str(Path(__file__).resolve().parent))
+ OUT = ROOT / "output/strategy_optimizer/core_x2"
+ CACHE = ROOT / "output/beta/s2_3_band_check/_cache"
+ BAL = "510300.SH"
+@@ -303,6 +303,8 @@
+     a = ap.parse_args()
+     if not a.arch_ok or not Path(a.arch_ok).exists():
+         raise SystemExit("REFUSED: 主 Agent 00:40 ET — every run (incl. smoke/dry-run) needs a matching Arch .ok; pass --arch-ok PATH.")
++    import ok_runner_pin
++    PIN = ok_runner_pin.enforce(__file__, [a.arch_ok, a.weights_ok])  # refuse on runner-sha mismatch
+     wp = Path(a.weights).resolve(); wsha = sha256(wp)
+     okt = Path(a.arch_ok).read_text(encoding="utf-8")
+     for k, f in (("freeze_record_sha256", "docs/v2/S2_3_FREEZE_RECORD_ZH.md"), ("s2_3_draft_sha256", "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md"),
+@@ -356,7 +358,7 @@
+     tag = f"{a.version}_{sleeve}_{a.aum // 10000}w"
+     od = OUT / f"s2_3_{tag}"; od.mkdir(parents=True, exist_ok=True)
+     meta = {"label": a.label or "REAL", "void_pre_K6": is_void, "version": a.version, "sleeve": sleeve, "aum": a.aum,
+-            "weights": str(wp.relative_to(ROOT)), "weights_sha256": wsha, "arch_ok": str(a.arch_ok), "arch_ok_sha256": sha256(Path(a.arch_ok)), "weights_ok": str(a.weights_ok), "weights_ok_sha256": (sha256(Path(a.weights_ok)) if a.weights_ok else None), "disclosure": str(dp.relative_to(ROOT)) if dp.exists() else None,
++            "weights": str(wp.relative_to(ROOT)), "weights_sha256": wsha, "arch_ok": str(a.arch_ok), "arch_ok_sha256": sha256(Path(a.arch_ok)), "runner_pin": PIN, "weights_ok": str(a.weights_ok), "weights_ok_sha256": (sha256(Path(a.weights_ok)) if a.weights_ok else None), "disclosure": str(dp.relative_to(ROOT)) if dp.exists() else None,
+             "spec": "docs/v2/STRATEGY_OPTIMIZER_STAGE2_S2_3_DRAFT_ZH.md §3 (freeze record S2_3_FREEZE_RECORD_ZH.md)",
+             "band_nav": BAND, "gate": GATE, "headline": "nobuf_HEADLINE", "ablation": "buf_ABLATION", "b2_flag": a.b2,
+             "B1": "w_tgt read from pre-produced weights file; post-band holdings are never fed back to the solver w0 (by construction).",

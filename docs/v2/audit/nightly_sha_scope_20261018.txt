@@ -1,0 +1,195 @@
+# nightly / backfill sha scope, 2026-10-18 (QuantLab Data). One absolute path per line; lines starting with # are comments.
+# Use: hash every non-comment line before AND after (a) the 10-14..10-16 backfill and (b) the 10-19 05:55 ET nightly.
+# Source of scope: Arch msg 10-18 (cc main agent) + ARCH_DATA_CALENDAR_2027_PLAN_REVIEW_ZH.md 5d35e63c P2-1/P2-3 + ARCH_DATA_DAILY_FALLBACK_PLAN_R3_REVIEW_ZH.md f977d4b9 P2-2 + ARCH_DATA_SW_L1_PIT_V2_R3_REVIEW_ZH.md 424f9021.
+# Classes: [EXPECTED_CHANGE] may change in a nightly (diff is logged, not a stop). [MUST_NOT_CHANGE] any diff => stop and report to Arch + main agent.
+# Steps assumed for both runs: --steps WITHOUT trade_cal and WITHOUT sw.
+#
+# ===== [EXPECTED_CHANGE] status JSONs =====
+# freshness step (scripts/acquire/data_freshness_status.py L9 OUT, os.replace L85) rewrites it every run
+/workspace/QuantLab/output/data_freshness_status.json
+# etf_daily_adj (L56-62), eng_panels (L176-179), mid_large_universe (L72-77), daily_basic (tier1_materialize L247-282) rewrite it
+/workspace/QuantLab/output/daily_update_status.json
+#
+# ===== [MUST_NOT_CHANGE] SSE PIT calendar (fa4260b8) + its manifest (7ccc911e) =====
+# only the trade_cal step (trade_cal_pit.py L25 os.replace, L30 unconditional M.write_text) writes these; trade_cal is excluded
+/workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+/workspace/QuantLab/data/v2/calendar/manifest.json
+#
+# ===== [MUST_NOT_CHANGE] Eng / paper calendar =====
+# WARNING: step daily_pull (scripts/acquire/tier1_pull.py job_extend_latest L83-95) unconditionally rewrites this file
+#   (datahub trade_cal 20260901-20261231 merged, non-atomic to_parquet). logs/nightly/2026101{4,5,6}_daily_pull.log all say "cal refreshed".
+#   => any run that includes daily_pull is EXPECTED to break this MUST_NOT_CHANGE check unless daily_pull is dropped or the code is changed.
+/workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet
+#
+# ===== [MUST_NOT_CHANGE] events read by paper (research/g1g5_{earnings_event,insider_increase,equity_incentive}_weights.py L51-52) =====
+# the nightly events step (_light_event_windows_pull.py + forecast_manifest_declare.py) does NOT write these two files; it writes forecast_1y/express_1y/holder_trade_1y/pledge_latest + manifests
+/workspace/QuantLab/data/v2/events/announcements_classified_pit.parquet
+/workspace/QuantLab/data/v2/events/announcements_classified_pit_post202406.parquet
+#
+# ===== [MUST_NOT_CHANGE] SW L1 =====
+# 89d4afa3 clean tushare file (paper industry cap)
+/workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet
+# 0b1d3432-lineage sw_pit L1 (written only by sw step sw_pit_refresh.py L47; bundle step only READS it and copies to output/data_v2_bundle/sw_pit/)
+/workspace/QuantLab/data/v2/sw_pit/industry_members_sw_l1_pit.parquet
+# ADDED by Data (not in the original list): 87d769aa, paper risk_flags (research_loop.py L246/L331), frozen until 10-19 paper per Arch reviews
+/workspace/QuantLab/data/v2/sw_l1_pit/industry_members_sw_l1.parquet
+#
+# ===== [MUST_NOT_CHANGE] every file pinned in docs/v2/eng_sd1/paper_import_closure.json (sha 6919e7af..., 156 entries, paths relative to /workspace/QuantLab) =====
+/workspace/QuantLab/docs/v2/eng_sd1/paper_import_closure.json
+/workspace/QuantLab/quantlab/__init__.py
+/workspace/QuantLab/quantlab/agents/__init__.py
+/workspace/QuantLab/quantlab/agents/factor_evolve/__init__.py
+/workspace/QuantLab/quantlab/agents/factor_evolve/hard_gates.py
+/workspace/QuantLab/quantlab/agents/factor_evolve/run_stub.py
+/workspace/QuantLab/quantlab/agents/factor_evolve/schemas.py
+/workspace/QuantLab/quantlab/agents/factor_evolve/weights_from_scores.py
+/workspace/QuantLab/quantlab/agents/trading_loop/__init__.py
+/workspace/QuantLab/quantlab/agents/trading_loop/run_stub.py
+/workspace/QuantLab/quantlab/agents/trading_loop/settle.py
+/workspace/QuantLab/quantlab/agents/trading_loop/state_machine.py
+/workspace/QuantLab/quantlab/backtest/__init__.py
+/workspace/QuantLab/quantlab/backtest/engine.py
+/workspace/QuantLab/quantlab/backtest/ledger.py
+/workspace/QuantLab/quantlab/backtest/tax.py
+/workspace/QuantLab/quantlab/beta/__init__.py
+/workspace/QuantLab/quantlab/beta/satellite.py
+/workspace/QuantLab/quantlab/beta/sleeve.py
+/workspace/QuantLab/quantlab/beta/smallcap_history_panels.py
+/workspace/QuantLab/quantlab/beta/smallcap_history_selector.py
+/workspace/QuantLab/quantlab/beta/smallcap_sleeve.py
+/workspace/QuantLab/quantlab/beta/survivorship.py
+/workspace/QuantLab/quantlab/cli.py
+/workspace/QuantLab/quantlab/comparison.py
+/workspace/QuantLab/quantlab/config.py
+/workspace/QuantLab/quantlab/config_validation.py
+/workspace/QuantLab/quantlab/data/__init__.py
+/workspace/QuantLab/quantlab/data/contracts.py
+/workspace/QuantLab/quantlab/data/eastmoney.py
+/workspace/QuantLab/quantlab/data/exchange_rules.py
+/workspace/QuantLab/quantlab/data/industry.py
+/workspace/QuantLab/quantlab/data/local_adapter.py
+/workspace/QuantLab/quantlab/data/market.py
+/workspace/QuantLab/quantlab/data/public_desk.py
+/workspace/QuantLab/quantlab/data/qualification.py
+/workspace/QuantLab/quantlab/data/realtime.py
+/workspace/QuantLab/quantlab/data/sina.py
+/workspace/QuantLab/quantlab/data/sources.py
+/workspace/QuantLab/quantlab/data/store.py
+/workspace/QuantLab/quantlab/data/v2_d0_meta.py
+/workspace/QuantLab/quantlab/data/v2_readers.py
+/workspace/QuantLab/quantlab/evidence.py
+/workspace/QuantLab/quantlab/factors/__init__.py
+/workspace/QuantLab/quantlab/factors/ai_factory/__init__.py
+/workspace/QuantLab/quantlab/factors/ai_factory/asof_text_guard.py
+/workspace/QuantLab/quantlab/factors/ai_factory/evaluate.py
+/workspace/QuantLab/quantlab/factors/ai_factory/fitness.py
+/workspace/QuantLab/quantlab/factors/ai_factory/handoff.py
+/workspace/QuantLab/quantlab/factors/ai_factory/ledger.py
+/workspace/QuantLab/quantlab/factors/ai_factory/novelty.py
+/workspace/QuantLab/quantlab/factors/ai_factory/pipeline_export.py
+/workspace/QuantLab/quantlab/factors/ai_factory/quantmind_loop.py
+/workspace/QuantLab/quantlab/factors/ai_factory/rdagent_min_loop.py
+/workspace/QuantLab/quantlab/factors/ai_factory/repr_bridge.py
+/workspace/QuantLab/quantlab/factors/ai_factory/search.py
+/workspace/QuantLab/quantlab/factors/ai_factory/structural_leaves.py
+/workspace/QuantLab/quantlab/factors/ai_factory/validate_gate.py
+/workspace/QuantLab/quantlab/factors/engine.py
+/workspace/QuantLab/quantlab/factors/neutralize.py
+/workspace/QuantLab/quantlab/factors/ops.py
+/workspace/QuantLab/quantlab/factors/orthogonalize.py
+/workspace/QuantLab/quantlab/factors/p1_factor_lib.py
+/workspace/QuantLab/quantlab/factors/p1_pipeline.py
+/workspace/QuantLab/quantlab/factors/residual_factory.py
+/workspace/QuantLab/quantlab/factors/v2_min_pipeline.py
+/workspace/QuantLab/quantlab/factors/walk_forward.py
+/workspace/QuantLab/quantlab/forward.py
+/workspace/QuantLab/quantlab/free_research.py
+/workspace/QuantLab/quantlab/intel/__init__.py
+/workspace/QuantLab/quantlab/intel/asof_window.py
+/workspace/QuantLab/quantlab/intel/debate_ledger.py
+/workspace/QuantLab/quantlab/intel/embeddings.py
+/workspace/QuantLab/quantlab/intel/messages.py
+/workspace/QuantLab/quantlab/legacy_comparison.py
+/workspace/QuantLab/quantlab/mandate.py
+/workspace/QuantLab/quantlab/mandate_v2.py
+/workspace/QuantLab/quantlab/metrics.py
+/workspace/QuantLab/quantlab/pipeline.py
+/workspace/QuantLab/quantlab/platform/__init__.py
+/workspace/QuantLab/quantlab/platform/execution.py
+/workspace/QuantLab/quantlab/platform/futures.py
+/workspace/QuantLab/quantlab/platform/margin.py
+/workspace/QuantLab/quantlab/platform/strategy_feed.py
+/workspace/QuantLab/quantlab/platform/weight_long_table.py
+/workspace/QuantLab/quantlab/policy_comparison.py
+/workspace/QuantLab/quantlab/portfolio/__init__.py
+/workspace/QuantLab/quantlab/portfolio/b4_paper.py
+/workspace/QuantLab/quantlab/portfolio/book_smoke.py
+/workspace/QuantLab/quantlab/portfolio/current.py
+/workspace/QuantLab/quantlab/portfolio/grok_paper.py
+/workspace/QuantLab/quantlab/portfolio/market_observatory.py
+/workspace/QuantLab/quantlab/portfolio/paper_track.py
+/workspace/QuantLab/quantlab/portfolio/research_loop.py
+/workspace/QuantLab/quantlab/portfolio/scorecard.py
+/workspace/QuantLab/quantlab/portfolio/trade_calendar.py
+/workspace/QuantLab/quantlab/portfolio/v2_constructor.py
+/workspace/QuantLab/quantlab/portfolio/v2_multisleeve_book.py
+/workspace/QuantLab/quantlab/portfolio/v2_rebalance.py
+/workspace/QuantLab/quantlab/promotion_gate.py
+/workspace/QuantLab/quantlab/reference_cash_replay.py
+/workspace/QuantLab/quantlab/report/__init__.py
+/workspace/QuantLab/quantlab/report/advice.py
+/workspace/QuantLab/quantlab/report/attribution.py
+/workspace/QuantLab/quantlab/report/capital.py
+/workspace/QuantLab/quantlab/report/html.py
+/workspace/QuantLab/quantlab/report/metrics.py
+/workspace/QuantLab/quantlab/report/research_diagnostics.py
+/workspace/QuantLab/quantlab/report/research_state.py
+/workspace/QuantLab/quantlab/report/runs.py
+/workspace/QuantLab/quantlab/research.py
+/workspace/QuantLab/quantlab/research_statistics.py
+/workspace/QuantLab/quantlab/smallcap/__init__.py
+/workspace/QuantLab/quantlab/smallcap/sim.py
+/workspace/QuantLab/quantlab/smallcap/universe.py
+/workspace/QuantLab/quantlab/strategy/__init__.py
+/workspace/QuantLab/quantlab/strategy/allocation.py
+/workspace/QuantLab/quantlab/strategy/candidates.py
+/workspace/QuantLab/quantlab/strategy/crowding.py
+/workspace/QuantLab/quantlab/strategy/decision.py
+/workspace/QuantLab/quantlab/strategy/experts.py
+/workspace/QuantLab/quantlab/strategy/legacy.py
+/workspace/QuantLab/quantlab/strategy/monitor.py
+/workspace/QuantLab/quantlab/strategy/opportunity.py
+/workspace/QuantLab/quantlab/strategy/portfolio.py
+/workspace/QuantLab/quantlab/strategy/risk.py
+/workspace/QuantLab/quantlab/strategy/risk_policy.py
+/workspace/QuantLab/quantlab/strategy/risk_trades.py
+/workspace/QuantLab/quantlab/strategy/scoring.py
+/workspace/QuantLab/quantlab/universe/__init__.py
+/workspace/QuantLab/quantlab/universe/d1_masks.py
+/workspace/QuantLab/quantlab/universe/mask.py
+/workspace/QuantLab/quantlab/v2_eng_smoke.py
+/workspace/QuantLab/quantlab/v2_live_dryrun.py
+/workspace/QuantLab/quantlab/v2_proto_smoke.py
+/workspace/QuantLab/quantlab/v2_schemas.py
+/workspace/QuantLab/quantlab/v2_skeleton_smoke.py
+/workspace/QuantLab/quantlab/v2_smoke.py
+/workspace/QuantLab/quantlab/v2_strategy_smoke.py
+/workspace/QuantLab/quantlab/webapp/__init__.py
+/workspace/QuantLab/quantlab/webapp/app.py
+/workspace/QuantLab/research/adj_price.py
+/workspace/QuantLab/research/ai_debate_memory_runner.py
+/workspace/QuantLab/research/b4_paper_extend.py
+/workspace/QuantLab/research/capacity_adv_paper_extend.py
+/workspace/QuantLab/research/g1g5_capacity_adv_weights.py
+/workspace/QuantLab/research/g1g5_d1_val_resid_weights.py
+/workspace/QuantLab/research/g1g5_earnings_event_weights.py
+/workspace/QuantLab/research/g1g5_equity_incentive_weights.py
+/workspace/QuantLab/research/g1g5_expand_g6.py
+/workspace/QuantLab/research/g1g5_insider_increase_weights.py
+/workspace/QuantLab/research/g1g5_low_turnover_weights.py
+/workspace/QuantLab/research/g1g5_moneyflow_resid_weights.py
+/workspace/QuantLab/research/g1g5_nontextbook_weights.py
+/workspace/QuantLab/research/g1g5_wiring.py
+/workspace/QuantLab/research/g1g5_x2_panel_stitch.py
+/workspace/QuantLab/research/s6_paper_extend.py
+# end

@@ -1,0 +1,975 @@
+{
+ "driver": "/tmp/qd1018/v31/dry_drv31.py",
+ "driver_sha256": "f99dd11aa26f611aca382f98b00ea14fdbcafc99960c8259102e421f02281b0a",
+ "fallback": "/tmp/qd1018/v31/routine_fallback_v1.py",
+ "fallback_sha256": "559d1e017b1c53b1dd1cdffdc0571fc1d33a6157ea4437735421cc3fab271384",
+ "started": "2026-10-18T13:33:13-04:00",
+ "tests": [
+  {
+   "name": "T01_parse_ok_rejects",
+   "ok": true,
+   "errors": {
+    "good": [],
+    "inline": [
+     "L1 ok_id 含行内注释"
+    ],
+    "dup": [
+     "L2 date 重复"
+    ],
+    "colon": [
+     "L1 无法解析（只接受 key=value）"
+    ],
+    "draft": [
+     "全文含 DRAFT 字样"
+    ],
+    "nonascii": [
+     "非 ASCII"
+    ],
+    "cr": [
+     "含 CR（只接受 LF）"
+    ],
+    "unknown": [
+     "L1 未知键 foo_bar"
+    ]
+   }
+  },
+  {
+   "name": "T02_check_ok_required_keys",
+   "ok": true,
+   "results": {
+    "full": null,
+    "consumed": ".ok 路径含 /_consumed/：/tmp/qd_drv6_vv_yyl1i/oks/_consumed/ARCH_consumed.ok",
+    "missing_sha_relay_health": ".ok 缺必填键 ['sha_relay_health']",
+    "tier1_old_b630": ".ok sha_tier1_pull 与钉值 5b70dfed08a2 不符",
+    "signed_by_wrong": ".ok signed_by='Someone'，须为 'QuantLab Arch'",
+    "issued_future": "issued_at 缺时区或晚于当前时刻",
+    "live_true": ".ok live='true'，须为 'false'",
+    "budget_bad": "call_b_budget_min 不是整数",
+    "source_relay_on": null,
+    "newkeys_absent": null,
+    "newkeys_true": null,
+    "newkeys_false": null,
+    "newkeys_True": "allow_relay_partial_20261019 只能是 true / false",
+    "newkeys_one": "allow_relay_partial_20261019 只能是 true / false",
+    "newkeys_yes": "allow_relay_partial_20261019 只能是 true / false"
+   },
+   "source_relay_after_on": true
+  },
+  {
+   "name": "T03_expiry_rechecked",
+   "ok": true,
+   "expired": ".ok expires_et 已过期（callB）",
+   "valid": null
+  },
+  {
+   "name": "T04_no_double_interpreter",
+   "ok": true,
+   "assert_msg": "run_tool 参数不得以解释器开头：['/usr/bin/python3', 'x.py']"
+  },
+  {
+   "name": "T05_last_date_two_formats",
+   "ok": true,
+   "norm": {
+    "20261019": "20261019",
+    "2026-10-19": "20261019",
+    "2026-10-19T05:40:00-04:00": "20261019",
+    "20261016": "20261016",
+    "null": null,
+    "bad": null
+   },
+   "yyyymmdd": [],
+   "iso": [],
+   "old_20261016": [
+    "REQUIRED etf_daily_adj last_date='20261016' ≠ 20261019",
+    "REQUIRED daily_ohlcv_raw_pit last_date='20261016' ≠ 20261019",
+    "REQUIRED daily_basic last_date='20261016' ≠ 20261019",
+    "REQUIRED mid_large_universe last_date='20261016' ≠ 20261019",
+    "REQUIRED etf510300 last_date='20261016' ≠ 20261019",
+    "REQUIRED asof_ts last_date='20261016' ≠ 20261019"
+   ]
+  },
+  {
+   "name": "T06_stale_summary_fails",
+   "ok": true,
+   "ok_case": [],
+   "skipped": [
+    "summary steps.daily_pull status='ok'（或含中转快速失败）"
+   ],
+   "stale": [
+    "summary finished='2026-10-18T22:33:16+08:00' 不在 T6old 窗口内（旧记录）",
+    "summary mtime 不在 T6old 窗口内（旧记录）"
+   ]
+  },
+  {
+   "name": "T07_hsgt_rc2_is_partial",
+   "ok": true,
+   "remaining0": null,
+   "remaining3": "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：('0', '3', '3', '20261016')"
+  },
+  {
+   "name": "T08_check_only_exit_10",
+   "ok": true,
+   "exit_code": 10
+  },
+  {
+   "name": "T09_guarded_T_or_exited_never_signaled",
+   "ok": true,
+   "running": "343433（/bin/sleep）state=R，须为 T 或已退出",
+   "stopped": null,
+   "signal_result": "refused"
+  },
+  {
+   "name": "T10_tool_timeout",
+   "ok": true,
+   "msg": "faketool_sleep.py 超时 2 秒",
+   "elapsed_s": 2.5,
+   "record": [
+    {
+     "tool": "/tmp/qd_drv6_vv_yyl1i/faketool_sleep.py",
+     "timeout_s": 2,
+     "at": "2026-10-18T13:33:19-04:00",
+     "term": "sent"
+    }
+   ]
+  },
+  {
+   "name": "T11_stop_order_freeze_then_deepest_first",
+   "ok": true,
+   "steps": [
+    [
+     "SIGSTOP_PARENT",
+     343451,
+     "sent"
+    ],
+    [
+     "SIGSTOP",
+     343458,
+     "gone"
+    ],
+    [
+     "SIGSTOP",
+     343457,
+     "refused"
+    ],
+    [
+     "SIGSTOP",
+     343455,
+     "sent"
+    ],
+    [
+     "SIGSTOP",
+     343452,
+     "sent"
+    ],
+    [
+     "TERM_KILL",
+     343458,
+     "gone"
+    ],
+    [
+     "TERM_KILL",
+     343457,
+     "refused"
+    ],
+    [
+     "TERM_KILL",
+     343455,
+     "killed"
+    ],
+    [
+     "TERM_KILL",
+     343452,
+     "term_ok"
+    ],
+    [
+     "SIGKILL_PARENT",
+     343451,
+     "sent"
+    ]
+   ],
+   "tree": [
+    {
+     "pid": 343458,
+     "ppid": 343452,
+     "cmd": ""
+    },
+    {
+     "pid": 343457,
+     "ppid": 343452,
+     "cmd": "/bin/sleep 301"
+    },
+    {
+     "pid": 343455,
+     "ppid": 343452,
+     "cmd": "/usr/bin/python3 scripts/acquire/grand_ignore_term.py"
+    },
+    {
+     "pid": 343452,
+     "ppid": 343451,
+     "cmd": "/usr/bin/python3 scripts/acquire/tier1_pull.py"
+    }
+   ],
+   "rc": -9,
+   "reason_code": "MAX_RUN",
+   "events": [
+    "2026-10-18T13:33:29-04:00 SIGNAL SIGSTOP pid=343451 ppid=343399",
+    "2026-10-18T13:33:29-04:00 SIGNAL skip pid=343458 已退出或 Z",
+    "2026-10-18T13:33:29-04:00 SIGNAL refuse pid=343457 cmd='/bin/sleep 301' cmdline 不含 ('scripts/acquire/',)（不发信号）",
+    "2026-10-18T13:33:29-04:00 SIGNAL SIGSTOP pid=343455 ppid=343452",
+    "2026-10-18T13:33:29-04:00 SIGNAL SIGSTOP pid=343452 ppid=343451",
+    "2026-10-18T13:33:29-04:00 SIGNAL skip pid=343458 已退出或 Z",
+    "2026-10-18T13:33:29-04:00 SIGNAL refuse pid=343457 cmd='/bin/sleep 301' cmdline 不含 ('scripts/acquire/',)（不发信号）",
+    "2026-10-18T13:33:29-04:00 SIGNAL SIGTERM pid=343455 ppid=343452",
+    "2026-10-18T13:33:29-04:00 SIGNAL SIGCONT pid=343455 ppid=343452",
+    "2026-10-18T13:33:39-04:00 SIGNAL SIGKILL pid=343455 ppid=343452",
+    "2026-10-18T13:33:39-04:00 SIGNAL SIGTERM pid=343452 ppid=343451",
+    "2026-10-18T13:33:39-04:00 SIGNAL SIGCONT pid=343452 ppid=343451",
+    "2026-10-18T13:33:40-04:00 SIGNAL SIGKILL pid=343451 ppid=343399"
+   ]
+  },
+  {
+   "name": "T12_unmarked_child_is_residual_FAILED",
+   "ok": true,
+   "residual": [
+    {
+     "pid": 343457,
+     "result": "refused",
+     "cmd": "/bin/sleep 301",
+     "state": "S"
+    }
+   ],
+   "note": "无标记的 /bin/sleep 不发信号，记 residual；main 中 residual → 不重试、不起 call B、FAILED"
+  },
+  {
+   "name": "T13_orphan_ppid1_log_only",
+   "ok": true,
+   "orphans": {
+    "acted": [
+     {
+      "pid": 343457,
+      "ppid": 1,
+      "cmdline": "/bin/sleep 301",
+      "action": "unmarked_seen_alive_not_signaled"
+     }
+    ],
+    "logged_only": [
+     {
+      "pid": 343459,
+      "ppid": 1,
+      "cmdline": "/usr/bin/python3 scripts/acquire/orphan_launch.py",
+      "action": "logged_only"
+     }
+    ]
+   }
+  },
+  {
+   "name": "T14_refuse_and_wait_timeout_HANG",
+   "ok": true,
+   "steps": [
+    [
+     "SIGSTOP_PARENT",
+     343573,
+     "refused"
+    ],
+    [
+     "SIGKILL_PARENT",
+     343573,
+     "refused"
+    ]
+   ]
+  },
+  {
+   "name": "T15_daily_pull_hang_hard_stop_FAILED_calendar_restored",
+   "ok": true,
+   "exit_code": 1,
+   "markers": [
+    "nightly_20261019.FAILED.json"
+   ],
+   "reason_codes": [
+    "MAX_RUN"
+   ],
+   "calendar": [
+    {
+     "tag": "a1",
+     "at": "2026-10-18T13:34:11-04:00",
+     "sha_before_restore": "c3f17d12a10b9f7cbd1f109ea679a74e86234ee844df43898467b546b5a7661a",
+     "post_copy": {
+      "path": "/tmp/qd_drv6_e7vbbno3/_recovery/data/nightly_20261019/run_20261018T133350/trade_cal.parquet.post_a1",
+      "sha256": "c3f17d12a10b9f7cbd1f109ea679a74e86234ee844df43898467b546b5a7661a"
+     },
+     "compare_rc": 0,
+     "restore_rc": 1,
+     "native": {
+      "ok": true,
+      "at": "2026-10-18T13:34:11-04:00"
+     },
+     "sha_after": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+     "sha_after_recheck": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+     "recheck_s": 1,
+     "changed": true
+    }
+   ],
+   "fail_reasons": [
+    "daily_pull 第 1 次失败 reason_code=MAX_RUN（profile=strict；只有 relaxed 的 MAX_RUN 可重试）",
+    "call B 未起：daily_pull 未成功或被停"
+   ],
+   "env_line": [
+    "ENV TSPRO_RELAY_TIMEOUT=115 SOURCE=None TIER1_SKIP_CAL_REFRESH=1"
+   ],
+   "cal_skip_evidence": [
+    {
+     "log": "/tmp/qd_drv6_e7vbbno3/logs/nightly/20261019_daily_pull.log",
+     "found": true,
+     "at": "2026-10-18T13:34:11-04:00"
+    }
+   ],
+   "elapsed_s": 21.7,
+   "root": "/tmp/qd_drv6_e7vbbno3"
+  },
+  {
+   "name": "T16_driver_SIGTERM_FAILED_exit11_calendar_restored",
+   "ok": true,
+   "exit_code": 11,
+   "signal": "SIGTERM 344629",
+   "markers": [
+    "nightly_20261019.FAILED.json"
+   ],
+   "reason_codes": [
+    "SIGNAL"
+   ],
+   "stop": [
+    [
+     "SIGSTOP_PARENT",
+     344631,
+     "sent"
+    ],
+    [
+     "SIGSTOP",
+     344643,
+     "sent"
+    ],
+    [
+     "TERM_KILL",
+     344643,
+     "killed"
+    ],
+    [
+     "SIGKILL_PARENT",
+     344631,
+     "sent"
+    ]
+   ],
+   "elapsed_s": 17.6,
+   "root": "/tmp/qd_drv6_js8xjswt"
+  },
+  {
+   "name": "T17_callB_timeout_FAILED",
+   "ok": true,
+   "exit_code": 1,
+   "markers": [
+    "nightly_20261019.FAILED.json"
+   ],
+   "reason_codes": [
+    "CALLB_TIMEOUT"
+   ],
+   "callb_stop": [
+    [
+     "SIGSTOP_PARENT",
+     346186,
+     "sent"
+    ],
+    [
+     "SIGSTOP",
+     346188,
+     "sent"
+    ],
+    [
+     "SIGSTOP",
+     346187,
+     "sent"
+    ],
+    [
+     "TERM_KILL",
+     346188,
+     "term_ok"
+    ],
+    [
+     "TERM_KILL",
+     346187,
+     "term_ok"
+    ],
+    [
+     "SIGKILL_PARENT",
+     346186,
+     "sent"
+    ]
+   ],
+   "fail_reasons": [
+    "call B 被停 reason_code=CALLB_TIMEOUT（callB 时间盒到 2026-10-18T13:34:46-04:00）",
+    "summary finished='2026-10-19T01:34:31.840290+08:00' 不在 callB 窗口内（旧记录）",
+    "summary mtime 不在 callB 窗口内（旧记录）",
+    "summary steps.index_pull status=None（或含中转快速失败）",
+    "summary steps.adj_factor status=None（或含中转快速失败）",
+    "summary steps.bars status=None（或含中转快速失败）",
+    "summary steps.daily_basic status=None（或含中转快速失败）",
+    "summary steps.index status=None（或含中转快速失败）",
+    "summary steps.etf_daily_adj status=None（或含中转快速失败）",
+    "summary steps.eng_panels status=None（或含中转快速失败）",
+    "summary steps.mid_large_universe status=None（或含中转快速失败）",
+    "summary steps.events status=None（或含中转快速失败）",
+    "summary steps.hsgt status=None（或含中转快速失败）",
+    "summary steps.cyq status=None（或含中转快速失败）",
+    "summary steps.tier3 status=None（或含中转快速失败）",
+    "summary steps.bundle status=None（或含中转快速失败）",
+    "summary steps.freshness status=None（或含中转快速失败）",
+    "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：None",
+    "daily_update_status 读不到 FileNotFoundError(2, 'No such file or directory')",
+    "daily_update_status.finished_at=None 不晚于 call B 起跑（旧记录）",
+    "daily_update_status.status=None",
+    "target_trade_date=None ≠ 20261019",
+    "REQUIRED etf_daily_adj last_date=None ≠ 20261019",
+    "REQUIRED daily_ohlcv_raw_pit last_date=None ≠ 20261019",
+    "REQUIRED daily_basic last_date=None ≠ 20261019",
+    "REQUIRED mid_large_universe last_date=None ≠ 20261019",
+    "REQUIRED etf510300 last_date=None ≠ 20261019",
+    "REQUIRED asof_ts last_date=None ≠ 20261019",
+    "freshness generated_at 不晚于 call B 起跑（旧记录）",
+    "freshness overall=None"
+   ],
+   "elapsed_s": 18.2,
+   "root": "/tmp/qd_drv6_7xu9crjj"
+  },
+  {
+   "name": "T18_RSS_stop_not_retried",
+   "ok": true,
+   "exit_code": 1,
+   "reason_codes": [
+    "RSS"
+   ],
+   "attempts": 1,
+   "fail_reasons": [
+    "daily_pull 第 1 次失败 reason_code=RSS（profile=relaxed；只有 relaxed 的 MAX_RUN 可重试）",
+    "call B 未起：daily_pull 未成功或被停"
+   ],
+   "root": "/tmp/qd_drv6_dz2s0l34"
+  },
+  {
+   "name": "T19_driver_SIGKILL_routine_fallback",
+   "ok": true,
+   "driver_rc": -9,
+   "signal": "SIGKILL 346481",
+   "markers_after_kill": [],
+   "calendar_bad_after_kill": true,
+   "fallback1_rc": 6,
+   "fallback1_pgrep": " daily_pull\",\n    \"pattern\": \"(^|[ /])([r]un_nightly_v1|[n]ightly_update|[t]ier1_pull)\\\\.py( |$)\"\n   },\n   {\n    \"pid\": 346484,\n    \"state\": \"S\",\n    \"cmd\": \"346484 /usr/bin/python3 scripts/acquire/tier1_pull.py extend 20261019\",\n    \"pattern\": \"(^|[ /])([r]un_nightly_v1|[n]ightly_update|[t]ier1_pull)\\\\.py( |$)\"\n   },\n   {\n    \"pid\": 94322,\n    \"state\": \"S\",\n    \"cmd\": \"94322 python3 scripts/acquire/remaining_after_stk_surv.py\",\n    \"pattern\": \"(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\\\.py( |$)\"\n   }\n  ]\n },\n \"action\": \"busy_no_action\",\n \"exit\": 6,\n \"finished_et\": \"2026-10-18T13:34:59-04:00\"\n}\n",
+   "orphans_killed_by_test": [
+    [
+     346483,
+     "/usr/bin/python3 scripts/nightly_update.py --date 20261019 --steps daily_pull",
+     "S"
+    ],
+    [
+     346484,
+     "/usr/bin/python3 scripts/acquire/tier1_pull.py extend 20261019",
+     "S"
+    ]
+   ],
+   "fallback2_rc": 1,
+   "marker": {
+    "schema": "quantlab.v2.nightly_marker.v1",
+    "status": "FAILED",
+    "writer": "routine_fallback",
+    "reason": "driver_killed",
+    "date": "20261019",
+    "trade_cal_sha256_before": "c3f17d12a10b9f7cbd1f109ea679a74e86234ee844df43898467b546b5a7661a",
+    "trade_cal_sha256_after": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+    "trade_cal_pin": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+    "restore": {
+     "backup": "/tmp/qd_drv6_zptjz752/_recovery/data/nightly_20261019/run_20261018T133453/trade_cal.parquet.141078fa",
+     "ok": true,
+     "at": "2026-10-18T13:35:00-04:00"
+    },
+    "run_evidence": [
+     {
+      "run_dir": "/tmp/qd_drv6_zptjz752/_recovery/data/nightly_20261019/run_20261018T133453",
+      "stamp_et": "2026-10-18T13:34:53-04:00"
+     }
+    ],
+    "pgrep": {
+     "patterns": [
+      "(^|[ /])([r]un_nightly_v1|[n]ightly_update|[t]ier1_pull)\\.py( |$)",
+      "(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\.py( |$)",
+      "[i]mport tier1_materialize"
+     ],
+     "blocking": [],
+     "excluded": [
+      {
+       "pid": 94322,
+       "state": "S",
+       "cmd": "94322 python3 scripts/acquire/remaining_after_stk_surv.py",
+       "pattern": "(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\.py( |$)",
+       "why": "测试模式：cwd 不在 /tmp/，不计入"
+      }
+     ],
+     "matched": [
+      {
+       "pid": 94322,
+       "state": "S",
+       "cmd": "94322 python3 scripts/acquire/remaining_after_stk_surv.py",
+       "pattern": "(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\.py( |$)"
+      }
+     ]
+    },
+    "live": false,
+    "promotion_approved": false,
+    "written_at_et": "2026-10-18T13:35:00-04:00"
+   },
+   "root": "/tmp/qd_drv6_zptjz752"
+  },
+  {
+   "name": "T20_fallback_no_run_evidence_exit7_no_marker",
+   "ok": true,
+   "no_run_dir_rc": 7,
+   "old_run_dir_rc": 7,
+   "fresh_run_dir_rc": 1,
+   "markers_fresh": [
+    "nightly_20261019.FAILED.json"
+   ],
+   "out_a": "ced13bf027467b9f4\",\n \"restore\": null,\n \"sha_after\": \"06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4\",\n \"run_evidence\": {\n  \"issued_at\": \"2026-10-18T13:30:00-04:00\",\n  \"run_dirs_after_issued\": []\n },\n \"action\": \"no_run_evidence\",\n \"exit\": 7,\n \"finished_et\": \"2026-10-18T13:35:00-04:00\",\n \"receipt\": \"/tmp/qd_drv6_z4cpx6q0/here/routine_fallback_receipt_20261018T133500_346534.json\"\n}\n"
+  },
+  {
+   "name": "T21_fallback_orphan_step_script_exit6_and_guarded_T_excluded",
+   "ok": true,
+   "orphan_pid": [
+    346547
+   ],
+   "orphan_rc": 6,
+   "guarded_S_rc": 6,
+   "guarded_T_rc": 1,
+   "guarded_excluded": [
+    346570
+   ],
+   "out_orphan": "\"\n   }\n  ],\n  \"matched\": [\n   {\n    \"pid\": 94322,\n    \"state\": \"R\",\n    \"cmd\": \"94322 python3 scripts/acquire/remaining_after_stk_surv.py\",\n    \"pattern\": \"(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\\\.py( |$)\"\n   },\n   {\n    \"pid\": 346547,\n    \"state\": \"S\",\n    \"cmd\": \"346547 /usr/bin/python3 scripts/acquire/tier3_daily_snapshot.py\",\n    \"pattern\": \"(^|[ /])[s]cripts/acquire/[A-Za-z0-9_]+\\\\.py( |$)\"\n   }\n  ]\n },\n \"action\": \"busy_no_action\",\n \"exit\": 6,\n \"finished_et\": \"2026-10-18T13:35:01-04:00\"\n}\n"
+  },
+  {
+   "name": "T22_guarded_T_parent_with_S_child_fails",
+   "ok": true,
+   "child": [
+    346634
+   ],
+   "parent_T_child_S": "346633（t22_parent.py）的后代 pid=346634 state=S，整棵树须为 T / Z / 不存在（Arch P1-3）",
+   "tree": [
+    {
+     "pid": 346634,
+     "state": "S",
+     "cmd": "/bin/sleep 300"
+    }
+   ],
+   "all_T": null
+  },
+  {
+   "name": "T23a_callB_ppid1_orphan_FAILED",
+   "ok": true,
+   "exit_code": 1,
+   "reason_codes": [
+    "ORPHAN"
+   ],
+   "orphans": {
+    "acted": [],
+    "logged_only": [
+     {
+      "pid": 346739,
+      "ppid": 1,
+      "cmdline": "/usr/bin/python3 scripts/acquire/orphan_b.py",
+      "action": "logged_only"
+     }
+    ]
+   },
+   "killed_by_test": [
+    [
+     346739,
+     "/usr/bin/python3 scripts/acquire/orphan_b.py",
+     "S"
+    ]
+   ],
+   "fail_reasons": [
+    "callB 后有 PPID=1 可疑孤儿 [346739]（只记录、不发信号；判 FAILED）",
+    "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：None",
+    "daily_update_status 读不到 FileNotFoundError(2, 'No such file or directory')",
+    "daily_update_status.finished_at=None 不晚于 call B 起跑（旧记录）",
+    "daily_update_status.status=None",
+    "target_trade_date=None ≠ 20261019",
+    "REQUIRED etf_daily_adj last_date=None ≠ 20261019",
+    "REQUIRED daily_ohlcv_raw_pit last_date=None ≠ 20261019",
+    "REQUIRED daily_basic last_date=None ≠ 20261019",
+    "REQUIRED mid_large_universe last_date=None ≠ 20261019",
+    "REQUIRED etf510300 last_date=None ≠ 20261019",
+    "REQUIRED asof_ts last_date=None ≠ 20261019",
+    "freshness generated_at 不晚于 call B 起跑（旧记录）",
+    "freshness overall=None"
+   ],
+   "root": "/tmp/qd_drv6_08pnw43p"
+  },
+  {
+   "name": "T23b_final_sha_mismatch_restore_then_FAILED",
+   "ok": true,
+   "exit_code": 1,
+   "reason_codes": [
+    "FINAL_CAL_MISMATCH"
+   ],
+   "final_calendar": [
+    {
+     "tag": "final",
+     "at": "2026-10-18T13:35:32-04:00",
+     "sha_before_restore": "3ac1641bf8a1b269b04418c92fb7065d801720422383c50a0987fbd333c3792d",
+     "post_copy": {
+      "path": "/tmp/qd_drv6_32eia1a9/_recovery/data/nightly_20261019/run_20261018T133520/trade_cal.parquet.post_final",
+      "sha256": "3ac1641bf8a1b269b04418c92fb7065d801720422383c50a0987fbd333c3792d"
+     },
+     "compare_rc": 0,
+     "restore_rc": 1,
+     "native": {
+      "ok": true,
+      "at": "2026-10-18T13:35:32-04:00"
+     },
+     "sha_after": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+     "sha_after_recheck": "06705ab0d3046b223196d69bde02215a3ab766377a580ccced13bf027467b9f4",
+     "recheck_s": 1,
+     "changed": true
+    }
+   ],
+   "root": "/tmp/qd_drv6_32eia1a9"
+  },
+  {
+   "name": "T23c_F3_callB_rc_nonzero_FAILED",
+   "ok": true,
+   "exit_code": 1,
+   "fail_reasons": [
+    "call B rc=1",
+    "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：None",
+    "daily_update_status 读不到 FileNotFoundError(2, 'No such file or directory')",
+    "daily_update_status.finished_at=None 不晚于 call B 起跑（旧记录）",
+    "daily_update_status.status=None",
+    "target_trade_date=None ≠ 20261019",
+    "REQUIRED etf_daily_adj last_date=None ≠ 20261019",
+    "REQUIRED daily_ohlcv_raw_pit last_date=None ≠ 20261019",
+    "REQUIRED daily_basic last_date=None ≠ 20261019",
+    "REQUIRED mid_large_universe last_date=None ≠ 20261019",
+    "REQUIRED etf510300 last_date=None ≠ 20261019",
+    "REQUIRED asof_ts last_date=None ≠ 20261019",
+    "freshness generated_at 不晚于 call B 起跑（旧记录）",
+    "freshness overall=None"
+   ],
+   "root": "/tmp/qd_drv6_o2uvnh1y"
+  },
+  {
+   "name": "T24_ok_new_keys_bool_strict",
+   "ok": true,
+   "results": {
+    "absent": {
+     "err": null,
+     "relay_partial": false,
+     "hsgt_empty_warn": false
+    },
+    "true": {
+     "err": null,
+     "relay_partial": true,
+     "hsgt_empty_warn": true
+    },
+    "false": {
+     "err": null,
+     "relay_partial": false,
+     "hsgt_empty_warn": false
+    },
+    "True": {
+     "err": "allow_relay_partial_20261019 只能是 true / false",
+     "relay_partial": false,
+     "hsgt_empty_warn": false
+    },
+    "one": {
+     "err": "allow_relay_partial_20261019 只能是 true / false",
+     "relay_partial": false,
+     "hsgt_empty_warn": false
+    },
+    "yes": {
+     "err": "allow_relay_partial_20261019 只能是 true / false",
+     "relay_partial": false,
+     "hsgt_empty_warn": false
+    }
+   }
+  },
+  {
+   "name": "T25_relay_partial_key_true_false_and_non_whitelisted_skipped_fails",
+   "ok": true,
+   "key_true": {
+    "fails": [],
+    "warnings": [
+     {
+      "step": "cyq",
+      "date": "20261019",
+      "actual_rows": 0,
+      "reason": "skipped"
+     },
+     {
+      "step": "tier3",
+      "date": "20261019",
+      "actual_rows": 0,
+      "reason": "relay_partial"
+     }
+    ]
+   },
+   "key_false": {
+    "fails": [
+     "summary steps.cyq status='partial'（或含中转快速失败）",
+     "summary steps.tier3 status='partial'（或含中转快速失败）"
+    ]
+   },
+   "events_skipped_key_true": [
+    "summary steps.events status='partial'（或含中转快速失败）"
+   ],
+   "daily_basic_partial_key_true": [
+    "summary steps.daily_basic status='partial'（或含中转快速失败）"
+   ]
+  },
+  {
+   "name": "T26_hsgt_source_empty_key_true_false",
+   "ok": true,
+   "key_true": {
+    "err": null,
+    "warnings": [
+     {
+      "step": "hsgt",
+      "date": "20261019",
+      "actual_rows": 0,
+      "reason": "hsgt_source_empty"
+     }
+    ]
+   },
+   "key_false": "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：('1', '0', '1', '20261016')",
+   "fail_gt0": "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：('0', '1', '1', '20261016')",
+   "count_mismatch": "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：('1', '0', '2', '20261016')",
+   "abort": "hsgt 本次日志无 remaining=0 的 CHUNK DONE（rc=2 / partial 视同失败）：('1', '0', '1', '20261016')"
+  },
+  {
+   "name": "T27_marker_schema_F1_F2_F4",
+   "ok": true,
+   "warn_marker": {
+    "status": "OK",
+    "warnings": [
+     {
+      "step": "cyq",
+      "date": "20261019",
+      "actual_rows": 0,
+      "reason": "skipped"
+     },
+     {
+      "step": "tier3",
+      "date": "20261019",
+      "actual_rows": 12,
+      "reason": "relay_partial"
+     }
+    ],
+    "ok_flags": {
+     "allow_relay_partial_20261019": true,
+     "allow_hsgt_source_empty_warn_20261019": false
+    },
+    "call_b_steps": [
+     {
+      "step": "cyq",
+      "kind": "call_b_step",
+      "status": "WARN",
+      "sec": 0,
+      "warn_reason": "skipped",
+      "nightly_status": "partial",
+      "skipped": "RELAY_DOWN fast-fail"
+     },
+     {
+      "step": "tier3",
+      "kind": "call_b_step",
+      "status": "WARN",
+      "sec": 5,
+      "warn_reason": "relay_partial",
+      "nightly_status": "partial"
+     },
+     {
+      "step": "bars",
+      "kind": "call_b_step",
+      "status": "ok",
+      "sec": 9
+     }
+    ]
+   },
+   "empty_marker": {
+    "warnings": [],
+    "ok_flags": {
+     "allow_relay_partial_20261019": false,
+     "allow_hsgt_source_empty_warn_20261019": false
+    }
+   },
+   "non_whitelisted_skipped": {
+    "status": "FAILED",
+    "steps": [
+     {
+      "step": "bars",
+      "kind": "call_b_step",
+      "status": "partial not_run",
+      "sec": 9
+     }
+    ]
+   }
+  },
+  {
+   "name": "T28_required_incomplete_still_FAILED_with_keys_true",
+   "ok": true,
+   "fails": [
+    "REQUIRED etf_daily_adj last_date='20261016' ≠ 20261019",
+    "REQUIRED daily_ohlcv_raw_pit last_date='20261016' ≠ 20261019",
+    "REQUIRED daily_basic last_date='20261016' ≠ 20261019",
+    "REQUIRED mid_large_universe last_date='20261016' ≠ 20261019",
+    "REQUIRED etf510300 last_date='20261016' ≠ 20261019",
+    "REQUIRED asof_ts last_date='20261016' ≠ 20261019"
+   ]
+  }
+ ],
+ "tmp_dirs": [
+  "/tmp/qd_drv6_vv_yyl1i",
+  "/tmp/qd_drv6_e7vbbno3",
+  "/tmp/qd_drv6_js8xjswt",
+  "/tmp/qd_drv6_7xu9crjj",
+  "/tmp/qd_drv6_dz2s0l34",
+  "/tmp/qd_drv6_zptjz752",
+  "/tmp/qd_drv6_z4cpx6q0",
+  "/tmp/qd_drv6_ie_qq4t1",
+  "/tmp/qd_drv6_ivo7_pjz",
+  "/tmp/qd_drv6_8h459_tj",
+  "/tmp/qd_drv6_bcb8u90f",
+  "/tmp/qd_drv6_08pnw43p",
+  "/tmp/qd_drv6_32eia1a9",
+  "/tmp/qd_drv6_o2uvnh1y"
+ ],
+ "cleanup": [
+  {
+   "tag": "T11",
+   "killed_by_test": [
+    [
+     343457,
+     "/bin/sleep 301",
+     "S"
+    ],
+    [
+     343459,
+     "/usr/bin/python3 scripts/acquire/orphan_launch.py",
+     "S"
+    ]
+   ],
+   "after": []
+  },
+  {
+   "tag": "T14",
+   "killed_by_test": [
+    [
+     343573,
+     "/usr/bin/python3 scripts/nightly_update.py --date 20261019 --steps daily_pull",
+     "S"
+    ]
+   ],
+   "after": []
+  },
+  {
+   "tag": "T15",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T16",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T17",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T18",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T19",
+   "killed_by_test": [
+    [
+     346483,
+     "/usr/bin/python3 scripts/nightly_update.py --date 20261019 --steps daily_pull",
+     "S"
+    ],
+    [
+     346484,
+     "/usr/bin/python3 scripts/acquire/tier1_pull.py extend 20261019",
+     "S"
+    ]
+   ],
+   "after": []
+  },
+  {
+   "tag": "T21a",
+   "killed_by_test": [
+    [
+     346547,
+     "/usr/bin/python3 scripts/acquire/tier3_daily_snapshot.py",
+     "S"
+    ]
+   ],
+   "after": []
+  },
+  {
+   "tag": "T21b",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T22",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T23a",
+   "killed_by_test": [
+    [
+     346739,
+     "/usr/bin/python3 scripts/acquire/orphan_b.py",
+     "S"
+    ]
+   ],
+   "after": []
+  },
+  {
+   "tag": "T23b",
+   "killed_by_test": [],
+   "after": []
+  },
+  {
+   "tag": "T23c",
+   "killed_by_test": [],
+   "after": []
+  }
+ ],
+ "all_pass": true,
+ "leftover": {
+  "/tmp/qd_drv6_vv_yyl1i": [],
+  "/tmp/qd_drv6_e7vbbno3": [],
+  "/tmp/qd_drv6_js8xjswt": [],
+  "/tmp/qd_drv6_7xu9crjj": [],
+  "/tmp/qd_drv6_dz2s0l34": [],
+  "/tmp/qd_drv6_zptjz752": [],
+  "/tmp/qd_drv6_z4cpx6q0": [],
+  "/tmp/qd_drv6_ie_qq4t1": [],
+  "/tmp/qd_drv6_ivo7_pjz": [],
+  "/tmp/qd_drv6_8h459_tj": [],
+  "/tmp/qd_drv6_bcb8u90f": [],
+  "/tmp/qd_drv6_08pnw43p": [],
+  "/tmp/qd_drv6_32eia1a9": [],
+  "/tmp/qd_drv6_o2uvnh1y": []
+ },
+ "finished": "2026-10-18T13:35:56-04:00"
+}

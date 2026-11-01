@@ -1,0 +1,13 @@
+PASS manual_review 4 条原始条目都在
+PASS manual_review 每条有 created_et
+PASS TokenPost 观察项保留
+PASS events 保留
+PASS weekly_report 保留
+PASS 电子人工 -6（强）重新套用
+PASS 电子输出写明机器分和人工分
+PASS render_extra 可见覆盖
+PASS 按条目去重（重复合并不增加）
+PASS expires_et 已过期的丢弃
+PASS 本轮有新 events 时用新值
+
+11/11 passed

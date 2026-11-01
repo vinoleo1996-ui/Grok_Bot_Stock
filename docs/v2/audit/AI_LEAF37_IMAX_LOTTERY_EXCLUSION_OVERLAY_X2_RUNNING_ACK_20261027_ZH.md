@@ -1,0 +1,24 @@
+# AI · 叶37 IMAX Lottery Exclusion Overlay X2 RUNNING_ACK
+
+- status: IN_WINDOW_EXECUTE_RUNNING
+- ET_TS: `20261027_174829` America/New_York
+- OUT: `output/ai_factory/_leaf37_imax_lottery/20261027_174829`
+- prelaunch_now: `2026-10-27 17:48:49 EDT`
+- MATCH pins:
+  - `.ok` `output/ai_factory/ARCH_RUN_AUTH_LEAF37_IMAX_LOTTERY_EXCLUSION_OVERLAY_X2_HILIQ.ok` sha8=`4096d401` expect=`4096d401` MATCH（∉ forbid30）
+  - QUIET `output/loop/RESEARCH_QUIET.lock` sha8=`beb7dc8c` expect=`beb7dc8c` holder=`leaf37_IMAX_LOTTERY_EXCLUSION_OVERLAY_X2`（禁 lift）
+  - SIGNED sha8=`953e470c` expect=`953e470c` MATCH
+  - script sha8=`108aba8f` expect=`108aba8f` UNCHANGED
+  - Arch 审 sha8=`8d8ae2f3` PASS_WC
+  - FROZEN=`c5927f1b` / PIN=`e01be34c`
+  - leaf33=`afbbe7e7` / leaf34=`482009dc` / leaf35=`434ff42c` UNCHANGED；叶36 HOLD 不复开
+- window: `17:33`→`19:03` expires `19:07` ET；prelaunch 仍 IN_WINDOW
+- pgrep kline/export_static/snapshot/gen: EMPTY
+- MemAvailable: `MemAvailable:   13197568 kB`
+- rss_limit_mb: 1500（禁抬）；peak_proof: REQUIRED；禁 `--no-overlap-report`
+- C3=B IMAX_proxy / full_residual_e_id=false / APPROX；PRIMARY=mask-only top_q=0.20；C11≠叶24
+- dry-compile-only: exit 0
+- sampler_prefix: `/tmp/quantlab_leaf37_imax_lottery_`
+- CLI: `PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf37_imax_lottery_exclusion_overlay_alpha_build.py --universe HILIQ --window x2 --x2-end 20261009 --allow-real-data --arch-ok-path output/ai_factory/ARCH_RUN_AUTH_LEAF37_IMAX_LOTTERY_EXCLUSION_OVERLAY_X2_HILIQ.ok --out output/ai_factory/_leaf37_imax_lottery/20261027_174829`
+- pid: `686086`
+- ≠X2 ACCEPT；leo_notify=false；live=false

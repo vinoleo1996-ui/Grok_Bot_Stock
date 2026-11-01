@@ -1,0 +1,51 @@
+# 【FROZEN 2026-10-14 06:51:36 ET · 计数待数据】G1G5 预注册：公募季报持仓边际变化（g1g5_ashare_fund_portfolio_v1，含子变体 dark_horse_add）
+起草：2026-10-14 05:57 ET。状态：FROZEN（2026-10-14 06:51:36 ET，草稿 05:57 ET）。Data 的 fund_portfolio（tushare_raw/fund_portfolio_dh）未满窗，未读任何收益、也未读持仓计数。研究级；promotion=false；live=false；禁 GP；不碰小盘；不自跑 Book-Smoke。
+
+## 机制与谁付钱
+- 主变体 crowd_add：多家主动权益基金同季集中加仓某票，后续同风格基金跟随买入、季报公布后被动跟踪资金补仓。付钱的是季报披露前卖出、且对持仓信息反应慢的资金。
+- 子变体 dark_horse_add（黑马边际加仓）：非一致持仓票（上季持有基金数少/持仓市值占流通比低）被少数基金显著加仓。信息含量来自基金经理的独立研究；付钱的是只盯热门抱团票、忽视冷门名字的资金。
+
+## 可检验预测
+事件后 T2 起 60 交易日，组合相对 510300 的去 β 残差 α > 0；与 capacity_adv、earnings_event、report_rc_allup、insider_increase 的去 β 残差相关均 <0.5。dark_horse_add 的残差 α 应高于 crowd_add（若相反，说明只是动量/抱团）。
+
+## 数据与 PIT（关键）
+- 源：fund_portfolio（ts_code=基金，symbol=股票，end_date、ann_date、mkv、amount、stk_mkv_ratio、stk_float_ratio）。仅主动权益类基金（按 fund_basic 类型过滤；剔除指数/ETF/联接）。
+- 季报（Q1/Q3）只披露前十大重仓，约在季末后 15 个交易日内披露；中报/年报披露全部持仓，晚至季末后约 2–3 个月。
+- **available_at = 该基金该期 ann_date 次一交易日 09:00**；以基金层逐只 ann_date 为准，不用季末日。截面统计（「多家基金」）只用 available_at ≤ 判定日的基金；判定日固定为季末后第 16 个交易日（Q1/Q3 用前十大口径）。中报/年报全持仓不与前十大混算：只用前十大口径保持各季一致。
+- 加仓 = 同基金对同票本期持股数 amount 较上期增加 ≥20%，或新进入前十大。
+
+## 事件定义（阈值已冻结）
+- crowd_add：判定日上，满足「加仓」的不同主动权益基金数 ≥ K（默认 K=10）。
+- dark_horse_add：上季持有该票的基金数 ≤ 5（非一致），本季加仓/新进基金数 ≥ 2，且加仓基金合计增持市值 ≥ 该票流通市值 0.1%。
+- 入场：判定日 T1，T2 入场，持 60 交易日；同票新事件截断旧窗。
+- 池：mid_large PIT top300，排除 600519/002371；每名 4%、≤20 名、SW L1 ≤28%，余额 510300。
+- X2 窗口：2024-01-02→2026-10-09（与叶 8–13 同）；封存窗口 2018→2024-05 内只计数、不读价格/收益。
+
+## 计数闸
+X2 相关期不同股票 ≥50 只，且 2024–2026 各年事件 ≥25；每季事件高度集中（一季一批），另报每季批次数与「全压舱日」占比；全压舱日 >40% 记为稀疏风险。
+
+## 失败条件（写于读收益前）
+1. 任一日 Jaccard vs 任一旧包 ≥0.7 → 同构硬拒（重点核对 capacity_adv、northbound_flow、moneyflow_resid）。
+2. 去 β ρ vs capacity_adv / earnings_event / report_rc_allup ≥0.5 → 不过。
+3. 残差 α ≤0 → 不过；≥2 个年份残差 α 为负 → WATCH。
+4. 组合门（现行）：cap80+叶20，60万/100万两档 CAGR 更高且 MDD 不更深，否则 WATCH；同时报 A/B 门（docs/v2/AI_LEAF_SELFCHECK_V2_RECEIPT_ZH.md）。
+5. 成本门：自检 v2 判不可交易 → 不过；衰减门 DECAY_DOWNGRADE → 不过。
+6. peak RSS >1.5GB 或 G6 不过 → 不过。
+主/子变体只选一个送 ACCEPT：按「先 dark_horse_add、后 crowd_add」的优先级，第一个过计数闸者为主变体（写于计数前）。
+
+## 数据待办（冻结后，仅计数）
+Data 满窗回执（基金类型过滤口径、ann_date 完整率、前十大/全持仓标记）；计数分年；冻结。
+
+## 冻结补充（2026-10-14 06:51:36 ET 冻结；冻结前未读任何价格/收益；盘上无该数据，计数待数据，未伪造）
+- 状态：FROZEN（定义/阈值/计数闸/硬闸已写死）。事件计数 = **PENDING_DATA**：Data 满窗回执后只做 PIT 计数并追加到本文件末尾「计数附录」，不得改动以上任何条款；计数闸不过即停，不读收益。
+- 草稿里「阈值冻结前可按计数分布确认」一句作废：阈值即为本文默认值，计数后不调。
+- 硬闸（读收益前写死）：
+  1. 逐日 Jaccard vs capacity_adv、B4、report_rc_allup、earnings_event、insider_increase、analyst_recoverage、tp_rerate 任一日 ≥0.7 → 同构硬拒。
+  2. ρ_excess（去行业/市值/β 残差）vs 上述任一 >0.5 → 只作强度过滤，不开主叶。
+  3. 自检 v2：扣成本净收益（0.00175/单位换手）+ T+1 开盘成交 + 滚动 β；双边换手 >20%/日或成本拖累 > 毛超额一半（无超额时 >1%/年）→ 不可交易。
+  4. 衰减门 v1.1（Alpha，停牌修复版）非 KEEP → 不过。
+  5. Gate A（ρ<0.5 且残差 α>0）、Gate B（cap80+叶20 在 60万/100万两档净 CAGR 均高于 capacity_adv 单独）并行报。
+  6. GATE_V3：MDD≤25% 下最大化 CAGR，两档 CAGR 高于 capacity_adv 单独 + 衰减门 KEEP + 可交易；另报 MDD≤15% 变体。终判以 Eng Book-Smoke X2 为准（AI 不自跑）。
+  7. 年化天数：主报 252，并列 244 对照；两口径结论不一致记 WATCH。
+  8. 峰值 RSS ≤1.5GB；promotion=false；live=false；禁 GP/小盘/高杠杆。
+

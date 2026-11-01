@@ -1,0 +1,28 @@
+--- a/research/g1g5_sue_desens_cs_alpha.py
++++ b/research/g1g5_sue_desens_cs_alpha.py
+@@ -356,7 +356,7 @@
+ 
+ def to_session(cal, d, plus=0):
+     d = pd.DatetimeIndex(d); i = cal.searchsorted(d, side="left") + plus
+-    out = np.full(len(i), np.datetime64("NaT"), dtype="datetime64[ns]"); ok = (i < len(cal)) & ~d.isna()
++    out = np.full(len(i), np.datetime64("NaT"), dtype=cal.values.dtype); ok = (i < len(cal)) & ~d.isna()   # r2.9 Arch P0: calendar resolution (was hard-coded ns)
+     out[ok] = cal.values[i[ok]]; return pd.DatetimeIndex(out)
+ 
+ 
+@@ -650,7 +650,7 @@
+     # (~25 non-zero of ~800 HI_LIQ names per day); first-stage OLS regressor only (demeaned), not in the second-stage industry+lmv1 step
+     # r2.8 (run stop 05:49, stage 02): leg `date` is stored as string → no pushdown filter; convert first, then cut (same rows as intended)
+     CAPW = pd.read_parquet(CAPLEG, columns=["date", "instrument", "target_weight"]).rename(columns={"target_weight": "acap"})
+-    CAPW["date"] = pd.to_datetime(CAPW.date); CAPW = CAPW[CAPW.date >= pd.Timestamp(X2S) - pd.Timedelta(days=20)]
++    CAPW["date"] = pd.to_datetime(CAPW.date, format="%Y-%m-%d"); CAPW = CAPW[CAPW.date >= pd.Timestamp(X2S) - pd.Timedelta(days=20)]
+     CAPW = CAPW[CAPW.instrument != FE.BAL].sort_values(["instrument", "date"])
+     CAPW["acap"] = CAPW.groupby("instrument", sort=False).acap.shift(1); CAPW = CAPW[CAPW.date >= pd.Timestamp(X2S)]
+     for t in (A19, A20): t["date"] = pd.to_datetime(t.date)
+@@ -668,6 +668,7 @@
+         del RW, LM, feats; gc.collect()
+         P = P.dropna(subset=["lmv1", "beta120", "mom_120_20", "ladv1", "ret"]); P = P[~P.instrument.isin(FE.EXCL)].sort_values("date")
+         gap_share[str(y)] = float((P.loc[P.date >= X2S, "nv120"] < 100).mean()) if (P.date >= X2S).any() else None   # Arch P3-C
++        ev["eff"] = ev.eff.astype(P.date.dtype); evo["eff_o"] = evo.eff_o.astype(P.date.dtype)   # r2.9 Arch P0: merge keys share P.date resolution
+         P = pd.merge_asof(P, ev[["instrument", "eff", "end_date", "src", "d1", "sd", "lmv_fix"]], left_on="date", right_on="eff", by="instrument", direction="backward")
+         P = pd.merge_asof(P, evo, left_on="date", right_on="eff_o", by="instrument", direction="backward")   # B4 disclosure only
+         fallback[str(y)] = int(((P.date >= X2S) & P.d1.isna() & P.d1_o.notna() & (P.end_o < P.end_date)

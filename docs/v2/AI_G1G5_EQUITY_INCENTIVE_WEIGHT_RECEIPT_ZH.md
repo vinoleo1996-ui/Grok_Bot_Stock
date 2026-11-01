@@ -1,0 +1,14 @@
+# G1G5 叶6 权重回执：g1g5_ashare_equity_incentive_v1（研究级，promotion=false，live=false，未跑 Book-Smoke）
+- 预注册：docs/v2/AI_G1G5_EQUITY_INCENTIVE_WHO_PAYS_PREREG_ZH.md；脚本 research/g1g5_equity_incentive_weights.py
+- 权重：output/ai_factory/g1g5_equity_incentive_daily_weights_20261014_023222.parquet（57448 行/668 日/86 名，2024-01-02→2026-10-09）；meta：output/ai_factory/g1g5_equity_incentive_run_meta_20261014_023222.json（文件名时间戳为盒钟漂移，实跑约 14:50 ET 10-13）
+- 合规：Σw≡1；最小权 0；无 stub；单名 max 4%；行业 max 28%；600519/002371 恒 0；仅 mid_large PIT top300
+- 事件：草案 133 → 入池确认 132（2023:7/2024:37/2025:41/2026:47）；日均 17.4 名；零名日 0
+- 压舱 510300：均值 30.4%（20%–72%）
+- 逐日 Jaccard vs 17 个前包：max 0.167（vs earnings_event），无同构硬拒（判据：任一日 max≥0.7 即败；该写法为 10-13 ~14:55 ET 文字修正，非调参）
+- G6 pass；peak RSS 660MB
+- 去β自检（close-to-close，无成本，未复权）：毛 CAGR 15.62%（510300 9.45%，capacity_adv 12.07%）；MDD −16.50%（510300 −16.25%）；β 1.03；残差 α +5.75%/年；ρ_excess vs capacity_adv 0.003
+- 分年残差 α：2024 +4.50%｜2025 −1.36%｜2026 +13.82%（2026 防守贡献集中）
+- 换手：单边日均 1.03%，年化约 2.6 倍
+- 软缺口：α 偏集中于 2026；2025 为负；事件源 2023-10 起截取，2024 初窗口略欠；未复权；池锚 2024-06-28 致 2024H1 轻微前视；无激励规模/考核门槛字段；预注册前仅事件计数探针、无收益探针，盘上无同数据收益研究。
+- 时间加注：文件名 20261014_023222 为 box 时钟，实际 10-13 ~14:50 ET 运行；预注册写定 ~14:45 ET。
+- 计数核验：57448/668/86 与 earnings_event 数值巧合相同（均为 668 日×86 名的稠密长表），两包名单交集仅 41/86，非同一文件。

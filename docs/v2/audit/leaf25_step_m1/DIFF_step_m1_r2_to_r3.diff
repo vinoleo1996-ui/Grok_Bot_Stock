@@ -1,0 +1,129 @@
+--- research/leaf25_ttm_recon_step_m1_r2.py	2026-10-18 10:45:34.003931890 -0400
++++ research/leaf25_ttm_recon_step_m1_r3.py	2026-10-18 10:52:39.683931890 -0400
+@@ -1,8 +1,8 @@
+ #!/usr/bin/env python3
+-"""Leaf 25 step -1 r2: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
++"""Leaf 25 step -1 r3: 3-stock TTM hand-reconciliation extract (DRAFT, not run; needs its own read-only Arch .ok).
+ 
+-New file per Arch review fc5fa937 (N-P2-1, N-P2-3, N-P3-1/2/4/6); predecessor research/leaf25_ttm_recon_step_m1.py
+-(7edf577f) is kept unchanged and is superseded.
++New file per Arch review efb013d8 (S-P2-1, S-P3-1); predecessor research/leaf25_ttm_recon_step_m1_r2.py
++(f46e0fb5) is kept unchanged and is superseded (r2 itself followed review fc5fa937; 7edf577f also kept unchanged).
+ 
+ Reads ONLY data/v2/financials_pit/{financials,cashflow,balancesheet}_pit_tushare.parquet and the SSE calendar
+ (column projection; full-table pass on key columns for the deterministic pick, then ts_code filter to 3 codes;
+@@ -26,11 +26,16 @@
+  - NI = n_income (primary); n_income_attr_p reported alongside (disclosure).
+ Pick (deterministic, smallest ts_code; the trigger tuple is carried unchanged into phase 2):
+  (i)  (ts_code, end_date, table, corr_date): end_date >= 2018 quarter end with >1 distinct available date in exactly
+-      one table; corr_date = second distinct available date; end_date must be one of the TTM component periods used
+-      on next_open(corr_date) for that table (income/cashflow: E, A_{y-1}, YTD_{E-1y}; balance: TA_E, TA_{E-1y}).
++      one table; corr_date = second distinct available date; with d_after = next_open(corr_date) and
++      d_before = prev_open(d_after), the availability-only fallback E (same rule as ttm_at: newest E whose components
++      all have a usable row, one-quarter and 15-month caps; values not looked at) must exist on BOTH days and end_date
++      must be one of that day's component periods for the table (income/cashflow: E, A_{y-1}, YTD_{E-1y};
++      balance: TA_E, TA_{E-1y}) on BOTH days.
+  (ii) (ts_code, y, a_date, q_date): y >= 2019, first Q1(y) income date <= first annual(y-1) income date.
+  (iii)(ts_code, first_period, first_date): first report_type-1 income period >= 2019-03-31.
+  rule_exercised per case is written into run_meta; any false -> exit code 4 (outputs still written).
++ Case (ii) with Q1 before annual: on the Q1 effective day TTM must be NaN (one-quarter fallback cap), not merely
++ "not OK with E = Q1".
+ """
+ from __future__ import annotations
+ 
+@@ -209,6 +214,26 @@
+     return {E} if E.month == 12 else {E, pd.Timestamp(year=E.year - 1, month=12, day=31), y1}
+ 
+ 
++def avail_E(code: str, d: pd.Timestamp, G: dict) -> pd.Timestamp | None:
++    """availability-only mirror of ttm_at's E choice (no values): newest E with every component row usable before d."""
++    def periods(tb: str) -> set:
++        try:
++            g = G[tb].get_group(code)
++        except KeyError:
++            return set()
++        return set(g.loc[g["avail_sh_date"] < d, "end_s"])
++    have = {tb: periods(tb) for tb in TABLES}
++    if not have["income"]:
++        return None
++    newest = max(have["income"])
++    for E in sorted(have["income"], reverse=True):
++        if E < newest - pd.DateOffset(months=3) or E < d - pd.DateOffset(months=15):
++            break
++        if all(component_periods(E, tb) <= have[tb] for tb in TABLES):
++            return E
++    return None
++
++
+ def find_key(row: dict, table: str, end: pd.Timestamp) -> str | None:
+     for k in ("E", "A", "P"):
+         v = row.get(f"{table}_{k}_key")
+@@ -259,7 +284,7 @@
+     m = pd.concat(nv, axis=1).dropna()
+     one = m[(m > 1).sum(axis=1) == 1]
+     trig_raw = sorted((code, end, (one.loc[(code, end)] > 1).idxmax()) for code, end in one.index)
+-    inc_by = {c: g[["end_s", "avail_sh_date"]] for c, g in U["income"].groupby("ts_code")}
++    G = {n: U[n][["ts_code", "end_s", "avail_sh_date"]].groupby("ts_code") for n in TABLES}
+     vers = {n: U[n].groupby(["ts_code", "end_s"])["avail_sh_date"] for n in TABLES}
+     trig_i, n_i_checked = None, 0
+     for code, end, tb in trig_raw:
+@@ -267,16 +292,13 @@
+         dd = sorted(vers[tb].get_group((code, end)).unique())
+         corr = pd.Timestamp(dd[1])
+         d_after = next_open(corr)
+-        inc_c = inc_by.get(code)
+-        if inc_c is None:
+-            continue
+-        usable = inc_c[inc_c["avail_sh_date"] < d_after]
+-        if usable.empty:
++        d_before = prev_open(d_after)
++        Eb, Ea = avail_E(code, d_before, G), avail_E(code, d_after, G)
++        if Eb is None or Ea is None:
+             continue
+-        E = pd.Timestamp(usable["end_s"].max())
+-        if end in component_periods(E, tb):
++        if end in component_periods(Eb, tb) and end in component_periods(Ea, tb):
+             trig_i = {"ts_code": code, "end_date": end, "table": tb, "corr_date": corr, "orig_date": pd.Timestamp(dd[0]),
+-                      "E_at_corr": E}
++                      "E_before": Eb, "E_after": Ea}
+             break
+     if trig_i is None:
+         die("no candidate for rule i (TTM-relevant single-table correction)")
+@@ -302,7 +324,7 @@
+     trig_iii = {"ts_code": f3.index[0], "first_period": f3["end_s"].iloc[0], "first_date": f3["avail_sh_date"].iloc[0]}
+     n_cand = {"i_raw": len(trig_raw), "i_checked_until_hit": n_i_checked, "ii": int(j["ts_code"].nunique()),
+               "iii": int((first.groupby("ts_code")["end_s"].min() >= pd.Timestamp("2019-03-31")).sum())}
+-    del U, inc_by, vers, first, a, q, j, jj, m, one, nv, f3
++    del U, G, vers, first, a, q, j, jj, m, one, nv, f3
+     codes = [trig_i["ts_code"], trig_ii["ts_code"], trig_iii["ts_code"]]
+     stage("phase1_pick")
+     # phase 2: 3 codes, all needed columns
+@@ -340,8 +362,8 @@
+     if trig_ii["same_day"]:  # Q1 and annual become usable together: E = Q1(y) using that A_{y-1}, no fallback
+         ok_ii = rq.get("status") == "OK" and rq.get("E") == str(q1.date()) and \
+             str(rq.get("income_A_key", "")).startswith(f"{trig_ii['y'] - 1}-12-31|")
+-    else:  # Q1 before annual: E = Q1 incomplete on dq -> must not be OK with E = Q1(y)
+-        ok_ii = not (rq.get("status") == "OK" and rq.get("E") == str(q1.date()))
++    else:  # Q1 before annual: one-quarter fallback cap -> TTM must be NaN on dq (S-P3-1)
++        ok_ii = str(rq.get("status", "")).startswith("NaN")
+     exercised["ii_annual_q1_same_day_or_q1_first"], detail["ii"] = bool(ok_ii), {"row_at_q1_effective": rq}
+     # case iii: first report of an IPO name -> NaN (fewer than 4 quarters / no prior-year components)
+     c = trig_iii["ts_code"]
+@@ -359,7 +381,7 @@
+     pd.DataFrame(rows).to_csv(out / "ttm_script.csv", index=False)
+     all_ok = all(exercised.values())
+     meta = {
+-        "script": "research/leaf25_ttm_recon_step_m1_r2.py", "input_sha256": shas, "codes": codes,
++        "script": "research/leaf25_ttm_recon_step_m1_r3.py", "input_sha256": shas, "codes": codes,
+         "triggers": {"i": trig_i, "ii": trig_ii, "iii": trig_iii}, "rule_exercised": exercised, "rule_detail": detail,
+         "asof_dates": dates, "n_tie_groups": len(ties), "ties": ties[:200], "nonquarter_end_rows": nonq,
+         "report_type_update_flag_counts": counts, "arch_ruling_required_report_type_share_gt_0_5pct": arch_ruling,
+@@ -370,7 +392,7 @@
+     }
+     (out / "run_meta.json").write_text(json.dumps(meta, indent=1, default=str), encoding="utf-8")
+     stage("done")
+-    print(f"peak_check step_m1_r2 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
++    print(f"peak_check step_m1_r3 rss_kb={meta['peak_rss_kb']} hwm_kb={meta['vmhwm_kb']}", file=sys.stderr, flush=True)
+     if not all_ok:
+         print(f"STOP: rule_exercised false: {exercised}", file=sys.stderr, flush=True)
+         return 4

@@ -1,0 +1,891 @@
+path=B_TERM_TIMEOUT
+STOP_ET=2026-10-18 04:30:27 EDT
+pre_STOP_ET=2026-10-18 04:30:27 EDT
+state=T
+94322_alive=True
+cmd_94322=python3 scripts/acquire/remaining_after_stk_surv.py 
+
+=== PRE-STOP ps ===
+    PID    PPID STAT     ELAPSED   RSS CMD
+      1       0 Ss      03:24:44   752 /tini -- /pod-daemon --ssh-auth-sock-path /run/host-services/ssh-auth.sock --ssh-auth-vsock-port 52
+      7       1 Sl      03:24:44  7640 /pod-daemon --ssh-auth-sock-path /run/host-services/ssh-auth.sock --ssh-auth-vsock-port 52
+     53       7 Ss      03:24:44 14736 /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S       03:24:43 32564 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+    209     204 S       03:24:43  2028 bash /usr/local/bin/box-bounded-log --run /tmp/novnc-forks.log -- /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+    210     209 S       03:24:43  1780 flock -n /tmp/novnc-forks.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc-forks.log 204
+    211     210 Sl      03:24:43 34020 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc-forks.log 204
+    227      53 Ssl     03:24:43 48524 /exec-daemon/node /usr/local/bin/sand-window-router.mjs 1339 1337 14000
+    247      53 Ssl     03:24:43 48388 /exec-daemon/node /usr/local/bin/sand-session-sync.mjs
+    248      53 Sl      03:24:43 99420 /exec-daemon/node /usr/local/bin/sand-web-bot-auth.mjs
+    257     248 S       03:24:43  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-web-bot-auth.log -- /exec-daemon/node /usr/local/bin/sand-web-bot-auth.mjs
+    258     257 S       03:24:43  1896 flock -n /tmp/sand-web-bot-auth.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-web-bot-auth.log 248
+    259     258 Sl      03:24:43 32612 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-web-bot-auth.log 248
+    277      53 Sl      03:24:43 71532 /exec-daemon/node /usr/local/bin/sand-ua-governor.mjs
+    284     277 S       03:24:43  2016 bash /usr/local/bin/box-bounded-log --run /tmp/sand-ua-governor.log -- /exec-daemon/node /usr/local/bin/sand-ua-governor.mjs
+    286     284 S       03:24:43  1884 flock -n /tmp/sand-ua-governor.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-ua-governor.log 277
+    290     286 Sl      03:24:43 32988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-ua-governor.log 277
+    322      53 Ssl     03:24:43 49900 /exec-daemon/node /usr/local/bin/sand-cookie-persist.mjs
+    323      53 S       03:24:43  4276 bash /usr/local/bin/supervise-exec-daemon 1337 /usr/local/bin/start-exec-daemon
+    324      53 S       03:24:43  4084 bash /usr/local/bin/supervise-egress-tunnel 8790 /usr/local/bin/start-egress-tunnel
+    369     323 Ss      03:24:43  3424 bash /usr/local/bin/start-exec-daemon
+    372     324 Ssl     03:24:43  2508 /usr/local/bin/sand-egress-tunnel server
+    376     369 Sl      03:24:43 91660 /exec-daemon/node /exec-daemon/index.js serve --port 1337 --pty-websocket-port 1338 --auth-token local --rg-path /exec-daemon/rg --pty-auth-token local-pty --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+    720       1 Ss      03:24:33  4316 bash /usr/local/bin/start-desktop.sh
+    724     720 S       03:24:33  2024 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-2/start-desktop.log -- /usr/local/bin/start-desktop.sh
+    725     724 S       03:24:33  1792 flock -n /tmp/sand-window-2/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-2/start-desktop.log 720
+    726     725 Sl      03:24:33 34316 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-2/start-desktop.log 720
+    766       1 Ss      03:24:33  2036 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+    771     720 S       03:24:33 64044 Xvfb :2 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+    776     771 S       03:24:33  1904 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:2.log -- /usr/local/bin/box-xvfb :2 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+    778     776 S       03:24:33  1864 flock -n /tmp/xvfb:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:2.log 771
+    779     778 Sl      03:24:33 33344 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:2.log 771
+   1153     771 Z       03:24:33     0 [bash] <defunct>
+   1201       1 Ssl     03:24:33 68900 /exec-daemon/node /exec-daemon/index.js serve --port 14002 --pty-websocket-port 13602 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   1277     720 Sl      03:24:33 26088 xfwm4 --compositor=off
+   1282    1277 S       03:24:33  2020 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:2.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   1283    1282 S       03:24:33  1784 flock -n /tmp/xfwm4:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:2.log 1277
+   1285    1283 Sl      03:24:33 33180 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:2.log 1277
+   1316     720 S       03:24:33  4080 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   1325    1316 S       03:24:33  1984 bash /usr/local/bin/box-bounded-log --run /tmp/picom:2.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   1326    1325 S       03:24:33  1792 flock -n /tmp/picom:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:2.log 1316
+   1329    1326 Sl      03:24:33 33040 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:2.log 1316
+   1380       1 Sl      03:24:33  3476 /usr/libexec/dconf-service
+   1536       1 Ssl     03:24:33 21152 plank --name dock1
+   1543    1536 S       03:24:33  2024 bash /usr/local/bin/box-bounded-log --run /tmp/plank:2-dock1.log -- /usr/local/bin/box-plank --name dock1
+   1544    1543 S       03:24:33  1828 flock -n /tmp/plank:2-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:2-dock1.log 1536
+   1546    1544 Sl      03:24:33 33052 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:2-dock1.log 1536
+   1559     720 S       03:24:33  1872 tail -f /dev/null
+   1618       1 S       03:24:32  3364 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+   1619    1618 Sl      03:24:32  7168 /usr/libexec/bamf/bamfdaemon
+   5268       1 Ss      03:22:00  4308 bash /usr/local/bin/start-desktop.sh
+   5271    5268 S       03:22:00  1928 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-12/start-desktop.log -- /usr/local/bin/start-desktop.sh
+   5273    5271 S       03:22:00  1844 flock -n /tmp/sand-window-12/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-12/start-desktop.log 5268
+   5274    5273 Sl      03:22:00 34184 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-12/start-desktop.log 5268
+   5313       1 Ss      03:22:00  2100 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+   5318    5268 S       03:22:00 60404 Xvfb :12 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   5323    5318 S       03:22:00  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:12.log -- /usr/local/bin/box-xvfb :12 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   5324    5323 S       03:22:00  1904 flock -n /tmp/xvfb:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:12.log 5318
+   5326    5324 Sl      03:22:00 33956 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:12.log 5318
+   6227    5318 Z       03:21:59     0 [bash] <defunct>
+   6247       1 Ssl     03:21:59 96196 /exec-daemon/node /exec-daemon/index.js serve --port 14012 --pty-websocket-port 13612 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   6295    5268 S       03:21:59 28912 x11vnc -skip_lockkeys -display :12 -localhost -nopw -shared -forever -noxdamage -rfbport 5912 -quiet
+   6300    6295 S       03:21:59  2012 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:12.log -- /usr/local/bin/box-x11vnc -display :12 -localhost -nopw -shared -forever -noxdamage -rfbport 5912 -quiet
+   6301    6300 S       03:21:59  1848 flock -n /tmp/x11vnc:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:12.log 6295
+   6302    6301 Sl      03:21:59 33832 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:12.log 6295
+   6325    5268 Sl      03:21:59 57632 xfwm4 --compositor=off
+   6333    6325 S       03:21:59  2028 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:12.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   6335    6333 S       03:21:59  1928 flock -n /tmp/xfwm4:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:12.log 6325
+   6336    6335 Sl      03:21:59 33988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:12.log 6325
+   6368    5268 S       03:21:59  4776 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   6375    6368 S       03:21:59  2036 bash /usr/local/bin/box-bounded-log --run /tmp/picom:12.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   6376    6375 S       03:21:59  1796 flock -n /tmp/picom:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:12.log 6368
+   6380    6376 Sl      03:21:59 33908 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:12.log 6368
+   6450       1 Sl      03:21:59  3432 /usr/libexec/dconf-service
+   6654       1 Ssl     03:21:59 59200 plank --name dock1
+   6662    6654 S       03:21:59  2056 bash /usr/local/bin/box-bounded-log --run /tmp/plank:12-dock1.log -- /usr/local/bin/box-plank --name dock1
+   6665    6662 S       03:21:59  1876 flock -n /tmp/plank:12-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:12-dock1.log 6654
+   6668    6665 Sl      03:21:59 33984 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:12-dock1.log 6654
+   6697    5268 S       03:21:59  1896 tail -f /dev/null
+   6834       1 S       03:21:59  3468 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+   6835    6834 Sl      03:21:59  8616 /usr/libexec/bamf/bamfdaemon
+   8307       1 Ss      03:20:38  4300 bash /usr/local/bin/start-desktop.sh
+   8311    8307 S       03:20:38  2072 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-6/start-desktop.log -- /usr/local/bin/start-desktop.sh
+   8312    8311 S       03:20:38  1896 flock -n /tmp/sand-window-6/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-6/start-desktop.log 8307
+   8313    8312 Sl      03:20:38 34012 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-6/start-desktop.log 8307
+   8352       1 Ss      03:20:38  2148 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+   8357    8307 S       03:20:38 60424 Xvfb :6 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   8363    8357 S       03:20:38  1992 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:6.log -- /usr/local/bin/box-xvfb :6 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   8364    8363 S       03:20:38  1860 flock -n /tmp/xvfb:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:6.log 8357
+   8366    8364 Sl      03:20:38 34252 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:6.log 8357
+   9579    8357 Z       03:20:37     0 [bash] <defunct>
+   9604       1 Ssl     03:20:37 125944 /exec-daemon/node /exec-daemon/index.js serve --port 14006 --pty-websocket-port 13606 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   9653    8307 S       03:20:36 28992 x11vnc -skip_lockkeys -display :6 -localhost -nopw -shared -forever -noxdamage -rfbport 5906 -quiet
+   9658    9653 S       03:20:36  2076 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:6.log -- /usr/local/bin/box-x11vnc -display :6 -localhost -nopw -shared -forever -noxdamage -rfbport 5906 -quiet
+   9659    9658 S       03:20:36  1796 flock -n /tmp/x11vnc:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:6.log 9653
+   9661    9659 Sl      03:20:36 33932 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:6.log 9653
+   9679    8307 Sl      03:20:36 11392 xfwm4 --compositor=off
+   9684    9679 S       03:20:36  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:6.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   9685    9684 S       03:20:36  1860 flock -n /tmp/xfwm4:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:6.log 9679
+   9692    9685 Sl      03:20:36 34276 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:6.log 9679
+   9730    8307 S       03:20:36  4852 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   9738    9730 S       03:20:36  2072 bash /usr/local/bin/box-bounded-log --run /tmp/picom:6.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   9741    9738 S       03:20:36  1904 flock -n /tmp/picom:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:6.log 9730
+   9743    9741 Sl      03:20:36 34180 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:6.log 9730
+   9795       1 Sl      03:20:36  3336 /usr/libexec/dconf-service
+  10084       1 Ssl     03:20:36 59472 plank --name dock1
+  10095   10084 S       03:20:36  2020 bash /usr/local/bin/box-bounded-log --run /tmp/plank:6-dock1.log -- /usr/local/bin/box-plank --name dock1
+  10096   10095 S       03:20:36  1848 flock -n /tmp/plank:6-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:6-dock1.log 10084
+  10100   10096 Sl      03:20:36 33960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:6-dock1.log 10084
+  10125    8307 S       03:20:36  1888 tail -f /dev/null
+  10284       1 S       03:20:36  3436 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  10287   10284 Sl      03:20:36  8556 /usr/libexec/bamf/bamfdaemon
+  11187       1 Ss      03:20:07  4368 bash /usr/local/bin/start-desktop.sh
+  11191   11187 S       03:20:07  2056 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-8/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  11192   11191 S       03:20:07  1832 flock -n /tmp/sand-window-8/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-8/start-desktop.log 11187
+  11193   11192 Sl      03:20:07 34096 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-8/start-desktop.log 11187
+  11232       1 Ss      03:20:07  2160 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  11237   11187 S       03:20:07 61208 Xvfb :8 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  11242   11237 S       03:20:07  2032 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:8.log -- /usr/local/bin/box-xvfb :8 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  11243   11242 S       03:20:07  1868 flock -n /tmp/xvfb:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:8.log 11237
+  11245   11243 Sl      03:20:07 33972 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:8.log 11237
+  12725   11237 Z       03:20:06     0 [bash] <defunct>
+  12735       1 Ssl     03:20:06 89316 /exec-daemon/node /exec-daemon/index.js serve --port 14008 --pty-websocket-port 13608 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  12790   11187 S       03:20:05 29100 x11vnc -skip_lockkeys -display :8 -localhost -nopw -shared -forever -noxdamage -rfbport 5908 -quiet
+  12797   12790 S       03:20:05  1972 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:8.log -- /usr/local/bin/box-x11vnc -display :8 -localhost -nopw -shared -forever -noxdamage -rfbport 5908 -quiet
+  12798   12797 S       03:20:05  1944 flock -n /tmp/x11vnc:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:8.log 12790
+  12800   12798 Sl      03:20:05 34032 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:8.log 12790
+  12819   11187 Sl      03:20:05 11396 xfwm4 --compositor=off
+  12824   12819 S       03:20:05  2044 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:8.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  12825   12824 S       03:20:05  1828 flock -n /tmp/xfwm4:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:8.log 12819
+  12826   12825 Sl      03:20:05 34084 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:8.log 12819
+  12882   11187 S       03:20:05  4864 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  12891   12882 S       03:20:05  2028 bash /usr/local/bin/box-bounded-log --run /tmp/picom:8.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  12892   12891 S       03:20:05  1824 flock -n /tmp/picom:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:8.log 12882
+  12896   12892 Sl      03:20:05 33904 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:8.log 12882
+  12929       1 Sl      03:20:05  3616 /usr/libexec/dconf-service
+  13167       1 Ssl     03:20:05 59724 plank --name dock1
+  13178   13167 S       03:20:05  1996 bash /usr/local/bin/box-bounded-log --run /tmp/plank:8-dock1.log -- /usr/local/bin/box-plank --name dock1
+  13179   13178 S       03:20:05  1868 flock -n /tmp/plank:8-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:8-dock1.log 13167
+  13180   13179 Sl      03:20:05 33988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:8-dock1.log 13167
+  13209   11187 S       03:20:05  1968 tail -f /dev/null
+  13486       1 S       03:20:05  3444 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  13489   13486 Sl      03:20:05  8748 /usr/libexec/bamf/bamfdaemon
+  14353       1 Ss      03:19:48  4228 bash /usr/local/bin/start-desktop.sh
+  14356   14353 S       03:19:48  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-5/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  14358   14356 S       03:19:48  1824 flock -n /tmp/sand-window-5/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-5/start-desktop.log 14353
+  14359   14358 Sl      03:19:48 33876 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-5/start-desktop.log 14353
+  14398       1 Ss      03:19:48  2192 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  14403   14353 S       03:19:48 61084 Xvfb :5 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  14408   14403 S       03:19:48  1928 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:5.log -- /usr/local/bin/box-xvfb :5 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  14409   14408 S       03:19:48  1924 flock -n /tmp/xvfb:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:5.log 14403
+  14411   14409 Sl      03:19:48 33972 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:5.log 14403
+  16166   14403 Z       03:19:47     0 [bash] <defunct>
+  16176       1 Ssl     03:19:47 96040 /exec-daemon/node /exec-daemon/index.js serve --port 14005 --pty-websocket-port 13605 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  16236   14353 S       03:19:47 29000 x11vnc -skip_lockkeys -display :5 -localhost -nopw -shared -forever -noxdamage -rfbport 5905 -quiet
+  16242   16236 S       03:19:47  2040 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:5.log -- /usr/local/bin/box-x11vnc -display :5 -localhost -nopw -shared -forever -noxdamage -rfbport 5905 -quiet
+  16243   16242 S       03:19:47  1932 flock -n /tmp/x11vnc:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:5.log 16236
+  16246   16243 Sl      03:19:47 34168 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:5.log 16236
+  16263   14353 Sl      03:19:47 11432 xfwm4 --compositor=off
+  16268   16263 S       03:19:47  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:5.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  16269   16268 S       03:19:47  1848 flock -n /tmp/xfwm4:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:5.log 16263
+  16271   16269 Sl      03:19:47 34296 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:5.log 16263
+  16311   14353 S       03:19:47  4852 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  16316   16311 S       03:19:47  2048 bash /usr/local/bin/box-bounded-log --run /tmp/picom:5.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  16318   16316 S       03:19:47  1944 flock -n /tmp/picom:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:5.log 16311
+  16321   16318 Sl      03:19:47 34252 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:5.log 16311
+  16362       1 Sl      03:19:47  3336 /usr/libexec/dconf-service
+  16645       1 Ssl     03:19:47 59744 plank --name dock1
+  16656   16645 S       03:19:47  2012 bash /usr/local/bin/box-bounded-log --run /tmp/plank:5-dock1.log -- /usr/local/bin/box-plank --name dock1
+  16657   16656 S       03:19:47  1900 flock -n /tmp/plank:5-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:5-dock1.log 16645
+  16661   16657 Sl      03:19:47 33932 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:5-dock1.log 16645
+  16690   14353 S       03:19:47  1916 tail -f /dev/null
+  16944       1 S       03:19:47  3384 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  16947   16944 Sl      03:19:47  8804 /usr/libexec/bamf/bamfdaemon
+  18167       1 Ss      03:19:10  4288 bash /usr/local/bin/start-desktop.sh
+  18171   18167 S       03:19:10  2004 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-4/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  18172   18171 S       03:19:10  1868 flock -n /tmp/sand-window-4/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-4/start-desktop.log 18167
+  18173   18172 Sl      03:19:10 33964 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-4/start-desktop.log 18167
+  18212       1 Ss      03:19:10  2224 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  18217   18167 S       03:19:10 61228 Xvfb :4 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  18222   18217 S       03:19:10  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:4.log -- /usr/local/bin/box-xvfb :4 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  18224   18222 S       03:19:10  1840 flock -n /tmp/xvfb:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:4.log 18217
+  18225   18224 Sl      03:19:10 33964 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:4.log 18217
+  20160   18217 Z       03:19:09     0 [bash] <defunct>
+  20188       1 Ssl     03:19:09 92100 /exec-daemon/node /exec-daemon/index.js serve --port 14004 --pty-websocket-port 13604 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  20233   18167 S       03:19:08 29044 x11vnc -skip_lockkeys -display :4 -localhost -nopw -shared -forever -noxdamage -rfbport 5904 -quiet
+  20238   20233 S       03:19:08  2056 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:4.log -- /usr/local/bin/box-x11vnc -display :4 -localhost -nopw -shared -forever -noxdamage -rfbport 5904 -quiet
+  20241   20238 S       03:19:08  1876 flock -n /tmp/x11vnc:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:4.log 20233
+  20242   20241 Sl      03:19:08 34372 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:4.log 20233
+  20261   18167 Sl      03:19:08 11764 xfwm4 --compositor=off
+  20266   20261 S       03:19:08  2080 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:4.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  20267   20266 S       03:19:08  1924 flock -n /tmp/xfwm4:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:4.log 20261
+  20269   20267 Sl      03:19:08 34280 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:4.log 20261
+  20316   18167 S       03:19:08  4916 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  20323   20316 S       03:19:08  2028 bash /usr/local/bin/box-bounded-log --run /tmp/picom:4.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  20324   20323 S       03:19:08  1828 flock -n /tmp/picom:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:4.log 20316
+  20328   20324 Sl      03:19:08 33960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:4.log 20316
+  20372       1 Sl      03:19:08  3488 /usr/libexec/dconf-service
+  20653       1 Ssl     03:19:08 60444 plank --name dock1
+  20665   20653 S       03:19:08  1996 bash /usr/local/bin/box-bounded-log --run /tmp/plank:4-dock1.log -- /usr/local/bin/box-plank --name dock1
+  20667   20665 S       03:19:08  1932 flock -n /tmp/plank:4-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:4-dock1.log 20653
+  20671   20667 Sl      03:19:08 33996 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:4-dock1.log 20653
+  20713   18167 S       03:19:08  1964 tail -f /dev/null
+  20976       1 S       03:19:08  3456 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  20979   20976 Sl      03:19:08  8696 /usr/libexec/bamf/bamfdaemon
+  26442       1 Ss      03:16:03  3524 /bin/bash ./supervise.sh
+  26447       1 Ss      03:16:03  3404 /bin/bash ./deploy_supervise.sh
+  26450   26447 S       03:16:03  3468 /bin/bash ./deploy_loop.sh
+  26454       1 Ss      03:16:03  3432 ql_keepalive_loop -c while true; do sleep 600; /workspace/quantlab-web/start_all.sh --from-keepalive; done
+  26581       1 Ssl     03:16:02 40084 /home/box/.orca/app-1.4.224-20261018051422/orca-ide /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/cli/index.js serve --port 6768 --pairing-address grok-bot
+  26627   26581 Sl      03:16:02 150456 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --user-data-dir=/home/box/.config/orca --serve --serve-port 6768 --serve-pairing-address grok-bot
+  26630   26627 S       03:16:02 18112 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote --no-zygote-sandbox
+  26631   26627 S       03:16:02 18084 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote
+  26633   26631 S       03:16:02 10788 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote
+  26702       1 Sl      03:16:01  3572 /home/box/.orca/app-1.4.224-20261018051422/chrome_crashpad_handler --monitor-self-annotation=ptype=crashpad-handler --no-rate-limit --no-upload-gzip --database=/home/box/.config/orca/Crashpad --annotation=_productName=orca --annotation=_version=1.4.224 --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Electron --annotation=ver=43.7.5 --initial-client-fd=41 --shared-client-connection
+  26752   26630 Sl      03:16:00 23232 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=gpu-process --disable-dev-shm-usage --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=593e2e5f-6b43-4a86-bb64-a8a4bc69fbbe,no_channel --user-data-dir=/home/box/.config/orca --gpu-preferences=WAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAABAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --use-gl=disabled --shared-files --field-trial-handle=3,i,4798019459902702605,6824676083144334604,262144 --enable-features=EarlyEstablishGpuChannel,EstablishGpuChannelAsync,GlobalShortcutsPortalPreferredTrigger,PdfUseShowSaveFilePicker --disable-features=DirectSockets,DirectSocketsInServiceWorkers,DirectSocketsInSharedWorkers,DropInputEventsWhilePaintHolding,FedCm,IntensiveWakeUpThrottling,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7,i,1093890293600097732,3130111451012626359,4 --trace-process-track-uuid=3190708988185955192
+  26756   26752 S       03:16:00 12136 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=broker
+  26762   26627 Sl      03:16:00 24784 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=593e2e5f-6b43-4a86-bb64-a8a4bc69fbbe,no_channel --user-data-dir=/home/box/.config/orca --standard-schemes=orca-preview,orca-media --secure-schemes=orca-preview,orca-media --cors-schemes=orca-preview --fetch-schemes=orca-preview --streaming-schemes=orca-preview,orca-media --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,4798019459902702605,6824676083144334604,262144 --enable-features=EarlyEstablishGpuChannel,EstablishGpuChannelAsync,GlobalShortcutsPortalPreferredTrigger,PdfUseShowSaveFilePicker --disable-features=DirectSockets,DirectSocketsInServiceWorkers,DirectSocketsInSharedWorkers,DropInputEventsWhilePaintHolding,FedCm,IntensiveWakeUpThrottling,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7,i,1093890293600097732,3130111451012626359,4 --trace-process-track-uuid=3190708989122997041
+  26800   26627 Ssl     03:16:00 41724 /home/box/.orca/app-1.4.224-20261018051422/orca-ide /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/main/daemon-entry.js --socket /home/box/.config/orca/daemon/daemon-v43.sock --token /home/box/.config/orca/daemon/daemon-v43.token --pid-record /home/box/.config/orca/daemon/daemon-v43.pid --launch-nonce 9f1cf877-a9c1-4595-b95d-e8ac301fed85 --entry-path /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/main/daemon-entry.js --app-version 1.4.224 --spawner-exec-path /home/box/.orca/app-1.4.224-20261018051422/orca-ide --log-file /home/box/.config/orca/logs/daemon.log
+  27167      53 Ss      03:15:58  3748 bash /usr/local/bin/supervise-sand-supervisor /tmp/sand-supervisor/status.json /tmp/sand-supervisor.log /exec-daemon/node /usr/local/bin/sand-supervisor.mjs
+  27182   27167 Ssl     03:15:58 65800 /exec-daemon/node /usr/local/bin/sand-supervisor.mjs
+  27183   27167 Ss      03:15:58  3428 bash -c while sleep "$1"; do kill -USR1 "$2" 2>/dev/null || exit 0; done ticker 5 27167
+  27186      53 S       03:15:58  4328 bash /usr/local/bin/start-desktop.sh
+  27191   27186 S       03:15:58  1992 bash /usr/local/bin/box-bounded-log --run /tmp/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  27192   27191 S       03:15:58  1824 flock -n /tmp/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/start-desktop.log 27186
+  27194   27192 Sl      03:15:58 34156 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/start-desktop.log 27186
+  27245       1 Ss      03:15:58  2232 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  27250   27186 S       03:15:58 61116 Xvfb :1 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  27255   27250 S       03:15:58  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:1.log -- /usr/local/bin/box-xvfb :1 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  27256   27255 S       03:15:58  1864 flock -n /tmp/xvfb:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:1.log 27250
+  27258   27256 Sl      03:15:58 34500 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:1.log 27250
+  27263   27250 Z       03:15:58     0 [bash] <defunct>
+  27313   27182 Ssl     03:15:58 599876 /exec-daemon/node --disable-warning=ExperimentalWarning /opt/sand/sand-host/host-main.cjs
+  27366      53 Ss      03:15:58 24188 /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  27383      53 S       03:15:58  2592 /usr/local/libexec/sand/sand-daemon-supervisor run orbitd
+  27385   27383 S       03:15:58  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-orbitd.log -- env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/libexec/sand/sand-daemon-supervisor run orbitd
+  27386   27385 S       03:15:58  1944 flock -n /tmp/sand-orbitd.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-orbitd.log 27383
+  27389   27386 Sl      03:15:58 34396 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-orbitd.log 27383
+  27390   27383 S       03:15:58  8104 /usr/local/libexec/sand/sand-daemon-supervisor __supervise orbitd
+  27398   27186 S       03:15:58 20080 x11vnc -skip_lockkeys -display :1 -localhost -nopw -shared -forever -noxdamage -rfbport 5900 -quiet
+  27403   27398 S       03:15:58  2048 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:1.log -- /usr/local/bin/box-x11vnc -display :1 -localhost -nopw -shared -forever -noxdamage -rfbport 5900 -quiet
+  27404   27403 S       03:15:58  1832 flock -n /tmp/x11vnc:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:1.log 27398
+  27405   27404 Sl      03:15:58 34220 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:1.log 27398
+  27427   27186 S       03:15:58 35112 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27432   27427 S       03:15:58  2020 bash /usr/local/bin/box-bounded-log --run /tmp/novnc:1.log -- websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27433   27432 S       03:15:58  1836 flock -n /tmp/novnc:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc:1.log 27427
+  27434   27433 Sl      03:15:58 34484 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc:1.log 27427
+  27453   27186 Sl      03:15:57 11748 xfwm4 --compositor=off
+  27458   27453 S       03:15:57  2020 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:1.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  27462   27458 S       03:15:57  1880 flock -n /tmp/xfwm4:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:1.log 27453
+  27466   27462 Sl      03:15:57 34148 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:1.log 27453
+  27505   27186 S       03:15:57  4860 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  27510   27505 S       03:15:57  1992 bash /usr/local/bin/box-bounded-log --run /tmp/picom:1.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  27512   27510 S       03:15:57  1880 flock -n /tmp/picom:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:1.log 27505
+  27513   27512 Sl      03:15:57 34128 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:1.log 27505
+  27574       1 Sl      03:15:57  3560 /usr/libexec/dconf-service
+  27953      53 Ssl     03:15:57 60176 plank --name dock1
+  27967   27953 S       03:15:57  2024 bash /usr/local/bin/box-bounded-log --run /tmp/plank:1-dock1.log -- /usr/local/bin/box-plank --name dock1
+  27969   27967 S       03:15:57  1820 flock -n /tmp/plank:1-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:1-dock1.log 27953
+  27974   27969 Sl      03:15:57 33916 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:1-dock1.log 27953
+  28014   27186 S       03:15:57  1948 tail -f /dev/null
+  28485       1 S       03:15:57  3376 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  28490   28485 Sl      03:15:57  8700 /usr/libexec/bamf/bamfdaemon
+  29120   27390 Sl      03:15:57  5244 /var/lib/sand-daemon-supervisor/orbitd/releases/28b0833c5707e1c919cee4d4ab5a8ad0eeac9c46/orbitd
+  29240   27313 Sl      03:15:56 200612 /opt/sand/sand-host/extensions/codebase-telemetry/csnaps
+  29910      53 Ss      03:15:53  4428 bash /usr/local/bin/start-desktop.sh
+  29915   29910 S       03:15:53  1980 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-3/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  29916   29915 S       03:15:53  1824 flock -n /tmp/sand-window-3/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-3/start-desktop.log 29910
+  29917   29916 Sl      03:15:53 34200 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-3/start-desktop.log 29910
+  30000      53 Ss      03:15:53  2272 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  30031   29910 S       03:15:53 52252 Xvfb :3 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  30036   30031 S       03:15:53  2080 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:3.log -- /usr/local/bin/box-xvfb :3 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  30037   30036 S       03:15:53  1824 flock -n /tmp/xvfb:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:3.log 30031
+  30039   30037 Sl      03:15:53 34084 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:3.log 30031
+  30381   27182 Ss      03:15:52 20056 x11vnc -skip_lockkeys -display :2 -localhost -nopw -shared -forever -noxdamage -rfbport 5902 -quiet
+  30384   30381 S       03:15:52  2028 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:2.log -- /usr/local/bin/box-x11vnc -display :2 -localhost -nopw -shared -forever -noxdamage -rfbport 5902 -quiet
+  30385   30384 S       03:15:52  1932 flock -n /tmp/x11vnc:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:2.log 30381
+  30386   30385 Sl      03:15:52 35400 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:2.log 30381
+  33709   30031 Z       03:15:50     0 [bash] <defunct>
+  33760      53 Ssl     03:15:50 96228 /exec-daemon/node /exec-daemon/index.js serve --port 14003 --pty-websocket-port 13603 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  33788   29910 S       03:15:50 29036 x11vnc -skip_lockkeys -display :3 -localhost -nopw -shared -forever -noxdamage -rfbport 5903 -quiet
+  33790   33788 S       03:15:50  2024 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:3.log -- /usr/local/bin/box-x11vnc -display :3 -localhost -nopw -shared -forever -noxdamage -rfbport 5903 -quiet
+  33791   33790 S       03:15:50  1840 flock -n /tmp/x11vnc:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:3.log 33788
+  33792   33791 Sl      03:15:50 34176 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:3.log 33788
+  33824   29910 Sl      03:15:50 11788 xfwm4 --compositor=off
+  33827   33824 S       03:15:50  2076 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:3.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  33832   33827 S       03:15:50  1824 flock -n /tmp/xfwm4:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:3.log 33824
+  33834   33832 Sl      03:15:50 34284 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:3.log 33824
+  33861   29910 S       03:15:50  4876 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  33871   33861 S       03:15:50  2024 bash /usr/local/bin/box-bounded-log --run /tmp/picom:3.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  33872   33871 S       03:15:50  1896 flock -n /tmp/picom:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:3.log 33861
+  33877   33872 Sl      03:15:50 34140 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:3.log 33861
+  33940      53 Sl      03:15:50  3492 /usr/libexec/dconf-service
+  34299      53 Ssl     03:15:50 60100 plank --name dock1
+  34308   34299 S       03:15:50  2052 bash /usr/local/bin/box-bounded-log --run /tmp/plank:3-dock1.log -- /usr/local/bin/box-plank --name dock1
+  34317   34308 S       03:15:50  1824 flock -n /tmp/plank:3-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:3-dock1.log 34299
+  34330   34317 Sl      03:15:49 34072 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:3-dock1.log 34299
+  34358   29910 S       03:15:49  1900 tail -f /dev/null
+  34507      53 S       03:15:49  3512 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  34509   34507 Sl      03:15:49  8908 /usr/libexec/bamf/bamfdaemon
+  35700      53 Ss      03:15:45  4332 bash /usr/local/bin/start-desktop.sh
+  35703   35700 S       03:15:45  1996 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-7/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  35704   35703 S       03:15:45  1924 flock -n /tmp/sand-window-7/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-7/start-desktop.log 35700
+  35705   35704 Sl      03:15:45 34168 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-7/start-desktop.log 35700
+  35755      53 Ss      03:15:45  2224 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  35760   35700 S       03:15:45 52176 Xvfb :7 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  35765   35760 S       03:15:45  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:7.log -- /usr/local/bin/box-xvfb :7 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  35766   35765 S       03:15:45  1868 flock -n /tmp/xvfb:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:7.log 35760
+  35767   35766 Sl      03:15:45 34044 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:7.log 35760
+  38646   35760 Z       03:15:43     0 [bash] <defunct>
+  38695      53 Ssl     03:15:43 92264 /exec-daemon/node /exec-daemon/index.js serve --port 14007 --pty-websocket-port 13607 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  38714   35700 S       03:15:42 29116 x11vnc -skip_lockkeys -display :7 -localhost -nopw -shared -forever -noxdamage -rfbport 5907 -quiet
+  38716   38714 S       03:15:42  1976 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:7.log -- /usr/local/bin/box-x11vnc -display :7 -localhost -nopw -shared -forever -noxdamage -rfbport 5907 -quiet
+  38720   38716 S       03:15:42  1916 flock -n /tmp/x11vnc:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:7.log 38714
+  38723   38720 Sl      03:15:42 34164 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:7.log 38714
+  38739   35700 Sl      03:15:42 11844 xfwm4 --compositor=off
+  38741   38739 S       03:15:42  2028 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:7.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  38745   38741 S       03:15:42  1896 flock -n /tmp/xfwm4:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:7.log 38739
+  38754   38745 Sl      03:15:42 34308 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:7.log 38739
+  38783   35700 S       03:15:42  4868 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  38786   38783 S       03:15:42  1952 bash /usr/local/bin/box-bounded-log --run /tmp/picom:7.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  38787   38786 S       03:15:42  1836 flock -n /tmp/picom:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:7.log 38783
+  38792   38787 Sl      03:15:42 34184 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:7.log 38783
+  38862      53 Sl      03:15:42  3564 /usr/libexec/dconf-service
+  39132      53 Ssl     03:15:42 60244 plank --name dock1
+  39135   39132 S       03:15:42  2004 bash /usr/local/bin/box-bounded-log --run /tmp/plank:7-dock1.log -- /usr/local/bin/box-plank --name dock1
+  39139   39135 S       03:15:42  1940 flock -n /tmp/plank:7-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:7-dock1.log 39132
+  39143   39139 Sl      03:15:42 34176 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:7-dock1.log 39132
+  39194   35700 S       03:15:42  1940 tail -f /dev/null
+  39490      53 S       03:15:42  3460 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  39496   39490 Sl      03:15:42  8724 /usr/libexec/bamf/bamfdaemon
+  40253      53 Ss      03:15:39  4240 bash /usr/local/bin/start-desktop.sh
+  40257   40253 S       03:15:39  2024 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-10/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  40258   40257 S       03:15:39  1820 flock -n /tmp/sand-window-10/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-10/start-desktop.log 40253
+  40259   40258 Sl      03:15:39 34244 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-10/start-desktop.log 40253
+  40298      53 Ss      03:15:39  2168 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  40303   40253 S       03:15:39 52220 Xvfb :10 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  40309   40303 S       03:15:39  2088 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:10.log -- /usr/local/bin/box-xvfb :10 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  40310   40309 S       03:15:39  1932 flock -n /tmp/xvfb:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:10.log 40303
+  40313   40310 Sl      03:15:39 34096 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:10.log 40303
+  43282   40303 Z       03:15:37     0 [bash] <defunct>
+  43326      53 Ssl     03:15:37 92156 /exec-daemon/node /exec-daemon/index.js serve --port 14010 --pty-websocket-port 13610 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  43338   40253 S       03:15:37 28984 x11vnc -skip_lockkeys -display :10 -localhost -nopw -shared -forever -noxdamage -rfbport 5910 -quiet
+  43339   43338 S       03:15:37  2008 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:10.log -- /usr/local/bin/box-x11vnc -display :10 -localhost -nopw -shared -forever -noxdamage -rfbport 5910 -quiet
+  43340   43339 S       03:15:37  1944 flock -n /tmp/x11vnc:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:10.log 43338
+  43345   43340 Sl      03:15:37 33948 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:10.log 43338
+  43363   40253 Sl      03:15:37 11860 xfwm4 --compositor=off
+  43368   43363 S       03:15:37  2000 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:10.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  43370   43368 S       03:15:37  1932 flock -n /tmp/xfwm4:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:10.log 43363
+  43379   43370 Sl      03:15:37 34188 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:10.log 43363
+  43406   40253 S       03:15:37  4892 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  43417   43406 S       03:15:37  2004 bash /usr/local/bin/box-bounded-log --run /tmp/picom:10.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  43420   43417 S       03:15:37  1828 flock -n /tmp/picom:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:10.log 43406
+  43421   43420 Sl      03:15:37 34240 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:10.log 43406
+  43451      53 Sl      03:15:37  3488 /usr/libexec/dconf-service
+  43842   40253 S       03:15:37  1880 tail -f /dev/null
+  43954   27182 Ssl     03:15:36 60260 plank --name dock1
+  43957   43954 S       03:15:36  2044 bash /usr/local/bin/box-bounded-log --run /tmp/plank:10-dock1.log -- /usr/local/bin/box-plank --name dock1
+  43962   43957 S       03:15:36  1900 cat
+  44192      53 S       03:15:36  3428 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  44194   44192 Sl      03:15:36  8760 /usr/libexec/bamf/bamfdaemon
+  45490      53 Ss      03:15:26  4312 bash /usr/local/bin/start-desktop.sh
+  45496   45490 S       03:15:26  2044 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-11/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  45497   45496 S       03:15:26  1924 flock -n /tmp/sand-window-11/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-11/start-desktop.log 45490
+  45499   45497 Sl      03:15:26 34092 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-11/start-desktop.log 45490
+  45547      53 Ss      03:15:26  2164 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  45552   45490 S       03:15:26 52280 Xvfb :11 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  45557   45552 S       03:15:26  2032 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:11.log -- /usr/local/bin/box-xvfb :11 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  45558   45557 S       03:15:26  1936 flock -n /tmp/xvfb:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:11.log 45552
+  45559   45558 Sl      03:15:26 34128 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:11.log 45552
+  49144   45552 Z       03:15:24     0 [bash] <defunct>
+  49154      53 Ssl     03:15:24 92184 /exec-daemon/node /exec-daemon/index.js serve --port 14011 --pty-websocket-port 13611 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  49212   45490 S       03:15:24 28972 x11vnc -skip_lockkeys -display :11 -localhost -nopw -shared -forever -noxdamage -rfbport 5911 -quiet
+  49217   49212 S       03:15:24  2052 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:11.log -- /usr/local/bin/box-x11vnc -display :11 -localhost -nopw -shared -forever -noxdamage -rfbport 5911 -quiet
+  49219   49217 S       03:15:24  1916 flock -n /tmp/x11vnc:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:11.log 49212
+  49220   49219 Sl      03:15:24 34172 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:11.log 49212
+  49246   45490 Sl      03:15:24 11744 xfwm4 --compositor=off
+  49251   49246 S       03:15:24  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:11.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  49252   49251 S       03:15:24  1824 flock -n /tmp/xfwm4:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:11.log 49246
+  49254   49252 Sl      03:15:24 34268 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:11.log 49246
+  49294   45490 S       03:15:24  4864 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  49301   49294 S       03:15:24  1872 bash /usr/local/bin/box-bounded-log --run /tmp/picom:11.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  49302   49301 S       03:15:24  1832 flock -n /tmp/picom:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:11.log 49294
+  49309   49302 Sl      03:15:24 34212 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:11.log 49294
+  49348      53 Sl      03:15:24  3604 /usr/libexec/dconf-service
+  49610      53 Ssl     03:15:24 60448 plank --name dock1
+  49625   49610 S       03:15:24  2044 bash /usr/local/bin/box-bounded-log --run /tmp/plank:11-dock1.log -- /usr/local/bin/box-plank --name dock1
+  49628   49625 S       03:15:24  1832 flock -n /tmp/plank:11-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:11-dock1.log 49610
+  49632   49628 Sl      03:15:24 34044 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:11-dock1.log 49610
+  49668   45490 S       03:15:24  1884 tail -f /dev/null
+  50219      53 S       03:15:23  3548 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  50221   50219 Sl      03:15:23  8816 /usr/libexec/bamf/bamfdaemon
+  68159      53 Ss      03:14:55  4344 bash /usr/local/bin/start-desktop.sh
+  68162   68159 S       03:14:55  2032 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-13/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  68164   68162 S       03:14:55  1948 flock -n /tmp/sand-window-13/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-13/start-desktop.log 68159
+  68165   68164 Sl      03:14:55 34764 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-13/start-desktop.log 68159
+  68204      53 Ss      03:14:55  2236 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  68209   68159 S       03:14:55 52280 Xvfb :13 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  68214   68209 S       03:14:55  1956 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:13.log -- /usr/local/bin/box-xvfb :13 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  68215   68214 S       03:14:55  1876 flock -n /tmp/xvfb:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:13.log 68209
+  68217   68215 Sl      03:14:55 34884 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:13.log 68209
+  71849   68209 Z       03:14:52     0 [bash] <defunct>
+  71893      53 Ssl     03:14:52 102152 /exec-daemon/node /exec-daemon/index.js serve --port 14013 --pty-websocket-port 13613 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  71905   68159 S       03:14:52 29012 x11vnc -skip_lockkeys -display :13 -localhost -nopw -shared -forever -noxdamage -rfbport 5913 -quiet
+  71910   71905 S       03:14:52  2048 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:13.log -- /usr/local/bin/box-x11vnc -display :13 -localhost -nopw -shared -forever -noxdamage -rfbport 5913 -quiet
+  71912   71910 S       03:14:52  1864 flock -n /tmp/x11vnc:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:13.log 71905
+  71913   71912 Sl      03:14:52 34920 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:13.log 71905
+  71930   68159 Sl      03:14:52 13248 xfwm4 --compositor=off
+  71935   71930 S       03:14:52  1876 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:13.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  71936   71935 S       03:14:52  1888 flock -n /tmp/xfwm4:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:13.log 71930
+  71938   71936 Sl      03:14:52 34828 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:13.log 71930
+  71971   68159 S       03:14:52  4880 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  71982   71971 S       03:14:52  1940 bash /usr/local/bin/box-bounded-log --run /tmp/picom:13.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  71983   71982 S       03:14:52  1864 flock -n /tmp/picom:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:13.log 71971
+  71985   71983 Sl      03:14:52 34868 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:13.log 71971
+  72033      53 Sl      03:14:52  3528 /usr/libexec/dconf-service
+  72327      53 Ssl     03:14:52 61140 plank --name dock1
+  72341   72327 S       03:14:52  1872 bash /usr/local/bin/box-bounded-log --run /tmp/plank:13-dock1.log -- /usr/local/bin/box-plank --name dock1
+  72345   72341 S       03:14:52  1940 flock -n /tmp/plank:13-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:13-dock1.log 72327
+  72349   72345 Sl      03:14:52 34960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:13-dock1.log 72327
+  72391   68159 S       03:14:52  1944 tail -f /dev/null
+  72844      53 S       03:14:52  3512 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  72847   72844 Sl      03:14:52  9460 /usr/libexec/bamf/bamfdaemon
+  80415   26442 Sl      03:13:12 170492 python3 -X utf8 server.py
+  94319       1 S       03:08:03  2156 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1"; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+  94322   94319 Ssl     03:08:03 140984 python3 scripts/acquire/remaining_after_stk_surv.py
+  94401       1 S       03:08:01  2156 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1"; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+  94403   94401 Ts      03:08:01 35780 python3 scripts/acquire/relay_outage_backfill.py
+ 212762   94403 Z       02:02:05     0 [python3] <defunct>
+ 337724    9604 Ss      01:05:01  4068 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1" < /dev/null; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+ 337733  337724 S       01:05:01 19508 python3 -
+ 437040       1 S          15:12  3580 /bin/bash /tmp/swterm/run.sh
+ 440937   80415 ZN         10:41     0 [python3] <defunct>
+ 443569   26454 S          06:03  1960 sleep 600
+ 445709   26450 S          02:12  2016 sleep 300
+ 446613   27183 S          00:04  2016 sleep 5
+ 446631     324 S          00:01  1928 sleep 2
+ 446634     323 S          00:00  2004 sleep 2
+ 446635  437040 S          00:00  1896 sleep 1
+ 446637  337733 R          00:00  4736 ps -eo pid,ppid,stat,etime,rss,cmd
+
+=== POST-STOP ps ===
+    PID    PPID STAT     ELAPSED   RSS CMD
+      1       0 Ss      03:25:14   752 /tini -- /pod-daemon --ssh-auth-sock-path /run/host-services/ssh-auth.sock --ssh-auth-vsock-port 52
+      7       1 Sl      03:25:14  7636 /pod-daemon --ssh-auth-sock-path /run/host-services/ssh-auth.sock --ssh-auth-vsock-port 52
+     53       7 Ss      03:25:14 14736 /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S       03:25:14 32564 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+    209     204 S       03:25:14  2028 bash /usr/local/bin/box-bounded-log --run /tmp/novnc-forks.log -- /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+    210     209 S       03:25:14  1780 flock -n /tmp/novnc-forks.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc-forks.log 204
+    211     210 Sl      03:25:14 34020 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc-forks.log 204
+    227      53 Ssl     03:25:14 48524 /exec-daemon/node /usr/local/bin/sand-window-router.mjs 1339 1337 14000
+    247      53 Ssl     03:25:14 48836 /exec-daemon/node /usr/local/bin/sand-session-sync.mjs
+    248      53 Sl      03:25:14 99408 /exec-daemon/node /usr/local/bin/sand-web-bot-auth.mjs
+    257     248 S       03:25:14  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-web-bot-auth.log -- /exec-daemon/node /usr/local/bin/sand-web-bot-auth.mjs
+    258     257 S       03:25:14  1896 flock -n /tmp/sand-web-bot-auth.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-web-bot-auth.log 248
+    259     258 Sl      03:25:14 32612 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-web-bot-auth.log 248
+    277      53 Sl      03:25:14 71672 /exec-daemon/node /usr/local/bin/sand-ua-governor.mjs
+    284     277 S       03:25:14  2016 bash /usr/local/bin/box-bounded-log --run /tmp/sand-ua-governor.log -- /exec-daemon/node /usr/local/bin/sand-ua-governor.mjs
+    286     284 S       03:25:14  1884 flock -n /tmp/sand-ua-governor.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-ua-governor.log 277
+    290     286 Sl      03:25:14 32988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-ua-governor.log 277
+    322      53 Ssl     03:25:14 49900 /exec-daemon/node /usr/local/bin/sand-cookie-persist.mjs
+    323      53 S       03:25:14  4276 bash /usr/local/bin/supervise-exec-daemon 1337 /usr/local/bin/start-exec-daemon
+    324      53 S       03:25:14  4084 bash /usr/local/bin/supervise-egress-tunnel 8790 /usr/local/bin/start-egress-tunnel
+    369     323 Ss      03:25:14  3424 bash /usr/local/bin/start-exec-daemon
+    372     324 Ssl     03:25:14  2508 /usr/local/bin/sand-egress-tunnel server
+    376     369 Sl      03:25:14 91660 /exec-daemon/node /exec-daemon/index.js serve --port 1337 --pty-websocket-port 1338 --auth-token local --rg-path /exec-daemon/rg --pty-auth-token local-pty --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+    720       1 Ss      03:25:04  4316 bash /usr/local/bin/start-desktop.sh
+    724     720 S       03:25:04  2024 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-2/start-desktop.log -- /usr/local/bin/start-desktop.sh
+    725     724 S       03:25:04  1792 flock -n /tmp/sand-window-2/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-2/start-desktop.log 720
+    726     725 Sl      03:25:04 34316 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-2/start-desktop.log 720
+    766       1 Ss      03:25:04  2036 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+    771     720 S       03:25:04 64044 Xvfb :2 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+    776     771 S       03:25:04  1904 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:2.log -- /usr/local/bin/box-xvfb :2 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+    778     776 S       03:25:04  1864 flock -n /tmp/xvfb:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:2.log 771
+    779     778 Sl      03:25:04 33344 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:2.log 771
+   1153     771 Z       03:25:03     0 [bash] <defunct>
+   1201       1 Ssl     03:25:03 68900 /exec-daemon/node /exec-daemon/index.js serve --port 14002 --pty-websocket-port 13602 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   1277     720 Sl      03:25:03 26088 xfwm4 --compositor=off
+   1282    1277 S       03:25:03  2020 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:2.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   1283    1282 S       03:25:03  1784 flock -n /tmp/xfwm4:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:2.log 1277
+   1285    1283 Sl      03:25:03 33180 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:2.log 1277
+   1316     720 S       03:25:03  4080 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   1325    1316 S       03:25:03  1984 bash /usr/local/bin/box-bounded-log --run /tmp/picom:2.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   1326    1325 S       03:25:03  1792 flock -n /tmp/picom:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:2.log 1316
+   1329    1326 Sl      03:25:03 33040 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:2.log 1316
+   1380       1 Sl      03:25:03  3476 /usr/libexec/dconf-service
+   1536       1 Ssl     03:25:03 21152 plank --name dock1
+   1543    1536 S       03:25:03  2024 bash /usr/local/bin/box-bounded-log --run /tmp/plank:2-dock1.log -- /usr/local/bin/box-plank --name dock1
+   1544    1543 S       03:25:03  1828 flock -n /tmp/plank:2-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:2-dock1.log 1536
+   1546    1544 Sl      03:25:03 33052 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:2-dock1.log 1536
+   1559     720 S       03:25:03  1872 tail -f /dev/null
+   1618       1 S       03:25:03  3364 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+   1619    1618 Sl      03:25:03  7168 /usr/libexec/bamf/bamfdaemon
+   5268       1 Ss      03:22:30  4308 bash /usr/local/bin/start-desktop.sh
+   5271    5268 S       03:22:30  1928 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-12/start-desktop.log -- /usr/local/bin/start-desktop.sh
+   5273    5271 S       03:22:30  1844 flock -n /tmp/sand-window-12/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-12/start-desktop.log 5268
+   5274    5273 Sl      03:22:30 34184 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-12/start-desktop.log 5268
+   5313       1 Ss      03:22:30  2100 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+   5318    5268 S       03:22:30 60404 Xvfb :12 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   5323    5318 S       03:22:30  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:12.log -- /usr/local/bin/box-xvfb :12 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   5324    5323 S       03:22:30  1904 flock -n /tmp/xvfb:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:12.log 5318
+   5326    5324 Sl      03:22:30 33956 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:12.log 5318
+   6227    5318 Z       03:22:30     0 [bash] <defunct>
+   6247       1 Ssl     03:22:30 96196 /exec-daemon/node /exec-daemon/index.js serve --port 14012 --pty-websocket-port 13612 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   6295    5268 S       03:22:29 28912 x11vnc -skip_lockkeys -display :12 -localhost -nopw -shared -forever -noxdamage -rfbport 5912 -quiet
+   6300    6295 S       03:22:29  2012 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:12.log -- /usr/local/bin/box-x11vnc -display :12 -localhost -nopw -shared -forever -noxdamage -rfbport 5912 -quiet
+   6301    6300 S       03:22:29  1848 flock -n /tmp/x11vnc:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:12.log 6295
+   6302    6301 Sl      03:22:29 33832 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:12.log 6295
+   6325    5268 Sl      03:22:29 57632 xfwm4 --compositor=off
+   6333    6325 S       03:22:29  2028 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:12.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   6335    6333 S       03:22:29  1928 flock -n /tmp/xfwm4:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:12.log 6325
+   6336    6335 Sl      03:22:29 33988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:12.log 6325
+   6368    5268 S       03:22:29  4776 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   6375    6368 S       03:22:29  2036 bash /usr/local/bin/box-bounded-log --run /tmp/picom:12.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   6376    6375 S       03:22:29  1796 flock -n /tmp/picom:12.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:12.log 6368
+   6380    6376 Sl      03:22:29 33908 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:12.log 6368
+   6450       1 Sl      03:22:29  3432 /usr/libexec/dconf-service
+   6654       1 Ssl     03:22:29 59200 plank --name dock1
+   6662    6654 S       03:22:29  2056 bash /usr/local/bin/box-bounded-log --run /tmp/plank:12-dock1.log -- /usr/local/bin/box-plank --name dock1
+   6665    6662 S       03:22:29  1876 flock -n /tmp/plank:12-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:12-dock1.log 6654
+   6668    6665 Sl      03:22:29 33984 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:12-dock1.log 6654
+   6697    5268 S       03:22:29  1896 tail -f /dev/null
+   6834       1 S       03:22:29  3468 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+   6835    6834 Sl      03:22:29  8616 /usr/libexec/bamf/bamfdaemon
+   8307       1 Ss      03:21:08  4300 bash /usr/local/bin/start-desktop.sh
+   8311    8307 S       03:21:08  2072 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-6/start-desktop.log -- /usr/local/bin/start-desktop.sh
+   8312    8311 S       03:21:08  1896 flock -n /tmp/sand-window-6/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-6/start-desktop.log 8307
+   8313    8312 Sl      03:21:08 34012 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-6/start-desktop.log 8307
+   8352       1 Ss      03:21:08  2148 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+   8357    8307 S       03:21:08 60424 Xvfb :6 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   8363    8357 S       03:21:08  1992 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:6.log -- /usr/local/bin/box-xvfb :6 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+   8364    8363 S       03:21:08  1860 flock -n /tmp/xvfb:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:6.log 8357
+   8366    8364 Sl      03:21:08 34252 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:6.log 8357
+   9579    8357 Z       03:21:07     0 [bash] <defunct>
+   9604       1 Ssl     03:21:07 125944 /exec-daemon/node /exec-daemon/index.js serve --port 14006 --pty-websocket-port 13606 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+   9653    8307 S       03:21:07 28992 x11vnc -skip_lockkeys -display :6 -localhost -nopw -shared -forever -noxdamage -rfbport 5906 -quiet
+   9658    9653 S       03:21:07  2076 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:6.log -- /usr/local/bin/box-x11vnc -display :6 -localhost -nopw -shared -forever -noxdamage -rfbport 5906 -quiet
+   9659    9658 S       03:21:07  1796 flock -n /tmp/x11vnc:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:6.log 9653
+   9661    9659 Sl      03:21:07 33932 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:6.log 9653
+   9679    8307 Sl      03:21:07 11392 xfwm4 --compositor=off
+   9684    9679 S       03:21:07  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:6.log -- /usr/local/bin/box-xfwm4 --compositor=off
+   9685    9684 S       03:21:07  1860 flock -n /tmp/xfwm4:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:6.log 9679
+   9692    9685 Sl      03:21:07 34276 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:6.log 9679
+   9730    8307 S       03:21:07  4852 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   9738    9730 S       03:21:07  2072 bash /usr/local/bin/box-bounded-log --run /tmp/picom:6.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+   9741    9738 S       03:21:07  1904 flock -n /tmp/picom:6.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:6.log 9730
+   9743    9741 Sl      03:21:07 34180 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:6.log 9730
+   9795       1 Sl      03:21:07  3336 /usr/libexec/dconf-service
+  10084       1 Ssl     03:21:07 59472 plank --name dock1
+  10095   10084 S       03:21:07  2020 bash /usr/local/bin/box-bounded-log --run /tmp/plank:6-dock1.log -- /usr/local/bin/box-plank --name dock1
+  10096   10095 S       03:21:07  1848 flock -n /tmp/plank:6-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:6-dock1.log 10084
+  10100   10096 Sl      03:21:07 33960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:6-dock1.log 10084
+  10125    8307 S       03:21:07  1888 tail -f /dev/null
+  10284       1 S       03:21:06  3436 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  10287   10284 Sl      03:21:06  8556 /usr/libexec/bamf/bamfdaemon
+  11187       1 Ss      03:20:37  4368 bash /usr/local/bin/start-desktop.sh
+  11191   11187 S       03:20:37  2056 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-8/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  11192   11191 S       03:20:37  1832 flock -n /tmp/sand-window-8/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-8/start-desktop.log 11187
+  11193   11192 Sl      03:20:37 34096 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-8/start-desktop.log 11187
+  11232       1 Ss      03:20:37  2160 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  11237   11187 S       03:20:37 61208 Xvfb :8 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  11242   11237 S       03:20:37  2032 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:8.log -- /usr/local/bin/box-xvfb :8 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  11243   11242 S       03:20:37  1868 flock -n /tmp/xvfb:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:8.log 11237
+  11245   11243 Sl      03:20:37 33972 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:8.log 11237
+  12725   11237 Z       03:20:36     0 [bash] <defunct>
+  12735       1 Ssl     03:20:36 89316 /exec-daemon/node /exec-daemon/index.js serve --port 14008 --pty-websocket-port 13608 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  12790   11187 S       03:20:36 29100 x11vnc -skip_lockkeys -display :8 -localhost -nopw -shared -forever -noxdamage -rfbport 5908 -quiet
+  12797   12790 S       03:20:36  1972 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:8.log -- /usr/local/bin/box-x11vnc -display :8 -localhost -nopw -shared -forever -noxdamage -rfbport 5908 -quiet
+  12798   12797 S       03:20:36  1944 flock -n /tmp/x11vnc:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:8.log 12790
+  12800   12798 Sl      03:20:36 34032 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:8.log 12790
+  12819   11187 Sl      03:20:36 11396 xfwm4 --compositor=off
+  12824   12819 S       03:20:36  2044 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:8.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  12825   12824 S       03:20:36  1828 flock -n /tmp/xfwm4:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:8.log 12819
+  12826   12825 Sl      03:20:36 34084 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:8.log 12819
+  12882   11187 S       03:20:36  4864 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  12891   12882 S       03:20:36  2028 bash /usr/local/bin/box-bounded-log --run /tmp/picom:8.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  12892   12891 S       03:20:36  1824 flock -n /tmp/picom:8.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:8.log 12882
+  12896   12892 Sl      03:20:36 33904 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:8.log 12882
+  12929       1 Sl      03:20:36  3616 /usr/libexec/dconf-service
+  13167       1 Ssl     03:20:36 59724 plank --name dock1
+  13178   13167 S       03:20:36  1996 bash /usr/local/bin/box-bounded-log --run /tmp/plank:8-dock1.log -- /usr/local/bin/box-plank --name dock1
+  13179   13178 S       03:20:36  1868 flock -n /tmp/plank:8-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:8-dock1.log 13167
+  13180   13179 Sl      03:20:36 33988 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:8-dock1.log 13167
+  13209   11187 S       03:20:36  1968 tail -f /dev/null
+  13486       1 S       03:20:35  3444 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  13489   13486 Sl      03:20:35  8748 /usr/libexec/bamf/bamfdaemon
+  14353       1 Ss      03:20:19  4228 bash /usr/local/bin/start-desktop.sh
+  14356   14353 S       03:20:19  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-5/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  14358   14356 S       03:20:19  1824 flock -n /tmp/sand-window-5/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-5/start-desktop.log 14353
+  14359   14358 Sl      03:20:19 33876 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-5/start-desktop.log 14353
+  14398       1 Ss      03:20:19  2192 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  14403   14353 S       03:20:19 61084 Xvfb :5 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  14408   14403 S       03:20:19  1928 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:5.log -- /usr/local/bin/box-xvfb :5 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  14409   14408 S       03:20:19  1924 flock -n /tmp/xvfb:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:5.log 14403
+  14411   14409 Sl      03:20:19 33972 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:5.log 14403
+  16166   14403 Z       03:20:18     0 [bash] <defunct>
+  16176       1 Ssl     03:20:17 96040 /exec-daemon/node /exec-daemon/index.js serve --port 14005 --pty-websocket-port 13605 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  16236   14353 S       03:20:17 29000 x11vnc -skip_lockkeys -display :5 -localhost -nopw -shared -forever -noxdamage -rfbport 5905 -quiet
+  16242   16236 S       03:20:17  2040 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:5.log -- /usr/local/bin/box-x11vnc -display :5 -localhost -nopw -shared -forever -noxdamage -rfbport 5905 -quiet
+  16243   16242 S       03:20:17  1932 flock -n /tmp/x11vnc:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:5.log 16236
+  16246   16243 Sl      03:20:17 34168 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:5.log 16236
+  16263   14353 Sl      03:20:17 11432 xfwm4 --compositor=off
+  16268   16263 S       03:20:17  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:5.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  16269   16268 S       03:20:17  1848 flock -n /tmp/xfwm4:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:5.log 16263
+  16271   16269 Sl      03:20:17 34296 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:5.log 16263
+  16311   14353 S       03:20:17  4852 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  16316   16311 S       03:20:17  2048 bash /usr/local/bin/box-bounded-log --run /tmp/picom:5.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  16318   16316 S       03:20:17  1944 flock -n /tmp/picom:5.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:5.log 16311
+  16321   16318 Sl      03:20:17 34252 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:5.log 16311
+  16362       1 Sl      03:20:17  3336 /usr/libexec/dconf-service
+  16645       1 Ssl     03:20:17 59744 plank --name dock1
+  16656   16645 S       03:20:17  2012 bash /usr/local/bin/box-bounded-log --run /tmp/plank:5-dock1.log -- /usr/local/bin/box-plank --name dock1
+  16657   16656 S       03:20:17  1900 flock -n /tmp/plank:5-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:5-dock1.log 16645
+  16661   16657 Sl      03:20:17 33932 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:5-dock1.log 16645
+  16690   14353 S       03:20:17  1916 tail -f /dev/null
+  16944       1 S       03:20:17  3384 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  16947   16944 Sl      03:20:17  8804 /usr/libexec/bamf/bamfdaemon
+  18167       1 Ss      03:19:40  4288 bash /usr/local/bin/start-desktop.sh
+  18171   18167 S       03:19:40  2004 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-4/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  18172   18171 S       03:19:40  1868 flock -n /tmp/sand-window-4/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-4/start-desktop.log 18167
+  18173   18172 Sl      03:19:40 33964 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-4/start-desktop.log 18167
+  18212       1 Ss      03:19:40  2224 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  18217   18167 S       03:19:40 61228 Xvfb :4 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  18222   18217 S       03:19:40  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:4.log -- /usr/local/bin/box-xvfb :4 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  18224   18222 S       03:19:40  1840 flock -n /tmp/xvfb:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:4.log 18217
+  18225   18224 Sl      03:19:40 33964 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:4.log 18217
+  20160   18217 Z       03:19:39     0 [bash] <defunct>
+  20188       1 Ssl     03:19:39 92100 /exec-daemon/node /exec-daemon/index.js serve --port 14004 --pty-websocket-port 13604 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  20233   18167 S       03:19:39 29044 x11vnc -skip_lockkeys -display :4 -localhost -nopw -shared -forever -noxdamage -rfbport 5904 -quiet
+  20238   20233 S       03:19:39  2056 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:4.log -- /usr/local/bin/box-x11vnc -display :4 -localhost -nopw -shared -forever -noxdamage -rfbport 5904 -quiet
+  20241   20238 S       03:19:39  1876 flock -n /tmp/x11vnc:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:4.log 20233
+  20242   20241 Sl      03:19:39 34372 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:4.log 20233
+  20261   18167 Sl      03:19:39 11764 xfwm4 --compositor=off
+  20266   20261 S       03:19:39  2080 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:4.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  20267   20266 S       03:19:39  1924 flock -n /tmp/xfwm4:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:4.log 20261
+  20269   20267 Sl      03:19:39 34280 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:4.log 20261
+  20316   18167 S       03:19:39  4916 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  20323   20316 S       03:19:39  2028 bash /usr/local/bin/box-bounded-log --run /tmp/picom:4.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  20324   20323 S       03:19:39  1828 flock -n /tmp/picom:4.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:4.log 20316
+  20328   20324 Sl      03:19:39 33960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:4.log 20316
+  20372       1 Sl      03:19:39  3488 /usr/libexec/dconf-service
+  20653       1 Ssl     03:19:38 60444 plank --name dock1
+  20665   20653 S       03:19:38  1996 bash /usr/local/bin/box-bounded-log --run /tmp/plank:4-dock1.log -- /usr/local/bin/box-plank --name dock1
+  20667   20665 S       03:19:38  1932 flock -n /tmp/plank:4-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:4-dock1.log 20653
+  20671   20667 Sl      03:19:38 33996 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:4-dock1.log 20653
+  20713   18167 S       03:19:38  1964 tail -f /dev/null
+  20976       1 S       03:19:38  3456 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  20979   20976 Sl      03:19:38  8696 /usr/libexec/bamf/bamfdaemon
+  26442       1 Ss      03:16:33  3524 /bin/bash ./supervise.sh
+  26447       1 Ss      03:16:33  3404 /bin/bash ./deploy_supervise.sh
+  26450   26447 S       03:16:33  3468 /bin/bash ./deploy_loop.sh
+  26454       1 Ss      03:16:33  3432 ql_keepalive_loop -c while true; do sleep 600; /workspace/quantlab-web/start_all.sh --from-keepalive; done
+  26581       1 Ssl     03:16:32 40084 /home/box/.orca/app-1.4.224-20261018051422/orca-ide /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/cli/index.js serve --port 6768 --pairing-address grok-bot
+  26627   26581 Sl      03:16:32 150492 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --user-data-dir=/home/box/.config/orca --serve --serve-port 6768 --serve-pairing-address grok-bot
+  26630   26627 S       03:16:32 18112 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote --no-zygote-sandbox
+  26631   26627 S       03:16:32 18084 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote
+  26633   26631 S       03:16:32 10788 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=zygote
+  26702       1 Sl      03:16:31  3572 /home/box/.orca/app-1.4.224-20261018051422/chrome_crashpad_handler --monitor-self-annotation=ptype=crashpad-handler --no-rate-limit --no-upload-gzip --database=/home/box/.config/orca/Crashpad --annotation=_productName=orca --annotation=_version=1.4.224 --annotation=lsb-release=Debian GNU/Linux 13 (trixie) --annotation=plat=Linux --annotation=prod=Electron --annotation=ver=43.7.5 --initial-client-fd=41 --shared-client-connection
+  26752   26630 Sl      03:16:31 23232 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=gpu-process --disable-dev-shm-usage --ozone-platform=x11 --crashpad-handler-pid=0 --enable-crash-reporter=593e2e5f-6b43-4a86-bb64-a8a4bc69fbbe,no_channel --user-data-dir=/home/box/.config/orca --gpu-preferences=WAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAABAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --use-gl=disabled --shared-files --field-trial-handle=3,i,4798019459902702605,6824676083144334604,262144 --enable-features=EarlyEstablishGpuChannel,EstablishGpuChannelAsync,GlobalShortcutsPortalPreferredTrigger,PdfUseShowSaveFilePicker --disable-features=DirectSockets,DirectSocketsInServiceWorkers,DirectSocketsInSharedWorkers,DropInputEventsWhilePaintHolding,FedCm,IntensiveWakeUpThrottling,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7,i,1093890293600097732,3130111451012626359,4 --trace-process-track-uuid=3190708988185955192
+  26756   26752 S       03:16:31 12136 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=broker
+  26762   26627 Sl      03:16:31 24784 /home/box/.orca/app-1.4.224-20261018051422/orca-ide --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --disable-dev-shm-usage --crashpad-handler-pid=0 --enable-crash-reporter=593e2e5f-6b43-4a86-bb64-a8a4bc69fbbe,no_channel --user-data-dir=/home/box/.config/orca --standard-schemes=orca-preview,orca-media --secure-schemes=orca-preview,orca-media --cors-schemes=orca-preview --fetch-schemes=orca-preview --streaming-schemes=orca-preview,orca-media --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,4798019459902702605,6824676083144334604,262144 --enable-features=EarlyEstablishGpuChannel,EstablishGpuChannelAsync,GlobalShortcutsPortalPreferredTrigger,PdfUseShowSaveFilePicker --disable-features=DirectSockets,DirectSocketsInServiceWorkers,DirectSocketsInSharedWorkers,DropInputEventsWhilePaintHolding,FedCm,IntensiveWakeUpThrottling,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --pseudonymization-salt-handle=7,i,1093890293600097732,3130111451012626359,4 --trace-process-track-uuid=3190708989122997041
+  26800   26627 Ssl     03:16:30 41724 /home/box/.orca/app-1.4.224-20261018051422/orca-ide /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/main/daemon-entry.js --socket /home/box/.config/orca/daemon/daemon-v43.sock --token /home/box/.config/orca/daemon/daemon-v43.token --pid-record /home/box/.config/orca/daemon/daemon-v43.pid --launch-nonce 9f1cf877-a9c1-4595-b95d-e8ac301fed85 --entry-path /home/box/.orca/app-1.4.224-20261018051422/resources/app.asar.unpacked/out/main/daemon-entry.js --app-version 1.4.224 --spawner-exec-path /home/box/.orca/app-1.4.224-20261018051422/orca-ide --log-file /home/box/.config/orca/logs/daemon.log
+  27167      53 Ss      03:16:28  3748 bash /usr/local/bin/supervise-sand-supervisor /tmp/sand-supervisor/status.json /tmp/sand-supervisor.log /exec-daemon/node /usr/local/bin/sand-supervisor.mjs
+  27182   27167 Ssl     03:16:28 65800 /exec-daemon/node /usr/local/bin/sand-supervisor.mjs
+  27183   27167 Ss      03:16:28  3428 bash -c while sleep "$1"; do kill -USR1 "$2" 2>/dev/null || exit 0; done ticker 5 27167
+  27186      53 S       03:16:28  4328 bash /usr/local/bin/start-desktop.sh
+  27191   27186 S       03:16:28  1992 bash /usr/local/bin/box-bounded-log --run /tmp/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  27192   27191 S       03:16:28  1824 flock -n /tmp/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/start-desktop.log 27186
+  27194   27192 Sl      03:16:28 34156 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/start-desktop.log 27186
+  27245       1 Ss      03:16:28  2232 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  27250   27186 S       03:16:28 61116 Xvfb :1 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  27255   27250 S       03:16:28  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:1.log -- /usr/local/bin/box-xvfb :1 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  27256   27255 S       03:16:28  1864 flock -n /tmp/xvfb:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:1.log 27250
+  27258   27256 Sl      03:16:28 34500 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:1.log 27250
+  27263   27250 Z       03:16:28     0 [bash] <defunct>
+  27313   27182 Ssl     03:16:28 600076 /exec-daemon/node --disable-warning=ExperimentalWarning /opt/sand/sand-host/host-main.cjs
+  27366      53 Ss      03:16:28 24188 /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  27383      53 S       03:16:28  2592 /usr/local/libexec/sand/sand-daemon-supervisor run orbitd
+  27385   27383 S       03:16:28  2028 bash /usr/local/bin/box-bounded-log --run /tmp/sand-orbitd.log -- env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/libexec/sand/sand-daemon-supervisor run orbitd
+  27386   27385 S       03:16:28  1944 flock -n /tmp/sand-orbitd.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-orbitd.log 27383
+  27389   27386 Sl      03:16:28 34396 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-orbitd.log 27383
+  27390   27383 S       03:16:28  8104 /usr/local/libexec/sand/sand-daemon-supervisor __supervise orbitd
+  27398   27186 S       03:16:28 20080 x11vnc -skip_lockkeys -display :1 -localhost -nopw -shared -forever -noxdamage -rfbport 5900 -quiet
+  27403   27398 S       03:16:28  2048 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:1.log -- /usr/local/bin/box-x11vnc -display :1 -localhost -nopw -shared -forever -noxdamage -rfbport 5900 -quiet
+  27404   27403 S       03:16:28  1832 flock -n /tmp/x11vnc:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:1.log 27398
+  27405   27404 Sl      03:16:28 34220 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:1.log 27398
+  27427   27186 S       03:16:28 35112 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27432   27427 S       03:16:28  2020 bash /usr/local/bin/box-bounded-log --run /tmp/novnc:1.log -- websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27433   27432 S       03:16:28  1836 flock -n /tmp/novnc:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc:1.log 27427
+  27434   27433 Sl      03:16:28 34484 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/novnc:1.log 27427
+  27453   27186 Sl      03:16:28 11748 xfwm4 --compositor=off
+  27458   27453 S       03:16:28  2020 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:1.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  27462   27458 S       03:16:28  1880 flock -n /tmp/xfwm4:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:1.log 27453
+  27466   27462 Sl      03:16:28 34148 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:1.log 27453
+  27505   27186 S       03:16:28  4860 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  27510   27505 S       03:16:28  1992 bash /usr/local/bin/box-bounded-log --run /tmp/picom:1.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  27512   27510 S       03:16:28  1880 flock -n /tmp/picom:1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:1.log 27505
+  27513   27512 Sl      03:16:28 34128 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:1.log 27505
+  27574       1 Sl      03:16:28  3560 /usr/libexec/dconf-service
+  27953      53 Ssl     03:16:28 60176 plank --name dock1
+  27967   27953 S       03:16:28  2024 bash /usr/local/bin/box-bounded-log --run /tmp/plank:1-dock1.log -- /usr/local/bin/box-plank --name dock1
+  27969   27967 S       03:16:28  1820 flock -n /tmp/plank:1-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:1-dock1.log 27953
+  27974   27969 Sl      03:16:28 33916 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:1-dock1.log 27953
+  28014   27186 S       03:16:28  1948 tail -f /dev/null
+  28485       1 S       03:16:27  3376 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  28490   28485 Sl      03:16:27  8700 /usr/libexec/bamf/bamfdaemon
+  29120   27390 Sl      03:16:27  5244 /var/lib/sand-daemon-supervisor/orbitd/releases/28b0833c5707e1c919cee4d4ab5a8ad0eeac9c46/orbitd
+  29240   27313 Sl      03:16:27 200620 /opt/sand/sand-host/extensions/codebase-telemetry/csnaps
+  29910      53 Ss      03:16:23  4428 bash /usr/local/bin/start-desktop.sh
+  29915   29910 S       03:16:23  1980 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-3/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  29916   29915 S       03:16:23  1824 flock -n /tmp/sand-window-3/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-3/start-desktop.log 29910
+  29917   29916 Sl      03:16:23 34200 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-3/start-desktop.log 29910
+  30000      53 Ss      03:16:23  2272 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  30031   29910 S       03:16:23 52252 Xvfb :3 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  30036   30031 S       03:16:23  2080 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:3.log -- /usr/local/bin/box-xvfb :3 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  30037   30036 S       03:16:23  1824 flock -n /tmp/xvfb:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:3.log 30031
+  30039   30037 Sl      03:16:23 34084 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:3.log 30031
+  30381   27182 Ss      03:16:23 20056 x11vnc -skip_lockkeys -display :2 -localhost -nopw -shared -forever -noxdamage -rfbport 5902 -quiet
+  30384   30381 S       03:16:23  2028 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:2.log -- /usr/local/bin/box-x11vnc -display :2 -localhost -nopw -shared -forever -noxdamage -rfbport 5902 -quiet
+  30385   30384 S       03:16:23  1932 flock -n /tmp/x11vnc:2.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:2.log 30381
+  30386   30385 Sl      03:16:23 35400 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:2.log 30381
+  33709   30031 Z       03:16:21     0 [bash] <defunct>
+  33760      53 Ssl     03:16:20 96228 /exec-daemon/node /exec-daemon/index.js serve --port 14003 --pty-websocket-port 13603 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  33788   29910 S       03:16:20 29036 x11vnc -skip_lockkeys -display :3 -localhost -nopw -shared -forever -noxdamage -rfbport 5903 -quiet
+  33790   33788 S       03:16:20  2024 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:3.log -- /usr/local/bin/box-x11vnc -display :3 -localhost -nopw -shared -forever -noxdamage -rfbport 5903 -quiet
+  33791   33790 S       03:16:20  1840 flock -n /tmp/x11vnc:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:3.log 33788
+  33792   33791 Sl      03:16:20 34176 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:3.log 33788
+  33824   29910 Sl      03:16:20 11788 xfwm4 --compositor=off
+  33827   33824 S       03:16:20  2076 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:3.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  33832   33827 S       03:16:20  1824 flock -n /tmp/xfwm4:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:3.log 33824
+  33834   33832 Sl      03:16:20 34284 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:3.log 33824
+  33861   29910 S       03:16:20  4876 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  33871   33861 S       03:16:20  2024 bash /usr/local/bin/box-bounded-log --run /tmp/picom:3.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  33872   33871 S       03:16:20  1896 flock -n /tmp/picom:3.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:3.log 33861
+  33877   33872 Sl      03:16:20 34140 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:3.log 33861
+  33940      53 Sl      03:16:20  3492 /usr/libexec/dconf-service
+  34299      53 Ssl     03:16:20 60100 plank --name dock1
+  34308   34299 S       03:16:20  2052 bash /usr/local/bin/box-bounded-log --run /tmp/plank:3-dock1.log -- /usr/local/bin/box-plank --name dock1
+  34317   34308 S       03:16:20  1824 flock -n /tmp/plank:3-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:3-dock1.log 34299
+  34330   34317 Sl      03:16:20 34072 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:3-dock1.log 34299
+  34358   29910 S       03:16:20  1900 tail -f /dev/null
+  34507      53 S       03:16:20  3512 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  34509   34507 Sl      03:16:20  8908 /usr/libexec/bamf/bamfdaemon
+  35700      53 Ss      03:16:15  4332 bash /usr/local/bin/start-desktop.sh
+  35703   35700 S       03:16:15  1996 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-7/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  35704   35703 S       03:16:15  1924 flock -n /tmp/sand-window-7/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-7/start-desktop.log 35700
+  35705   35704 Sl      03:16:15 34168 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-7/start-desktop.log 35700
+  35755      53 Ss      03:16:15  2224 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  35760   35700 S       03:16:15 52176 Xvfb :7 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  35765   35760 S       03:16:15  2056 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:7.log -- /usr/local/bin/box-xvfb :7 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  35766   35765 S       03:16:15  1868 flock -n /tmp/xvfb:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:7.log 35760
+  35767   35766 Sl      03:16:15 34044 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:7.log 35760
+  38646   35760 Z       03:16:13     0 [bash] <defunct>
+  38695      53 Ssl     03:16:13 92264 /exec-daemon/node /exec-daemon/index.js serve --port 14007 --pty-websocket-port 13607 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  38714   35700 S       03:16:13 29116 x11vnc -skip_lockkeys -display :7 -localhost -nopw -shared -forever -noxdamage -rfbport 5907 -quiet
+  38716   38714 S       03:16:13  1976 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:7.log -- /usr/local/bin/box-x11vnc -display :7 -localhost -nopw -shared -forever -noxdamage -rfbport 5907 -quiet
+  38720   38716 S       03:16:13  1916 flock -n /tmp/x11vnc:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:7.log 38714
+  38723   38720 Sl      03:16:13 34164 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:7.log 38714
+  38739   35700 Sl      03:16:13 11844 xfwm4 --compositor=off
+  38741   38739 S       03:16:13  2028 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:7.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  38745   38741 S       03:16:13  1896 flock -n /tmp/xfwm4:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:7.log 38739
+  38754   38745 Sl      03:16:13 34308 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:7.log 38739
+  38783   35700 S       03:16:13  4868 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  38786   38783 S       03:16:13  1952 bash /usr/local/bin/box-bounded-log --run /tmp/picom:7.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  38787   38786 S       03:16:13  1836 flock -n /tmp/picom:7.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:7.log 38783
+  38792   38787 Sl      03:16:13 34184 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:7.log 38783
+  38862      53 Sl      03:16:13  3564 /usr/libexec/dconf-service
+  39132      53 Ssl     03:16:13 60244 plank --name dock1
+  39135   39132 S       03:16:13  2004 bash /usr/local/bin/box-bounded-log --run /tmp/plank:7-dock1.log -- /usr/local/bin/box-plank --name dock1
+  39139   39135 S       03:16:13  1940 flock -n /tmp/plank:7-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:7-dock1.log 39132
+  39143   39139 Sl      03:16:13 34176 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:7-dock1.log 39132
+  39194   35700 S       03:16:13  1940 tail -f /dev/null
+  39490      53 S       03:16:12  3460 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  39496   39490 Sl      03:16:12  8724 /usr/libexec/bamf/bamfdaemon
+  40253      53 Ss      03:16:10  4240 bash /usr/local/bin/start-desktop.sh
+  40257   40253 S       03:16:10  2024 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-10/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  40258   40257 S       03:16:10  1820 flock -n /tmp/sand-window-10/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-10/start-desktop.log 40253
+  40259   40258 Sl      03:16:10 34244 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-10/start-desktop.log 40253
+  40298      53 Ss      03:16:10  2168 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  40303   40253 S       03:16:10 52220 Xvfb :10 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  40309   40303 S       03:16:10  2088 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:10.log -- /usr/local/bin/box-xvfb :10 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  40310   40309 S       03:16:10  1932 flock -n /tmp/xvfb:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:10.log 40303
+  40313   40310 Sl      03:16:10 34096 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:10.log 40303
+  43282   40303 Z       03:16:07     0 [bash] <defunct>
+  43326      53 Ssl     03:16:07 92156 /exec-daemon/node /exec-daemon/index.js serve --port 14010 --pty-websocket-port 13610 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  43338   40253 S       03:16:07 28984 x11vnc -skip_lockkeys -display :10 -localhost -nopw -shared -forever -noxdamage -rfbport 5910 -quiet
+  43339   43338 S       03:16:07  2008 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:10.log -- /usr/local/bin/box-x11vnc -display :10 -localhost -nopw -shared -forever -noxdamage -rfbport 5910 -quiet
+  43340   43339 S       03:16:07  1944 flock -n /tmp/x11vnc:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:10.log 43338
+  43345   43340 Sl      03:16:07 33948 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:10.log 43338
+  43363   40253 Sl      03:16:07 11860 xfwm4 --compositor=off
+  43368   43363 S       03:16:07  2000 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:10.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  43370   43368 S       03:16:07  1932 flock -n /tmp/xfwm4:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:10.log 43363
+  43379   43370 Sl      03:16:07 34188 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:10.log 43363
+  43406   40253 S       03:16:07  4892 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  43417   43406 S       03:16:07  2004 bash /usr/local/bin/box-bounded-log --run /tmp/picom:10.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  43420   43417 S       03:16:07  1828 flock -n /tmp/picom:10.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:10.log 43406
+  43421   43420 Sl      03:16:07 34240 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:10.log 43406
+  43451      53 Sl      03:16:07  3488 /usr/libexec/dconf-service
+  43842   40253 S       03:16:07  1880 tail -f /dev/null
+  43954   27182 Ssl     03:16:07 60260 plank --name dock1
+  43957   43954 S       03:16:07  2044 bash /usr/local/bin/box-bounded-log --run /tmp/plank:10-dock1.log -- /usr/local/bin/box-plank --name dock1
+  43962   43957 S       03:16:07  1900 cat
+  44192      53 S       03:16:07  3428 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  44194   44192 Sl      03:16:07  8760 /usr/libexec/bamf/bamfdaemon
+  45490      53 Ss      03:15:57  4312 bash /usr/local/bin/start-desktop.sh
+  45496   45490 S       03:15:57  2044 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-11/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  45497   45496 S       03:15:57  1924 flock -n /tmp/sand-window-11/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-11/start-desktop.log 45490
+  45499   45497 Sl      03:15:57 34092 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-11/start-desktop.log 45490
+  45547      53 Ss      03:15:57  2164 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  45552   45490 S       03:15:57 52280 Xvfb :11 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  45557   45552 S       03:15:57  2032 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:11.log -- /usr/local/bin/box-xvfb :11 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  45558   45557 S       03:15:57  1936 flock -n /tmp/xvfb:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:11.log 45552
+  45559   45558 Sl      03:15:57 34128 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:11.log 45552
+  49144   45552 Z       03:15:55     0 [bash] <defunct>
+  49154      53 Ssl     03:15:55 92184 /exec-daemon/node /exec-daemon/index.js serve --port 14011 --pty-websocket-port 13611 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  49212   45490 S       03:15:54 28972 x11vnc -skip_lockkeys -display :11 -localhost -nopw -shared -forever -noxdamage -rfbport 5911 -quiet
+  49217   49212 S       03:15:54  2052 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:11.log -- /usr/local/bin/box-x11vnc -display :11 -localhost -nopw -shared -forever -noxdamage -rfbport 5911 -quiet
+  49219   49217 S       03:15:54  1916 flock -n /tmp/x11vnc:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:11.log 49212
+  49220   49219 Sl      03:15:54 34172 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:11.log 49212
+  49246   45490 Sl      03:15:54 11744 xfwm4 --compositor=off
+  49251   49246 S       03:15:54  2052 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:11.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  49252   49251 S       03:15:54  1824 flock -n /tmp/xfwm4:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:11.log 49246
+  49254   49252 Sl      03:15:54 34268 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:11.log 49246
+  49294   45490 S       03:15:54  4864 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  49301   49294 S       03:15:54  1872 bash /usr/local/bin/box-bounded-log --run /tmp/picom:11.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  49302   49301 S       03:15:54  1832 flock -n /tmp/picom:11.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:11.log 49294
+  49309   49302 Sl      03:15:54 34212 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:11.log 49294
+  49348      53 Sl      03:15:54  3604 /usr/libexec/dconf-service
+  49610      53 Ssl     03:15:54 60448 plank --name dock1
+  49625   49610 S       03:15:54  2044 bash /usr/local/bin/box-bounded-log --run /tmp/plank:11-dock1.log -- /usr/local/bin/box-plank --name dock1
+  49628   49625 S       03:15:54  1832 flock -n /tmp/plank:11-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:11-dock1.log 49610
+  49632   49628 Sl      03:15:54 34044 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:11-dock1.log 49610
+  49668   45490 S       03:15:54  1884 tail -f /dev/null
+  50219      53 S       03:15:54  3548 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  50221   50219 Sl      03:15:54  8816 /usr/libexec/bamf/bamfdaemon
+  68159      53 Ss      03:15:25  4344 bash /usr/local/bin/start-desktop.sh
+  68162   68159 S       03:15:25  2032 bash /usr/local/bin/box-bounded-log --run /tmp/sand-window-13/start-desktop.log -- /usr/local/bin/start-desktop.sh
+  68164   68162 S       03:15:25  1948 flock -n /tmp/sand-window-13/start-desktop.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-13/start-desktop.log 68159
+  68165   68164 Sl      03:15:25 34764 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/sand-window-13/start-desktop.log 68159
+  68204      53 Ss      03:15:25  2236 /usr/bin/dbus-daemon --syslog --fork --print-pid 4 --print-address 6 --session
+  68209   68159 S       03:15:25 52280 Xvfb :13 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  68214   68209 S       03:15:25  1956 bash /usr/local/bin/box-bounded-log --run /tmp/xvfb:13.log -- /usr/local/bin/box-xvfb :13 -screen 0 1920x1200x24 -ac +extension GLX +render -noreset
+  68215   68214 S       03:15:25  1876 flock -n /tmp/xvfb:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:13.log 68209
+  68217   68215 Sl      03:15:25 34884 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xvfb:13.log 68209
+  71849   68209 Z       03:15:23     0 [bash] <defunct>
+  71893      53 Ssl     03:15:22 102152 /exec-daemon/node /exec-daemon/index.js serve --port 14013 --pty-websocket-port 13613 --auth-token local --rg-path /exec-daemon/rg --computer-use-enabled --computer-use-lazy-init --computer-use-api-width 1280 --computer-use-api-height 800 --mcp-meta-tool-enabled --origin-cli-enabled --orbitd-proxy-socket /run/orbitd-proxy/rpc.sock
+  71905   68159 S       03:15:22 29012 x11vnc -skip_lockkeys -display :13 -localhost -nopw -shared -forever -noxdamage -rfbport 5913 -quiet
+  71910   71905 S       03:15:22  2048 bash /usr/local/bin/box-bounded-log --run /tmp/x11vnc:13.log -- /usr/local/bin/box-x11vnc -display :13 -localhost -nopw -shared -forever -noxdamage -rfbport 5913 -quiet
+  71912   71910 S       03:15:22  1864 flock -n /tmp/x11vnc:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:13.log 71905
+  71913   71912 Sl      03:15:22 34920 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/x11vnc:13.log 71905
+  71930   68159 Sl      03:15:22 13248 xfwm4 --compositor=off
+  71935   71930 S       03:15:22  1876 bash /usr/local/bin/box-bounded-log --run /tmp/xfwm4:13.log -- /usr/local/bin/box-xfwm4 --compositor=off
+  71936   71935 S       03:15:22  1888 flock -n /tmp/xfwm4:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:13.log 71930
+  71938   71936 Sl      03:15:22 34828 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/xfwm4:13.log 71930
+  71971   68159 S       03:15:22  4880 picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  71982   71971 S       03:15:22  1940 bash /usr/local/bin/box-bounded-log --run /tmp/picom:13.log -- /usr/local/bin/box-picom --backend xrender --no-vsync --no-frame-pacing --no-use-damage
+  71983   71982 S       03:15:22  1864 flock -n /tmp/picom:13.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:13.log 71971
+  71985   71983 Sl      03:15:22 34868 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/picom:13.log 71971
+  72033      53 Sl      03:15:22  3528 /usr/libexec/dconf-service
+  72327      53 Ssl     03:15:22 61140 plank --name dock1
+  72341   72327 S       03:15:22  1872 bash /usr/local/bin/box-bounded-log --run /tmp/plank:13-dock1.log -- /usr/local/bin/box-plank --name dock1
+  72345   72341 S       03:15:22  1940 flock -n /tmp/plank:13-dock1.log.lock /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:13-dock1.log 72327
+  72349   72345 Sl      03:15:22 34960 /exec-daemon/node /usr/local/bin/box-bounded-log.mjs /tmp/plank:13-dock1.log 72327
+  72391   68159 S       03:15:22  1944 tail -f /dev/null
+  72844      53 S       03:15:22  3512 /bin/bash /usr/libexec/bamf/bamfdaemon-dbus-runner
+  72847   72844 Sl      03:15:22  9460 /usr/libexec/bamf/bamfdaemon
+  80415   26442 Sl      03:13:43 170492 python3 -X utf8 server.py
+  94319       1 S       03:08:34  2156 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1"; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+  94322   94319 Ssl     03:08:34 141004 python3 scripts/acquire/remaining_after_stk_surv.py
+  94401       1 S       03:08:32  2156 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1"; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+  94403   94401 Ts      03:08:32 35780 python3 scripts/acquire/relay_outage_backfill.py
+ 212762   94403 Z       02:02:36     0 [python3] <defunct>
+ 337724    9604 Ss      01:05:31  4068 /usr/bin/bash -O extglob -c IFS= builtin read -r -d '' __cursor_command <&5 2>/dev/null || { builtin printf '%s\n' 'The command did not run: a shell startup file ($BASH_ENV or .zshenv) closed or replaced file descriptor 5, which carries the command. Run it again; this shell now passes commands as arguments.' >&2; builtin exit 126; }; exec 5<&-; builtin set -- "$__cursor_command"; builtin unset __cursor_command; snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- "$snap"; { builtin set +u 2>/dev/null || true; builtin eval "${__CURSOR_SANDBOX_ENV_RESTORE:-}" 2>/dev/null; builtin eval "${__CURSOR_SANDBOX_TEMP_RESTORE:-}" 2>/dev/null; builtin export PWD="$(builtin pwd)"; builtin shopt -s expand_aliases 2>/dev/null; builtin eval "$1" < /dev/null; }; COMMAND_EXIT_CODE=$?; dump_bash_state >&4; builtin exit $COMMAND_EXIT_CODE --
+ 337733  337724 S       01:05:31 19512 python3 -
+ 440937   80415 ZN         11:11     0 [python3] <defunct>
+ 443569   26454 S          06:33  1960 sleep 600
+ 445709   26450 S          02:43  2016 sleep 300
+ 446902   27183 S          00:04  2004 sleep 5
+ 446978     324 S          00:01  1988 sleep 2
+ 446981     323 S          00:01  1960 sleep 2
+ 446991  337733 R          00:00  4808 ps -eo pid,ppid,stat,etime,rss,cmd
+

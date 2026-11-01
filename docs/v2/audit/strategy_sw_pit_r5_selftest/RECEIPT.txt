@@ -1,0 +1,8 @@
+ran_et=2026-10-18T05:44:49-04:00 (serial, once)
+selftest_ok=output/data/ARCH_RUN_AUTH_SELFTEST_STRATEGY_SW_PIT_R5.ok sha256=6675c3b11dba82c0b2c2f6d6d8ba0879d0aad25facb936ef5ced4468eb1dfc36
+code_change_ok sha256=9fad93b137992f4cf133107fc3e910c91d7744cfd6f9d719b80ccf4daf7852a3
+command=cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/ql-enrich-venv/bin/python -m pytest -q -p no:cacheprovider --basetemp=/tmp/arch_swpit_r5_selftest research/tests_sw_pit/test_sw_pit_freshness.py
+result=12 passed in 0.45s
+exit_note=stdout redirected to file with '|| true'; recorded EXIT=0 came from PIPESTATUS after '|| true' so is NOT an independent capture. pytest returns 0 iff no failures/errors; stdout shows 12 passed, 0 failed/errors => exit 0 by pytest semantics. Not re-run (run_once).
+cee59fc5b99210f51b78ddde61e9ae5da16ab44bb47da1a1deb5fefb5380fe0e  research/tests_sw_pit/test_sw_pit_freshness.py
+5191997e3a63be758c538c463464038694615f44f195e3f8e74427a9674db43f  research/sw_pit_freshness.py

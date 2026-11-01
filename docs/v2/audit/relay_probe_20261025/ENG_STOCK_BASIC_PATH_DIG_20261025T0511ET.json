@@ -1,0 +1,92 @@
+{
+  "at": "2026-10-25T05:13:37-04:00",
+  "ip": "118.195.242.181",
+  "results": [
+    {
+      "label": "limit_1",
+      "ok": true,
+      "status": 200,
+      "t": 22.86,
+      "nbytes": 423,
+      "http_version": 11,
+      "headers": {
+        "Content-Length": "423",
+        "Transfer-Encoding": null,
+        "Content-Type": "application/json",
+        "Connection": null,
+        "Server": null
+      },
+      "rows": 1,
+      "code": 0
+    },
+    {
+      "label": "limit_10",
+      "ok": true,
+      "status": 200,
+      "t": 4.32,
+      "nbytes": 2091,
+      "http_version": 11,
+      "headers": {
+        "Content-Length": "933",
+        "Transfer-Encoding": null,
+        "Content-Type": "application/json",
+        "Connection": null,
+        "Server": null
+      },
+      "rows": 10,
+      "code": 0
+    },
+    {
+      "label": "limit_50",
+      "ok": false,
+      "err": "ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)",
+      "t": 15.01
+    },
+    {
+      "label": "limit_100",
+      "ok": false,
+      "err": "SSLError: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Max retries exceeded with url: /tushare/pro/stock_basic?list_status=L&limit=100&offset=0 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in ",
+      "t": 5.06
+    },
+    {
+      "label": "trade_cal",
+      "ok": false,
+      "err": "SSLError: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Max retries exceeded with url: /tushare/pro/trade_cal?exchange=SSE&start_date=20261019&end_date=20261025 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] ",
+      "t": 1.99
+    },
+    {
+      "label": "session_limit10",
+      "ok": false,
+      "err": "HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Max retries exceeded with url: /tushare/pro/stock_basic?list_status=L&limit=10&offset=0 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WH",
+      "t": 5.6
+    },
+    {
+      "label": "raw_http1.0_L10",
+      "ok": false,
+      "err": "SSLEOFError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1029)",
+      "t": 8.02
+    },
+    {
+      "label": "raw_http1.1_L10",
+      "ok": true,
+      "status_line": "HTTP/1.1 200 OK",
+      "t": 5.73,
+      "nbytes": 2642,
+      "body_n": 2091
+    },
+    {
+      "label": "raw_http1.0_L100",
+      "ok": true,
+      "status_line": "HTTP/1.0 200 OK",
+      "t": 11.39,
+      "nbytes": 19845,
+      "body_n": 19312
+    },
+    {
+      "label": "raw_http1.1_L100",
+      "ok": false,
+      "err": "SSLEOFError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1029)",
+      "t": 2.44
+    }
+  ]
+}

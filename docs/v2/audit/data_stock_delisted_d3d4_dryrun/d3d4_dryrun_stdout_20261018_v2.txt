@@ -1,0 +1,4 @@
+GATE_PASS step=D3D4_stock_delisted mode=dryrun ok_sha256=cc04d83d9889f8f4a3ead8a82bce0aa98d23ad94978635d12f1feb068c3ecfae
+{"rows": 339, "rows_v1": 339, "v1_columns_equal": true, "d4_v1_period_class_zero_days": 61, "d4_v2_period_class_zero_days": 0, "entered_v1": 89, "entered_v2": 151, "face_value_flag": 93, "recategorised": "...", "unknown_needs_source": "...", "manual_override": "...", "rss_mb": 394}
+DRY-RUN PASS: nothing written
+WRAPPER_EXIT 0 PEAK_RSS_KB_getrusage 403872 MONITOR_MAX_VmRSS_KB 341136 SIGTERM_AT None NIGHTLY_142531_ALIVE_DURING_RUN True

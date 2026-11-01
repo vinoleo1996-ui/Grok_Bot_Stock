@@ -1,0 +1,10 @@
+{
+  "et": "2026-10-25 01:11 ET",
+  "incident_path": "/workspace/QuantLab/docs/v2/ARCH_BOX_REFRESH_INCIDENT_20261025_0111ET_ZH.md",
+  "incident_sha256": "486bb27396961c4f2a511f56067f22a2edc9f8da7bc0f8bfe1a49a62eac03d49",
+  "team_state_sha256": "1d8b70b326650010bd8b308e1809292c0c790ed28fa8d2eded0187406d879df1",
+  "valuation_pinned_nlink": 1,
+  "arch_oks_present": false,
+  "enable_pack_review": "VOID",
+  "live": false
+}

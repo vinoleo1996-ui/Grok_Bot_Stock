@@ -1,0 +1,67 @@
+PASS 守卫自检：读真实 data 会被拦截
+PASS 返回字段齐全（含 coverage_gap / as_of_decision / reference_day）
+PASS 基准：美东 04:00 = 上海 16:00 → 覆盖 10-13，参考日 10-16，落后 3 → stale，coverage_gap
+PASS 日线缺 10-15 时落后天数仍为 3（交易日取自 trade_cal）
+PASS asof 10-15 → 落后 2 → ok
+PASS 美东 05:59（上海 17:59）→ 覆盖 10-13、落后 3
+PASS 美东 06:00（上海 18:00）→ 覆盖 10-14、落后 2、ok
+PASS 美东 10-13 20:00 = 上海 10-14 08:00 → 覆盖 10-13
+PASS built 带时区 +08:00 18:30 → 用 tz_convert、不抛 TypeError，覆盖 10-14
+PASS built 带时区 UTC 09:59（上海 17:59）→ 覆盖 10-13
+PASS sha 不一致：check 抛完整性错误
+PASS sha 不一致：require_fresh(allow_stale=False) 硬停
+PASS sha 不一致：require_fresh(allow_stale=True) 硬停
+PASS manifest 缺失：check 抛完整性错误
+PASS manifest 缺失：require_fresh(allow_stale=False) 硬停
+PASS manifest 缺失：require_fresh(allow_stale=True) 硬停
+PASS parquet 缺失：check 抛完整性错误
+PASS parquet 缺失：require_fresh(allow_stale=False) 硬停
+PASS parquet 缺失：require_fresh(allow_stale=True) 硬停
+PASS in_date_range 缺失（P3）：check 抛完整性错误
+PASS in_date_range 缺失（P3）：require_fresh(allow_stale=False) 硬停
+PASS in_date_range 缺失（P3）：require_fresh(allow_stale=True) 硬停
+PASS 日历为空（无开市日，P3）：check 抛完整性错误
+PASS 日历为空（无开市日，P3）：require_fresh(allow_stale=False) 硬停
+PASS 日历为空（无开市日，P3）：require_fresh(allow_stale=True) 硬停
+PASS 参考日超出日历范围（P2-2）：check 抛完整性错误
+PASS 参考日超出日历范围（P2-2）：require_fresh(allow_stale=False) 硬停
+PASS 参考日超出日历范围（P2-2）：require_fresh(allow_stale=True) 硬停
+PASS built 无法解析（ValueError → 完整性错误）：check 抛完整性错误
+PASS built 无法解析（ValueError → 完整性错误）：require_fresh(allow_stale=False) 硬停
+PASS built 无法解析（ValueError → 完整性错误）：require_fresh(allow_stale=True) 硬停
+PASS built 落在美东不存在时刻（夏令时跳变）：check 抛完整性错误
+PASS built 落在美东不存在时刻（夏令时跳变）：require_fresh(allow_stale=False) 硬停
+PASS built 落在美东不存在时刻（夏令时跳变）：require_fresh(allow_stale=True) 硬停
+PASS 日历文件缺失（FileNotFoundError → 完整性错误）：check 抛完整性错误
+PASS 日历文件缺失（FileNotFoundError → 完整性错误）：require_fresh(allow_stale=False) 硬停
+PASS 日历文件缺失（FileNotFoundError → 完整性错误）：require_fresh(allow_stale=True) 硬停
+PASS 美东回拨重复时刻 01:30 不抛错（ambiguous=True 取夏令时）
+[freshness] {"table": "sw_pit", "max_date": "2026-09-24", "built": "2026-10-14T04:00:00", "covered_through": "2026-10-13", "reference_day": "2026-10-16", "as_of_decision": "2026-10-18", "lag_days": 3, "coverage_gap": true, "status": "stale", "disclosure": "sw_pit: built=2026-10-14T04:00:00（无时区按美东）= 2026-10-14 16:00 上海，覆盖到 2026-10-13，落后 3 个交易日（参考日 = 上海最近已收盘交易日 2026-10-16，阈值 ≥3）；最后一次成分变动 2026-09-24；sha256 校验通过（STALE）"}
+PASS stale 默认停跑（非硬停）
+[freshness] {"table": "sw_pit", "max_date": "2026-09-24", "built": "2026-10-14T04:00:00", "covered_through": "2026-10-13", "reference_day": "2026-10-16", "as_of_decision": "2026-10-18", "lag_days": 3, "coverage_gap": true, "status": "stale", "disclosure": "sw_pit: built=2026-10-14T04:00:00（无时区按美东）= 2026-10-14 16:00 上海，覆盖到 2026-10-13，落后 3 个交易日（参考日 = 上海最近已收盘交易日 2026-10-16，阈值 ≥3）；最后一次成分变动 2026-09-24；sha256 校验通过（STALE）"}
+PASS --allow-stale 放行 stale 并带 disclosure
+PASS verify_sha：一致时通过
+[freshness] {"table": "sw_pit", "max_date": "2026-09-24", "built": "2026-10-14T04:00:00", "covered_through": "2026-10-13", "reference_day": "2026-10-16", "as_of_decision": "2026-10-18 05:42 ET", "lag_days": 3, "coverage_gap": true, "status": "stale", "disclosure": "sw_pit: built=2026-10-14T04:00:00（无时区按美东）= 2026-10-14 16:00 上海，覆盖到 2026-10-13，落后 3 个交易日（参考日 = 上海最近已收盘交易日 2026-10-16，阈值 ≥3）；最后一次成分变动 2026-09-24；sha256 校验通过（STALE）"}
+PASS intel_event_study.py 无参数 → STOP
+PASS intel_event_study.py ['--allow-stale'] → HARD STOP
+[freshness] {"table": "sw_pit", "max_date": "2026-09-24", "built": "2026-10-14T04:00:00", "covered_through": "2026-10-13", "reference_day": "2026-10-16", "as_of_decision": "2026-10-18 05:42 ET", "lag_days": 3, "coverage_gap": true, "status": "stale", "disclosure": "sw_pit: built=2026-10-14T04:00:00（无时区按美东）= 2026-10-14 16:00 上海，覆盖到 2026-10-13，落后 3 个交易日（参考日 = 上海最近已收盘交易日 2026-10-16，阈值 ≥3）；最后一次成分变动 2026-09-24；sha256 校验通过（STALE）"}
+PASS intel_c1_gap_split.py 无参数 → STOP
+PASS intel_c1_gap_split.py ['--allow-stale'] → HARD STOP
+dry-run written /tmp/arch_intel_r3_selftest/swfresh_r3_1x0qeyxg/run_8355989912078767991/dry
+PASS intel_run 方案 A（sha 不一致）：不崩
+PASS intel_run（sha 不一致）：json 顶层 data_integrity_errors 非空且 high
+PASS intel_run（sha 不一致）：行业预警照常输出
+PASS intel_run（sha 不一致）：md 标题下第一行是 HIGH 横幅
+PASS intel_run（sha 不一致）：每条相关个股写明原因
+dry-run written /tmp/arch_intel_r3_selftest/swfresh_r3_1x0qeyxg/run_6242693927567838928/dry
+PASS intel_run 方案 A（built 为整数（非法类型））：不崩
+PASS intel_run（built 为整数（非法类型））：json 顶层 data_integrity_errors 非空且 high
+PASS intel_run（built 为整数（非法类型））：行业预警照常输出
+PASS intel_run（built 为整数（非法类型））：md 标题下第一行是 HIGH 横幅
+PASS intel_run（built 为整数（非法类型））：每条相关个股写明原因
+PASS as-of：变动当天不可用、出表当天仍是成员
+PASS as-of：次日生效
+PASS 守卫：没有读写真实 data/output、没有联网、没有越过停跑调用数据加载
+PASS 临时目录已在 finally 中清理
+
+59/59 passed

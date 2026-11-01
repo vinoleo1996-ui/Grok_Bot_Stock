@@ -1,0 +1,33 @@
+PASS py_compile rc=0
+SELFTEST start 2026-10-25T04:57:22-04:00 workdir /tmp/ql_bf1019_selftest_0quv6lgx
+PASS DATE_LIST 五日 ['20261019', '20261020', '20261021', '20261022', '20261023']
+PASS CALL_B_STEPS 14 且无 trade_cal/sw ['index_pull', 'adj_factor', 'bars', 'daily_basic', 'index', 'etf_daily_adj', 'eng_panels', 'mid_large_universe', 'events', 'hsgt', 'cyq', 'tier3', 'bundle', 'freshness']
+PASS sha_driver_ref 钉 f1910e8a f1910e8ab054c306
+PASS auth_ok 钉 9e4359f9 9e4359f9b6521e9d
+PASS enable_ok 钉 4377eb59 4377eb592c18c3be
+PASS LEAF25=10:00-10:45 ((10, 0), (10, 45))
+PASS BLACKOUT=16:40-18:40 ((16, 40), (18, 40))
+PASS MEM_MIN 2.5GiB 2621440
+PASS requires_dedicated 
+PASS forbid nightly driver FORBIDDEN: 禁止调用 run_nightly_v1_dbincr_v3_1.py 跑历史日：'/usr/bin/python3 docs/v2/audit/nightly_20261019/
+PASS allow nightly_update.py 
+PASS in_leaf25 at 10:15 
+PASS not leaf25 at 09:59 
+PASS in_blackout at 17:00 
+PASS not blackout at 12:00 
+PASS CMD 解释器只一次 ['/usr/bin/python3', 'scripts/nightly_update.py', '--date']
+PASS CMD forbid 放行 nightly_update 
+2026-10-25T04:57:22-04:00 STOP_TREE npid=208144 reason_code=SELFTEST_RSS reason=selftest
+2026-10-25T04:57:22-04:00 SIGNAL SIGSTOP pid=208144 ppid=208141
+2026-10-25T04:57:22-04:00 SIGNAL SIGSTOP pid=208145 ppid=208144
+2026-10-25T04:57:22-04:00 SIGNAL SIGTERM pid=208145 ppid=208144
+2026-10-25T04:57:22-04:00 SIGNAL SIGCONT pid=208145 ppid=208144
+2026-10-25T04:57:22-04:00 SIGNAL SIGKILL pid=208144 ppid=208141
+PASS stop_tree 记录存在 [('SIGSTOP_PARENT', 208144, 'sent'), ('SIGSTOP', 208145, 'sent'), ('TERM_KILL', 208145, 'term_ok'), ('SIGKILL_PARENT', 208144, 'sent')]
+PASS stop_tree 首步 SIGSTOP* [('SIGSTOP_PARENT', 208144, 'sent')]
+PASS stop_tree 含 SIGKILL* ['SIGSTOP_PARENT', 'SIGSTOP', 'TERM_KILL', 'SIGKILL_PARENT']
+PASS summary 陈旧 finished 被拒 ["summary finished='2020-01-01T00:00:00+00:00' 不在 t_stale 窗口内（旧记录）"]
+PASS summary 本次窗口通过 []
+PASS 现盘 check_pins PASS None
+PASS 现盘 check_auth_ok PASS None
+SELFTEST end pass=25 fail=0 workdir=/tmp/ql_bf1019_selftest_0quv6lgx

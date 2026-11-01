@@ -1,0 +1,263 @@
+--- research/leaf27_chunked_members_mktcap_r1.py.8cb3e86f.bak
++++ research/leaf27_chunked_members_mktcap_r1.py
+@@ -13,15 +13,19 @@
+ 
+ Mechanism (load only):
+   - Split calendar into chunks (default: calendar quarter of open sessions)
+-  - Per chunk: load members+suspend (mask RG date prune) + mktcap (dates_needed only)
+-    + capadv (span filter) → process days → del maps + gc.collect()
++  - Per chunk: load members+suspend (mask RG date prune) + mktcap_cache_r1
++    (cross-chunk DayFloatMap; load ONLY missing trade_date via pyarrow filters)
++    + capadv (span filter) → process days → clear members/capadv + gc;
++    KEEP mktcap store across chunks (no mktcap.clear at chunk end)
+   - Rolling β/ε histories retained across chunks (factor continuity)
+   - hist_prune_r1: ALSO prune ret_hist/eps_hist at each chunk boundary
+     (alive_recent), then reset alive_recent to last-day codes; keep di%40
+     in-loop prune; drop empty deques; NO raise rss_limit
+-  - mktcap T-1 lookback: each chunk loads max(1 prev session, chunk start)
++  - mktcap T-1 lookback: each chunk requests max(1 prev session, chunk start);
++    cache hits skip reload; drop_before still applies in-loop (T-1 unchanged)
+   - rss_limit HARD = 1500 MB (NO raise); soft abort if stage peak exceeds
+-  - SUPERSEDES ndays40-only ticket for next auth (code fix, not mode change)
++  - SUPERSEDES hist_prune-only ticket for next auth (Gate A mktcap cache; not mode change)
++  - Gate A refs: Arch a2307c8b / spike dd193511 / VOID fd159322 / receipt d8be85cb
+ 
+ Factor pins UNCHANGED vs lowmem_v1 / baseline:
+   α_raw=-ivol; β60/min40; W20/min15; residual order SW→logMV T-1→β→capadv→ivol→domain
+@@ -92,13 +96,27 @@
+ _prune_hist = _lm._prune_hist
+ 
+ CHUNKED_TAG = "leaf27_chunked_members_mktcap_r1"
+-HIST_PRUNE_TAG = "hist_prune_r1"  # chunk-boundary prune; supersedes ndays40-only ticket
++HIST_PRUNE_TAG = "hist_prune_r1"  # chunk-boundary prune; keep with Gate A
++MKTCAP_CACHE_TAG = "mktcap_cache_r1"  # Gate A: cross-chunk mktcap; miss-only + filters
+ LOWMEM_V1_SHA = "05bd81ea9da97cd53785b374c36273b327ff0302098c5b1cef1368c051d400f8"
+ AUDIT_P14_SHA8 = "c8877760"
++ARCH_MKTCAP_SPIKE_DRAFT_SHA8 = "a2307c8b"
++SPIKE_NOTE_SHA8 = "dd193511"
++VOID_AUTHORITY_SHA8 = "fd159322"
++ABORT_RECEIPT_SHA8 = "d8be85cb"
++PREV_SCRIPT_SHA8 = "8cb3e86f"  # hist_prune_r1 baseline this Gate A patches
+ RSS_LIMIT_MB = 1500  # HARD — forbid raise
+ DEFAULT_CHUNK_MODE = "quarter"  # quarter | month | ndays
+ DEFAULT_CHUNK_NDAYS = 60
+-VOID_OK_SHA8 = ("8bcd79dc", "725be3e0")
++# forbid RESTORED six tickets (plain sha8)
++VOID_OK_SHA8 = (
++    "2be59acd",
++    "a7d98ac9",
++    "8e51de63",
++    "3a6caa4f",
++    "8bcd79dc",
++    "725be3e0",
++)
+ 
+ 
+ def _check_rss(stage: str) -> float:
+@@ -200,10 +218,92 @@
+ 
+ 
+ def load_mktcap_chunk(dates_needed: set[str]) -> DayFloatMap:
+-    """Same pin/columns as lowmem load_mktcap_by_session; caller passes chunk dates only."""
++    """Legacy one-shot wrapper (full-scan helper). Gate A path uses cached loader."""
+     return load_mktcap_by_session(dates_needed)
+ 
+ 
++def load_mktcap_chunk_cached(
++    store: DayFloatMap, dates_needed: set[str]
++) -> dict:
++    """Gate A: keep store across chunks; load ONLY missing trade_date via filters.
++
++    trade_date column type is timestamp[us] (schema probe). Filter values are
++    datetime.datetime midnight. Uses pyarrow.parquet.read_table(..., filters=)
++    to avoid per-chunk 12× RG read_row_group→to_pandas full-table materialize.
++    T-1 / drop_before semantics unchanged (caller still drop_before in-loop).
++    Does NOT modify lowmem_v1.
++    """
++    import pyarrow.parquet as pq
++
++    assert_pinned_sha(MKTCAP, MKTCAP_SHA, "float_mktcap_from2015")
++    want = set(dates_needed)
++    have = set(store._codes.keys())  # DayFloatMap private; intentional cache probe
++    hit = want & have
++    missing = sorted(want - have)
++    stats = {
++        "hit": int(len(hit)),
++        "miss": int(len(missing)),
++        "load_n": 0,
++        "cache_days_before": int(len(have)),
++    }
++    if not missing:
++        stats["cache_days_after"] = int(len(store._codes))
++        return stats
++
++    missing_ts = [pd.Timestamp(d).to_pydatetime() for d in missing]
++    table = pq.read_table(
++        MKTCAP,
++        columns=["instrument_id", "trade_date", "float_mktcap"],
++        filters=[("trade_date", "in", missing_ts)],
++    )
++    df = table.to_pandas()
++    del table
++    if len(df) == 0:
++        del df
++        gc.collect()
++        stats["cache_days_after"] = int(len(store._codes))
++        return stats
++
++    df["instrument"] = df["instrument_id"].map(to_ts)
++    df["ds"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y-%m-%d")
++    miss_set = set(missing)
++    df = df[df["ds"].isin(miss_set)]
++    loaded = 0
++    if len(df):
++        v = df["float_mktcap"].to_numpy(dtype=np.float64)
++        ok = np.isfinite(v) & (v > 0)
++        ds_arr = df["ds"].to_numpy()
++        inst = df["instrument"].to_numpy()
++        # group by day without giant groupby hold
++        order = np.argsort(ds_arr, kind="mergesort")
++        ds_arr = ds_arr[order]
++        inst = inst[order]
++        v = v[order]
++        ok = ok[order]
++        if len(ds_arr):
++            cuts = np.flatnonzero(ds_arr[1:] != ds_arr[:-1]) + 1
++            starts = np.concatenate(([0], cuts))
++            ends = np.concatenate((cuts, [len(ds_arr)]))
++            for a, b in zip(starts, ends):
++                d = str(ds_arr[a])
++                if d not in miss_set:
++                    continue
++                mask = ok[a:b]
++                if not mask.any():
++                    continue
++                store.put_day(
++                    d,
++                    np.asarray(inst[a:b][mask], dtype=object),
++                    np.asarray(v[a:b][mask], dtype=np.float32),
++                )
++                loaded += 1
++    del df
++    gc.collect()
++    stats["load_n"] = int(loaded)
++    stats["cache_days_after"] = int(len(store._codes))
++    return stats
++
++
+ def load_capadv_chunk(universe: str, sessions: list[str]) -> DayFloatMap:
+     return load_capadv_target_weight(universe, sessions)
+ 
+@@ -223,7 +323,8 @@
+ 
+     print(
+         f"[{CHUNKED_TAG}/{universe}/{window}] begin rss={rss_mb():.0f}MB "
+-        f"chunk_mode={chunk_mode} rss_limit={RSS_LIMIT_MB}",
++        f"chunk_mode={chunk_mode} rss_limit={RSS_LIMIT_MB} "
++        f"hist_prune={HIST_PRUNE_TAG} mktcap_cache={MKTCAP_CACHE_TAG}",
+         flush=True,
+     )
+     r_mkt = load_510300_ret()
+@@ -259,6 +360,8 @@
+     alive_recent: set[str] = set()
+     peak = rss_mb()
+     di_global = 0  # index into full cal for T-1 prev session
++    # Gate A: process-lifetime mktcap cache (cross-chunk); NOT cleared at chunk end
++    mktcap = DayFloatMap()
+ 
+     for ci, chunk in enumerate(chunks):
+         # lookback: need prev trading session mktcap for first day of chunk (T-1)
+@@ -280,10 +383,15 @@
+         r = _check_rss(f"chunk{ci}_capadv")
+         peak = max(peak, r)
+         print(f"  chunk[{ci}] capadv_days={cap.n_days()} rss={r:.0f}MB", flush=True)
+-        mktcap = load_mktcap_chunk(mkt_dates)
++        mc_stats = load_mktcap_chunk_cached(mktcap, mkt_dates)
+         r = _check_rss(f"chunk{ci}_mktcap")
+         peak = max(peak, r)
+-        print(f"  chunk[{ci}] mktcap_days={mktcap.n_days()} rss={r:.0f}MB", flush=True)
++        print(
++            f"  chunk[{ci}] mktcap_cache hit={mc_stats['hit']} "
++            f"miss={mc_stats['miss']} load_n={mc_stats['load_n']} "
++            f"days={mktcap.n_days()} rss={r:.0f}MB",
++            flush=True,
++        )
+ 
+         for ds in chunk:
+             di = cal.index(ds)
+@@ -467,15 +575,17 @@
+             alive_recent = set()
+         members.clear()
+         suspended.clear()
+-        mktcap.clear()
++        # Gate A: DO NOT mktcap.clear() — retain cross-chunk DayFloatMap cache
++        # (in-loop drop_before already prunes stale T-1 days)
+         cap.clear()
+-        del members, suspended, mktcap, cap
++        del members, suspended, cap
+         gc.collect()
+         r = _check_rss(f"chunk{ci}_hist_pruned")
+         peak = max(peak, r)
+         print(
+             f"  chunk[{ci}] hist_pruned+freed rss={r:.0f}MB "
+-            f"ret_hist_n={len(ret_hist)} eps_hist_n={len(eps_hist)}",
++            f"ret_hist_n={len(ret_hist)} eps_hist_n={len(eps_hist)} "
++            f"mktcap_cache_days={mktcap.n_days()}",
+             flush=True,
+         )
+ 
+@@ -533,8 +643,15 @@
+         audit_p14_sha8=AUDIT_P14_SHA8,
+         forbid_restored_ok_sha8=list(VOID_OK_SHA8),
+         hist_prune_tag=HIST_PRUNE_TAG,
++        mktcap_cache_tag=MKTCAP_CACHE_TAG,
++        arch_mktcap_spike_draft_sha8=ARCH_MKTCAP_SPIKE_DRAFT_SHA8,
++        spike_note_sha8=SPIKE_NOTE_SHA8,
++        void_authority_sha8=VOID_AUTHORITY_SHA8,
++        abort_receipt_sha8=ABORT_RECEIPT_SHA8,
++        prev_script_sha8=PREV_SCRIPT_SHA8,
+         note=(
+-            "CHUNKED_MEMBERS_MKTCAP_r1 + hist_prune_r1 DRAFT; factor pins UNCHANGED; "
++            "CHUNKED_MEMBERS_MKTCAP_r1 + hist_prune_r1 + mktcap_cache_r1 DRAFT; "
++            "factor pins UNCHANGED; miss-only mktcap filters; "
+             "chunk-boundary + di%40 hist prune; no .ok this turn"
+         ),
+         baseline_script_sha256=(
+@@ -547,6 +664,8 @@
+         json.dumps(meta, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+     )
+ 
++    mktcap.clear()
++    del mktcap
+     lim_cache.clear()
+     ret_hist.clear()
+     eps_hist.clear()
+@@ -564,7 +683,7 @@
+ def main() -> None:
+     ap = argparse.ArgumentParser(
+         description=(
+-            "Leaf27 chunked members/mktcap r1 + hist_prune_r1 — DRAFT; no .ok."
++            "Leaf27 chunked + hist_prune_r1 + mktcap_cache_r1 — DRAFT; no .ok."
+         )
+     )
+     ap.add_argument("--universe", choices=["FULLA", "HILIQ", "both"], default="HILIQ")
+@@ -594,6 +713,7 @@
+                     "mechanism_tag": MECHANISM_TAG,
+                     "chunked_tag": CHUNKED_TAG,
+                     "hist_prune_tag": HIST_PRUNE_TAG,
++                    "mktcap_cache_tag": MKTCAP_CACHE_TAG,
+                     "exposure_col": "target_weight",
+                     "rss_limit_mb": RSS_LIMIT_MB,
+                     "chunk_mode_default": DEFAULT_CHUNK_MODE,
+@@ -602,6 +722,11 @@
+                     "mktcap_sha": MKTCAP_SHA,
+                     "supersedes_lowmem_v1_sha": LOWMEM_V1_SHA,
+                     "audit_p14_sha8": AUDIT_P14_SHA8,
++                    "arch_mktcap_spike_draft_sha8": ARCH_MKTCAP_SPIKE_DRAFT_SHA8,
++                    "spike_note_sha8": SPIKE_NOTE_SHA8,
++                    "void_authority_sha8": VOID_AUTHORITY_SHA8,
++                    "abort_receipt_sha8": ABORT_RECEIPT_SHA8,
++                    "prev_script_sha8": PREV_SCRIPT_SHA8,
+                     "forbid_restored_ok_sha8": list(VOID_OK_SHA8),
+                     "baseline_script_sha": (
+                         "7a5f756c0a1ab09fb55aa2bc3c17f389bde44d222d7066237e503566c908f8c6"

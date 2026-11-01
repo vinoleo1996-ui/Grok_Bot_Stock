@@ -1,0 +1,192 @@
+diff --git a/research/strategy_moneyflow_stack_diag_v1.py b/research/strategy_moneyflow_stack_diag_v1.py
+index c2ff6045..2dae9a91 100644
+--- a/research/strategy_moneyflow_stack_diag_v1.py
++++ b/research/strategy_moneyflow_stack_diag_v1.py
+@@ -9,6 +9,8 @@
+ 
+ 实跑须 Arch 另签 allow_run=true 的 run .ok（pin 主干/卫星/本脚本/对照 NAV sha、
+ decay_outcome、out_dir、expires 等）。本文件不授权读权重/行情/跑 book-smoke。
++lowmem v1.1（Arch b2340c67…）：book-smoke 分档串行、--arms BOOK、aum_* 子目录+gc；
++code_change 不开跑。
+ 
+ live=false; promotion=false; 禁纸面; 禁再单独 moneyflow X2 烟; 禁扩展 CMC。
+ 
+@@ -24,6 +26,7 @@
+ 
+ import argparse
+ import datetime as _dt
++import gc
+ import hashlib
+ import json
+ import os
+@@ -438,8 +441,14 @@
+     )
+ 
+ 
+-def run_book_smoke(stock_path: Path, out_dir: Path, capitals: str, root: Path = ROOT) -> dict:
+-    """Invoke Eng book-smoke via subprocess. Never silently skip."""
++def run_book_smoke(
++    stock_path: Path, out_dir: Path, capital: int, root: Path = ROOT
++) -> dict:
++    """Invoke Eng book-smoke for ONE capital, BOOK arm only (lowmem v1.1).
++
++    Arch code_change .ok b2340c67… / decision LOWMEM_V11: serial single-capital,
++    --arms BOOK (no C0), per-aum subdir. Never silently skip.
++    """
+     out_dir.mkdir(parents=True, exist_ok=True)
+     try:
+         stock_rel = str(stock_path.relative_to(root))
+@@ -461,11 +470,11 @@
+         "--windows",
+         "X2",
+         "--capitals",
+-        capitals,
++        str(int(capital)),
+         "--sleeves",
+         '{"core":0,"stock":1,"alpha_event":0}',
+         "--arms",
+-        "BOOK,C0",
++        "BOOK",
+     ]
+     log = out_dir / "run.log"
+     summary_path = out_dir / "book_smoke_summary.json"
+@@ -502,6 +511,7 @@
+             "summary_fresh": bool(fresh),
+             "log": str(log),
+             "cmd": cmd,
++            "capital": int(capital),
+         }
+     return {
+         "ok": True,
+@@ -510,6 +520,78 @@
+         "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+         "log": str(log),
+         "cmd": cmd,
++        "capital": int(capital),
++        "summary_path": str(summary_path),
++    }
++
++
++def run_book_smoke_serial(
++    stock_path: Path, smoke_root: Path, tiers: list, root: Path = ROOT
++) -> dict:
++    """Serial per-tier book-smoke; aggregate by_capital for extract_book_arm.
++
++    One subprocess per AUM under smoke_root/aum_<tier>/; gc.collect() after each.
++    """
++    smoke_root.mkdir(parents=True, exist_ok=True)
++    per = []
++    by_capital = {}
++    for t in tiers:
++        tier_dir = smoke_root / f"aum_{int(t)}"
++        smoke = run_book_smoke(stock_path, tier_dir, int(t), root=root)
++        per.append(
++            dict(
++                capital=int(t),
++                ok=bool(smoke.get("ok")),
++                returncode=smoke.get("returncode"),
++                summary_fresh=smoke.get("summary_fresh"),
++                log=smoke.get("log"),
++                cmd=smoke.get("cmd"),
++                summary_path=smoke.get("summary_path"),
++            )
++        )
++        if not smoke.get("ok"):
++            return {
++                "ok": False,
++                "failed_capital": int(t),
++                "returncode": smoke.get("returncode"),
++                "summary_fresh": smoke.get("summary_fresh"),
++                "log": smoke.get("log"),
++                "cmd": smoke.get("cmd"),
++                "per_tier": per,
++            }
++        summ = smoke["summary"] or {}
++        bc = (summ.get("by_capital") or {}).get(str(int(t)))
++        if bc is None:
++            # tolerate alternate keying
++            for k, v in (summ.get("by_capital") or {}).items():
++                if str(k) == str(int(t)) or str(k).replace(",", "") == str(int(t)):
++                    bc = v
++                    break
++        if bc is None:
++            return {
++                "ok": False,
++                "failed_capital": int(t),
++                "returncode": 0,
++                "summary_fresh": True,
++                "log": smoke.get("log"),
++                "cmd": smoke.get("cmd"),
++                "error": "missing_by_capital_for_tier",
++                "per_tier": per,
++            }
++        by_capital[str(int(t))] = bc
++        gc.collect()
++    agg = {"by_capital": by_capital, "lowmem_v11": True, "arms": "BOOK", "serial": True}
++    agg_path = smoke_root / "book_smoke_summary_agg.json"
++    agg_path.write_text(json.dumps(agg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
++    return {
++        "ok": True,
++        "returncode": 0,
++        "summary_fresh": True,
++        "summary": agg,
++        "log": str(smoke_root / "serial.log"),
++        "cmd": [p.get("cmd") for p in per],
++        "per_tier": per,
++        "summary_path": str(agg_path),
+     }
+ 
+ 
+@@ -741,13 +823,20 @@
+     to_mean = turnover_2s_mean(blended)
+ 
+     smoke_dir = out / "book_smoke"
+-    capitals = ",".join(str(t) for t in tiers)
+-    smoke = run_book_smoke(w_path, smoke_dir, capitals, root=ROOT)
++    smoke_dir.mkdir(parents=True, exist_ok=True)
++    # lowmem v1.1: serial single-capital BOOK-only (Arch decision LOWMEM_V11)
++    (smoke_dir / "serial.log").write_text(
++        "lowmem_v11 serial BOOK-only capitals=" + ",".join(str(t) for t in tiers) + "\n",
++        encoding="utf-8",
++    )
++    smoke = run_book_smoke_serial(w_path, smoke_dir, list(tiers), root=ROOT)
+     if not smoke.get("ok"):
+         void(
+             out,
+-            f"book-smoke failed returncode={smoke.get('returncode')} "
+-            f"fresh={smoke.get('summary_fresh')} log={smoke.get('log')}",
++            f"book-smoke failed capital={smoke.get('failed_capital')} "
++            f"returncode={smoke.get('returncode')} "
++            f"fresh={smoke.get('summary_fresh')} log={smoke.get('log')} "
++            f"err={smoke.get('error')}",
+         )
+ 
+     trunk_metrics = {
+@@ -770,7 +859,9 @@
+         if arm.get("error"):
+             void(out, f"book-smoke missing BOOK arm for aum={t}")
+         # Prefer engine summary; fill calmar if needed already done
+-        nav_p = smoke_dir / f"aum_{t}" / "X2" / "BOOK" / "nav.csv"
++        nav_p = smoke_dir / f"aum_{t}" / f"aum_{t}" / "X2" / "BOOK" / "nav.csv"
++        if not nav_p.exists():
++            nav_p = smoke_dir / f"aum_{t}" / "X2" / "BOOK" / "nav.csv"
+         if nav_p.exists():
+             nm = nav_metrics(nav_p)
+             for k in ("cagr", "mdd", "calmar", "sharpe"):
+@@ -805,9 +896,15 @@
+         gate_v3=gate_v3_out,
+         book_smoke=dict(
+             ok=True,
++            lowmem_v11=True,
++            arms="BOOK",
++            serial=True,
+             log=smoke.get("log"),
+             cmd=smoke.get("cmd"),
+-            summary_path=str((smoke_dir / "book_smoke_summary.json").relative_to(ROOT)),
++            per_tier=smoke.get("per_tier"),
++            summary_path=str(Path(smoke["summary_path"]).relative_to(ROOT))
++            if smoke.get("summary_path")
++            else str((smoke_dir / "book_smoke_summary_agg.json").relative_to(ROOT)),
+         ),
+         live=False,
+         promotion=False,

@@ -1,0 +1,24 @@
+# cal_compare_v1 结果（只读；新文件）
+started_et=2026-10-27T06:28:48-04:00
+script=/workspace/QuantLab/docs/v2/audit/nightly_20261027/cal_compare_20261027.py sha256=b5835b253ae4cc0ee6ad35d2993bea21f0877b4f7bcf40ce6805534a4d47c774
+python=/usr/bin/python3 pid=4091057
+pandas=3.0.6 pyarrow=26.0.0
+current path=/workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet sha256=141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086 size=95261 mtime_ns=1793011202315344595 ctime_ns=1793096923296666042 inode=455258
+backup path=/workspace/QuantLab/_recovery/data/nightly_20261027/trade_cal.parquet.bak sha256=141078fa6da0ef94bc3cc8829aa031789490b7ff3e051b4baa4e38c496d06086 size=95261 mtime_ns=1793011202315344595 ctime_ns=1793095540501614836 inode=833984
+C1 PASS 两份都能完整读出
+schema backup =[('exchange', 'large_string', True, 'str'), ('cal_date', 'large_string', True, 'str'), ('is_open', 'int64', True, 'int64'), ('pretrade_date', 'large_string', True, 'str')]
+schema current=[('exchange', 'large_string', True, 'str'), ('cal_date', 'large_string', True, 'str'), ('is_open', 'int64', True, 'int64'), ('pretrade_date', 'large_string', True, 'str')]
+C2 PASS schema 全同
+INFO pandas 元数据相同（只记录，不计入判定）
+rows backup meta=9862 read=9862 ; current meta=9862 read=9862
+C3 PASS 行数相同
+C4 PASS backup 无重复键
+C4 PASS current 无重复键
+C5 列 exchange 不同格数=0
+C5 列 cal_date 不同格数=0
+C5 列 is_open 不同格数=0
+C5 列 pretrade_date 不同格数=0
+C5 PASS 排序后逐格相同
+C6 PASS backup {'20261027': 'OK', '20261028': 'OK'}
+C6 PASS current {'20261027': 'OK', '20261028': 'OK'}
+RESULT IDENTICAL exit=0 fails=[] finished_et=2026-10-27T06:28:48-04:00

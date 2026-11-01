@@ -1,0 +1,280 @@
+--- a/scripts_eng/sd1_pit_static_check.py(r3)
++++ b/scripts_eng/sd1_pit_static_check.py(r3.1)
+@@ -5,13 +5,19 @@
+ ``stock_delisted``, ``delist_date``, ``delist_events`` (also ``delist_accounting``, the guarded loader module).
+ Whitelist: engine loaders and audit scripts (spec), plus PREEXISTING hits that predate SD1 and are listed
+ explicitly by (path, stripped line) for Arch review — any new or changed hit fails.
++r3.1 (Arch ARCH_SD1_R3_REVIEW_ZH.md 2b8f81c9 §6.1 P1-1): FUNC_WHITELIST allows a token only INSIDE a named function of a
++named file (path + function name, never by sha); a hit elsewhere in the same file stays a VIOLATION. Three modes:
+ 
+-  python3 scripts_eng/sd1_pit_static_check.py               # repo scan; exit 1 on a violation
+-  python3 scripts_eng/sd1_pit_static_check.py --paths F...  # scan given files as if strategy-layer (T10 planted test)
+-Read-only: plain text scan, imports nothing from quantlab. live=false.
++  --mode pinned --closure J --closure-sha256 H --files F...   # SD1 selftest T10: ONLY the given pinned files + the paper
++        import closure J (every entry's sha256 must still match J, J must match H). Deterministic: other agents' files
++        are not read. Exit 1 on a violation or a closure mismatch.
++  --mode disclosure [--json OUT] [--strict]   # full-repo scan (SCOPE): a disclosure report; exit 0 unless --strict
++        (default mode when no argument is given). Never part of the SD1 test result.
++  --paths F...   # scan given files as if strategy-layer, no whitelist (T10 planted test); exit 1 on a violation
++Read-only: plain text + ast scan, imports nothing from quantlab. live=false.
+ """
+ from __future__ import annotations
+-import argparse, json, re, sys
++import argparse, ast, hashlib, json, re, sys
+ from pathlib import Path
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+@@ -69,14 +75,41 @@
+ }
+ 
+ 
+-def scan(files, *, forced_scope=False):
++# Research leaf scripts may cut their BENCHMARK POOL at delist_date only inside these functions (path, function name).
++FUNC_WHITELIST = {
++    ("research/g1g5_imax_intraday_alpha.py", "pool_benchmarks"):
++        "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3",
++    ("research/g1g5_sue_desens_cs_alpha.py", "pool_benchmarks"):
++        "主 Agent 02:44 裁定（基准池按 delist_date 截断）; Arch 2b8f81c9 §6.1-3",
++}
++
++
++def _enclosing_functions(text: str) -> list:
++    """(start, end, name) of every def; [] when the file does not parse (then no function whitelist applies)."""
++    try:
++        tree = ast.parse(text)
++    except SyntaxError:
++        return []
++    return [(n.lineno, n.end_lineno, n.name) for n in ast.walk(tree)
++            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
++
++
++def _sha256(p) -> str:
++    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
++
++
++def scan(files, *, forced_scope=False, rel_as: dict | None = None):
++    """rel_as: {file: repo-relative path to treat it as} (synthetic T10 cases only)."""
+     hits = []
+     for f in files:
+         f = Path(f)
+-        try:
+-            rel = str(f.resolve().relative_to(ROOT))
+-        except ValueError:
+-            rel = str(f)
++        if rel_as and (str(f) in rel_as or f in rel_as):
++            rel = rel_as.get(str(f), rel_as.get(f))
++        else:
++            try:
++                rel = str(f.resolve().relative_to(ROOT))
++            except ValueError:
++                rel = str(f)
+         if not forced_scope:
+             if not any(rel == s or (s.endswith("/") and rel.startswith(s)) for s in SCOPE):
+                 continue
+@@ -86,33 +119,89 @@
+             text = f.read_text(encoding="utf-8", errors="replace")
+         except OSError:
+             continue
++        funcs = None
+         for ln, line in enumerate(text.splitlines(), 1):
+             if TOKENS.search(line):
+                 key = (rel, line.strip())
++                if funcs is None:
++                    funcs = _enclosing_functions(text)
++                enc = [n for (a, b, n) in sorted(funcs) if a <= ln <= b]   # outermost first, innermost last
++                fw = next((FUNC_WHITELIST[(rel, n)] for n in enc if (rel, n) in FUNC_WHITELIST), None)
++                if forced_scope:
++                    status, note = "VIOLATION", ""
++                elif key in PREEXISTING:
++                    status, note = "PREEXISTING", PREEXISTING[key]
++                elif fw is not None:
++                    status, note = "ALLOWED_FUNC", fw
++                else:
++                    status, note = "VIOLATION", ""
+                 hits.append(dict(path=rel, line=ln, text=line.strip()[:200], token=TOKENS.search(line).group(0),
+-                                 status="PREEXISTING" if (key in PREEXISTING and not forced_scope) else "VIOLATION",
+-                                 note=PREEXISTING.get(key, "")))
++                                 function=(enc[-1] if enc else "<module>"), status=status, note=note))
+     return hits
+ 
+ 
++def pinned_scope(files, closure_json, closure_sha256: str) -> dict:
++    """SD1 selftest T10 scope (Arch 2b8f81c9 §6.1-2): the given pinned files + the paper import closure. The closure
++    list must match ``closure_sha256`` and every entry its recorded sha256, so the result depends only on pinned bytes."""
++    cj = Path(closure_json)
++    got = _sha256(cj)
++    mism = []
++    if got != closure_sha256:
++        return dict(mode="pinned", closure_ok=False, closure_sha256=got, error=f"closure list sha256 {got} != {closure_sha256}",
++                    n_files=0, n_hits=0, n_violations=0, hits=[], closure_mismatch=[])
++    entries = json.loads(cj.read_text(encoding="utf-8"))
++    for rel, sha in entries:
++        f = ROOT / rel
++        now = _sha256(f) if f.exists() else None
++        if now != sha:
++            mism.append(dict(path=rel, pinned=sha, now=now))
++    rels = sorted({str(Path(f).resolve().relative_to(ROOT)) for f in files} | {rel for rel, _ in entries})
++    hits = scan([ROOT / r for r in rels])
++    bad = [h for h in hits if h["status"] == "VIOLATION"]
++    return dict(mode="pinned", closure_ok=not mism, closure_sha256=got, n_closure=len(entries), n_files=len(rels),
++                n_hits=len(hits), n_violations=len(bad), n_preexisting=sum(h["status"] == "PREEXISTING" for h in hits),
++                n_allowed_func=sum(h["status"] == "ALLOWED_FUNC" for h in hits), closure_mismatch=mism, hits=hits)
++
++
++SPEC_SHA256 = "2e428f3956fcb6d2de8204a0b7226242763045afdd280a4d1e860bc6d0fbdb0b"
++
++
+ def main(argv=None):
+     ap = argparse.ArgumentParser()
++    ap.add_argument("--mode", choices=("disclosure", "pinned"), default=None)
+     ap.add_argument("--paths", nargs="*", default=None)
++    ap.add_argument("--files", nargs="*", default=None)
++    ap.add_argument("--closure", default=None)
++    ap.add_argument("--closure-sha256", default=None)
++    ap.add_argument("--strict", action="store_true")
+     ap.add_argument("--json", default=None)
+     a = ap.parse_args(argv)
++    fail = False
+     if a.paths:
+         hits = scan(a.paths, forced_scope=True)
+-    else:
++        rep = dict(mode="paths", n_hits=len(hits), n_violations=sum(h["status"] == "VIOLATION" for h in hits), hits=hits)
++        fail = rep["n_violations"] > 0
++    elif a.mode == "pinned":
++        if not (a.closure and a.closure_sha256 and a.files):
++            ap.error("--mode pinned needs --closure, --closure-sha256 and --files")
++        rep = pinned_scope(a.files, a.closure, a.closure_sha256)
++        fail = rep["n_violations"] > 0 or not rep["closure_ok"]
++    else:   # disclosure (default): full-repo report, not a test gate
+         files = [p for s in SCOPE for p in ((ROOT / s).rglob("*.py") if s.endswith("/") else [ROOT / s]) if p.exists()]
+         hits = scan(sorted(set(files)))
+-    bad = [h for h in hits if h["status"] == "VIOLATION"]
+-    rep = dict(spec_sha256="2e428f3956fcb6d2de8204a0b7226242763045afdd280a4d1e860bc6d0fbdb0b", n_hits=len(hits),
+-               n_violations=len(bad), n_preexisting=len(hits) - len(bad), hits=hits)
++        bad = [h for h in hits if h["status"] == "VIOLATION"]
++        rep = dict(mode="disclosure", n_files=len(set(files)), n_hits=len(hits), n_violations=len(bad),
++                   n_preexisting=sum(h["status"] == "PREEXISTING" for h in hits),
++                   n_allowed_func=sum(h["status"] == "ALLOWED_FUNC" for h in hits),
++                   violations_by_file={f: sum(h["path"] == f for h in bad) for f in sorted({h["path"] for h in bad})},
++                   note="disclosure only; never part of the SD1 selftest result (Arch 2b8f81c9 §6.1-3)", hits=hits)
++        fail = a.strict and bool(bad)
++    rep = dict(spec_sha256=SPEC_SHA256, **rep)
+     out = json.dumps(rep, ensure_ascii=False, indent=1)
+     if a.json:
+         Path(a.json).write_text(out, encoding="utf-8")
+     print(out)
+-    if bad:
++    if fail:
+         raise SystemExit(1)
+ 
+ 
+--- a/tests/test_sd1_suspend_delist.py(r3)
++++ b/tests/test_sd1_suspend_delist.py(r3.1)
+@@ -18,6 +18,7 @@
+ import atexit
+ import datetime as _dt
+ import importlib.util
++import json
+ import os
+ import re
+ import shutil
+@@ -41,6 +42,9 @@
+     "platform_init": "quantlab/platform/__init__.py",
+     "ok_runner_pin": "scripts_eng/ok_runner_pin.py",
+     "sd1_pit_static_check": "scripts_eng/sd1_pit_static_check.py",
++    # r3.1 (Arch 2b8f81c9 §6.1-2): T10 pinned-scope scan reads the paper import closure list (156 entries, each
++    # re-verified against its recorded sha256 inside the scan) -> the list itself is a pinned dep
++    "paper_import_closure": "docs/v2/eng_sd1/paper_import_closure.json",
+     # ---- rest of the static closure (function-level imports included; over-approximation is deliberate)
+     "quantlab____init__": "quantlab/__init__.py",
+     "quantlab__backtest____init__": "quantlab/backtest/__init__.py",
+@@ -598,9 +602,47 @@
+             f.write_text('import pandas as pd\nx = pd.read_parquet("data/v2/ref/stock_delisted.parquet")\nb.delist_date\n')
+             hits = SC.scan([f], forced_scope=True)
+         self.assertEqual(len([h for h in hits if h["status"] == "VIOLATION"]), 2)
+-        rc = subprocess.run([sys.executable, str(ROOT / "scripts_eng/sd1_pit_static_check.py")], capture_output=True,
+-                            env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+-        self.assertEqual(rc.returncode, 0, rc.stdout[-2000:])
++
++    def test_static_check_pinned_scope(self):
++        # r3.1 (Arch 2b8f81c9 §6.1-2): ONLY this file's pinned deps + the paper import closure (sha-verified), so the
++        # result cannot change when other agents edit other files. The full-repo scan is a disclosure report, not a gate.
++        closure = ROOT / TEST_DEPS["paper_import_closure"]
++        files = sorted({str(ROOT / v) for v in TEST_DEPS.values() if v.endswith(".py")} | {str(Path(__file__).resolve())})
++        r = subprocess.run([sys.executable, str(ROOT / "scripts_eng/sd1_pit_static_check.py"), "--mode", "pinned",
++                            "--closure", str(closure), "--closure-sha256", OK_KV["dep_sha256_paper_import_closure"],
++                            "--files", *files], capture_output=True, text=True,
++                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
++        self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-1000:])
++        rep = json.loads(r.stdout)
++        self.assertEqual(rep["mode"], "pinned")
++        self.assertTrue(rep["closure_ok"], rep.get("closure_mismatch"))
++        self.assertEqual(rep["n_closure"], 156)
++        self.assertEqual(rep["n_violations"], 0)
++        self.assertEqual(rep["n_allowed_func"], 0)        # no research leaf file is in the pinned scope
++        scanned_research = [h for h in rep["hits"] if h["path"].startswith("research/")]
++        self.assertEqual(scanned_research, [])
++
++    def test_static_check_function_whitelist(self):
++        # r3.1 (Arch 2b8f81c9 §6.1-3): path + function name, never sha; a hit outside that function in the same file
++        # stays a VIOLATION. Synthetic content treated as the whitelisted path (no real research file is read).
++        sys.path.insert(0, str(ROOT / "scripts_eng"))
++        import sd1_pit_static_check as SC
++        rel = "research/g1g5_imax_intraday_alpha.py"
++        self.assertIn((rel, "pool_benchmarks"), SC.FUNC_WHITELIST)
++        self.assertIn("主 Agent 02:44 裁定", SC.FUNC_WHITELIST[(rel, "pool_benchmarks")])
++        with tempfile.TemporaryDirectory(dir=OUT_DIR) as td:
++            f = Path(td) / "leaf.py"
++            f.write_text("def pool_benchmarks(dl):\n    def _inner():\n        return dl.delist_date\n"
++                         "    return dl.delist_date, _inner\n\n"
++                         "def evaluate(dl):\n    return dict(cagr_cut_delist_date=1)\n\nX = 'delist_date'\n")
++            hits = SC.scan([f], rel_as={str(f): rel})
++            other = SC.scan([f], rel_as={str(f): "research/some_other_leaf.py"})
++            forced = SC.scan([f], forced_scope=True, rel_as={str(f): rel})
++        st = {(h["line"], h["status"], h["function"]) for h in hits}
++        self.assertEqual(st, {(3, "ALLOWED_FUNC", "_inner"), (4, "ALLOWED_FUNC", "pool_benchmarks"),
++                              (7, "VIOLATION", "evaluate"), (9, "VIOLATION", "<module>")})
++        self.assertEqual([h["status"] for h in other], ["VIOLATION"] * 4)
++        self.assertEqual([h["status"] for h in forced], ["VIOLATION"] * 4)
+ 
+ 
+ class T11OptimizeFlag(unittest.TestCase):
+--- a/scripts_eng/sd0_parity_runner.py(r3)
++++ b/scripts_eng/sd0_parity_runner.py(r3.1)
+@@ -30,6 +30,11 @@
+   over cap -> FAIL_RSS). Refuses within 16:40–18:40 ET (paper routine 17:40 ET ±1h), while another parity runner or a
+   Data scripts/fix_sd1 rebuild is running — checked at start AND again before EVERY child process (r3, Arch P2-R1;
+   a guard hit stops the run cleanly: case REFUSED_GUARD, report all_pass=false). Start before 14:00 ET.
++  r3.1 (Arch 2b8f81c9 P3-1/P3-2): the guard is NOT re-checked while a child runs (a child that crosses 16:40 is not
++  stopped; the 14:00 ET start rule covers it), so every case records child_started_et / child_finished_et (ET, with
++  offset). Only the DIRECT child is polled; grandchildren are covered only afterwards by RUSAGE_CHILDREN (includes
++  reaped grandchildren). SD1 (not SD0) stores TW/AW as float64 (r3): a future full-market SD1 run doubles the weight
++  matrices (~2000 d x 5500 codes x 8 B ~ 88 MB each, ~176 MB for both) and must count that in the 1.5 GB budget.
+   book_smoke HASH_FILES (full sha256) recorded before and after — a change voids the run. Parquet comparison includes
+   the index (values, dtype, names; r3 Arch P3-7). No paper CLI, no writes outside the out dir. live=false; promotion=false.
+ 
+@@ -257,6 +262,7 @@
+     why = _guard_reason()                         # r3 (Arch P2-R1): re-check before EVERY child process
+     if why:
+         return dict(exit=None, refused_guard=why, killed_rss=False, over_cap_rusage=False)
++    t_start = datetime.datetime.now().astimezone().isoformat(timespec="seconds")   # r3.1 (Arch P3-1)
+     with open(log, "x", encoding="utf-8") as fh:
+         p = subprocess.Popen(cmd, cwd=ROOT, stdout=fh, stderr=subprocess.STDOUT, env=env)
+         peak, hwm_peak, killed = 0.0, 0.0, False
+@@ -269,6 +275,7 @@
+             if (r is not None and r > cap_mb) or (h is not None and h > cap_mb):
+                 p.send_signal(signal.SIGKILL); killed = True; p.wait(); break
+             time.sleep(0.2)
++    t_end = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+     children_maxrss_mb = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024   # cumulative max so far
+     info = {}
+     for line in reversed(log.read_text(encoding="utf-8", errors="replace").splitlines()):
+@@ -276,7 +283,7 @@
+             info = json.loads(line[len("PARITY_WORKER_JSON "):]); break
+     self_mb = info.get("peak_rss_mb_self")
+     over = bool((self_mb is not None and self_mb > cap_mb) or children_maxrss_mb > cap_mb)   # r3 (Arch P3-2)
+-    return dict(exit=p.returncode, killed_rss=killed, over_cap_rusage=over, peak_rss_mb_polled=round(peak, 1),
++    return dict(exit=p.returncode, child_started_et=t_start, child_finished_et=t_end, killed_rss=killed, over_cap_rusage=over, peak_rss_mb_polled=round(peak, 1),
+                 peak_vmhwm_mb_polled=round(hwm_peak, 1), parent_children_maxrss_mb_cum=round(children_maxrss_mb, 1),
+                 **info)
+ 

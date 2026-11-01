@@ -1,0 +1,11 @@
+--- docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R4_MEM_ESTIMATE.md	2026-10-18 10:58:41.383931890 -0400
++++ docs/v2/audit/leaf25_step_m1/LEAF25_STEP_M1_R5_MEM_ESTIMATE.md	2026-10-18 11:03:34.855931890 -0400
+@@ -1,6 +1,6 @@
+-# Leaf 25 step -1 r4 memory estimate (file sizes, Arch-verified schema/row counts in review fc5fa937 L48-57; no data read)
++# Leaf 25 step -1 r5 memory estimate (file sizes, Arch-verified schema/row counts in review fc5fa937 L48-57; no data read)
+ 
+-- Script: research/leaf25_ttm_recon_step_m1_r4.py sha256 2f7ea7138c7f4b91eab77e169c48b65538b98f4cba5763fa358dade32b2797de. Supersedes LEAF25_STEP_M1_R3_MEM_ESTIMATE.md (198c60d6; kept unchanged). _r4 adds only a dd[2] skip in the case (i) pick and a next_open comparison for case (ii) same_day (scalar operations, no new frames); numbers unchanged (Arch 1b63c05f L59).
++- Script: research/leaf25_ttm_recon_step_m1_r5.py sha256 f43b901671728204437279da1f49c7729ec11f11d8070e73434b5d6288953d68. Supersedes LEAF25_STEP_M1_R4_MEM_ESTIMATE.md (618b7653; kept unchanged). _r5 adds only an avail_E check on same-day case (ii) candidates, iterated lazily until the first hit (reuses existing groupby G, no new frames); numbers unchanged.
+ - Runtime (Arch L99): pandas 3.0.6 + pyarrow 25.0.1; strings come back Arrow-backed (str dtype), not per-cell Python objects.
+ - Rows: income 422,129; cashflow 315,718; balance 451,857 (one row group each); calendar 8,035.
+ 

@@ -1,0 +1,107 @@
+# AI 提议：叶24 r10 内存复测步骤表 第 3 版（草案，供 Arch 审；未运行；正式授权以 Arch 每项单独的 .ok 为准）
+# 依据：Arch 2026-10-18 07:02 ET 裁定（取代 06:57 的四项方案和本表第 1 版 9ea69c9f）：
+#   复测三项：T1 build HILIQ（三个年段全程）、T2 build FULLA（r10 P2-1 写法）、T3 build FULLA --win 60（rev3 P2-a）；eval 不复测，也不写代理 α 复刻脚本。
+#   正式 eval 的内存，就以它自己的看门狗加五条判定作为测量；正式 eval 一旦 exit 137：立即停下，报 Arch，不重试，已写出的部分产物移到 _void。
+# 总顺序（不变，主 Agent 06:55 ET 书面确认）：叶23 主口径 A01–A03 → 叶23 敏感性 A04–A27 → 本表 T1–T3 → 叶24 正式运行 S01–S25 → CMC。
+# 严格串行；前一项进程确认停下后才起下一项。
+#
+# ==== 用什么跑：复测外壳，只调用 r10 自己的 build() ====
+# 外壳 research/ai_memtest_l24_r10.py sha256 7dac57612a9ac6c2def3cc67e5ee0bdda6072212877aaeeae9ec01311e28027d（第 3 版，未运行，已提交；Arch 例外批准的 lint 于 2026-10-18 07:53:43 ET 通过：py_compile 两文件 exit 0，uvx pyflakes 4.0.3 无输出 exit 0；第 2 版 87e16d71 备份在 _recovery/ai/pre_memtest_rev3_0752/）。
+# 被测脚本 research/g1g5_imax_intraday_alpha.py r10 sha256 53d3f8b1fe0c9906bb7a5b855af09e979f5bfa2075be65132a1878268fff707f（外壳里写死该 sha，不符即拒；被测文件一个字节不改）。
+# 钉住：commit 5fa4314cc4104eea4639499a7cc2224ab84a91ae（r10 脚本 + 外壳 rev3）；prereg_sha_leaf24.txt sha256 7a5972b811677351dfef73e851e261c69c6d123ce9affa46b53378e5a9b87166（未跟踪文件，未提交）。
+# 外壳 import r10 后直接调用 r10 的 build()，测到的 VmHWM 就是 r10 build 代码本身的峰值。与正式运行只差下面几点，都在被测代码之外：
+#   (1) 授权用复测专用 .ok（format=quantlab_memtest_auth_v1，每项一份）；r10 的 read_ok / verify_panel / process_check 照常调用；看门狗在读任何数据之前启动；
+#   (2) out_dir = 草稿目录 /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10，不是正式 out_dir output/ai_factory/leaf24_imax_intraday；
+#   (3) import 后把模块全局 R 改指 <草稿目录>/_ext_root（r10 运行期只有 evaluate() 用到 R，这里作为第二道防线保留）；
+#       开始和结束各查一次 output/ai_factory/g1g5_imax_intraday_*，有就 STOP；
+#   (4) import 后立即把 r10 的 evaluate() 和 merge() 替换成守卫函数，一旦被调用就 STOP（SystemExit，日志带 STOP，C3b 判失败）；
+#       build() 前后各断言一次守卫没被换掉；结束时再查草稿目录：不能有任何 eval 产物（summary_* / eval_weights_* / eval_*meta.json / B3_carry_mismatch_*），
+#       _ext_root 下不能有任何文件，有就 STOP；
+#   (5) T2 核对 T1 的 build_HILIQ_meta.json（stage / script_sha256 / prereg / manifest / variant / outputs sha），只是不比 arch_ok_sha256；
+#       叶23 完成情况和工具 .cmd 不在复测里核（只在正式运行核）。
+# 【复测的 build 产物不复用】正式运行从 S01 起在正式 out_dir 重新 build 全部产物，不读、不拷贝、不引用草稿目录里的任何文件；草稿目录事后整体作废。
+#
+# ==== 指标 ====
+# 只看 VmHWM，读外壳最后一行 MEMTEST_END 的 vmhwm_kb（进程自己的最终 VmHWM），不再加 180 MiB 余量。
+#   VmHWM ≤ 1300 MiB（1331200 kB）：MEMTEST_END 打印 target_1300mib=within；
+#   T1：VmHWM > 1300 MiB：不算失败，打印 target_1300mib=ABOVE_TARGET_STOP_AND_REPORT_TO_ARCH，必须停下报 Arch，由 Arch 决定是否继续（包括要不要跑 T2）；T2 / T3 见下行裁定（只作报告）；
+#   【Arch 书面裁定（rev3 静态审 2026-10-18）】外壳 L136 的 1300 MiB ABOVE_TARGET 对 T2 / T3 只作报告，不拦截；T2 / T3 的拦截线是包装器的 1450 MiB 停止线（1484800 kB）。
+#   T1 仍按 1300 MiB：超过即停、报 Arch（包装器停止线 1331200 kB）。T3 触及 1450 MiB 停止线：停下报 Arch，不得自行调整停止线；分块还是缩小窗口由 Arch 决定。
+#   VmHWM > 1536000 kB：硬线，看门狗或 peak_check 当场 exit 137，算失败。
+#
+# ==== 每项的 .ok（占位，Arch 签发；每项一份，严格解析：每行 ^[a-z0-9_]+=\S+$，无 BOM、无注释、无重复键） ====
+# 文件名：/workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_{BUILD_HILIQ,BUILD_FULLA,BUILD_FULLA_WIN60}.ok
+# 固定值键：format=quantlab_memtest_auth_v1  signed_by=arch  leaf=24  purpose=memory_retest_build_only  live=false  promotion=false  research_only=true
+#   script_sha256=53d3f8b1fe0c9906bb7a5b855af09e979f5bfa2075be65132a1878268fff707f  prereg_sha256=c289e77068be607c108359a87e1d17d6b2e8edac9e4cbcca865a9a49430133a8
+#   scratch_dir=/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10  rss_limit_kb=1536000  run_niceness=10  test=<build_HILIQ|build_FULLA|build_FULLA_win60>
+#   rev3 P2-c 固定值键（缺键、多键、值不同一律拒，没有豁免）：allow_build=true  allow_evaluate=false  allow_merge=false  allow_sensitivity=<T1/T2 为 false，T3 为 true>  promotion_approved=false
+#   rev3 P2-a：T3 的 test=build_FULLA_win60，scratch_dir=/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_win60
+# 必填键：harness_sha256=7dac57612a9ac6c2def3cc67e5ee0bdda6072212877aaeeae9ec01311e28027d  cs_panel_dir=/workspace/QuantLab/output/ai_factory/panel_cache_v2_resumefix  cs_panel_manifest_sha256=<实测>  issued_at=<带时区>  expires_et=<带时区，晚于 issued_at>
+#   以及 r10 TOOLS 的全部 21 个 sha 键（dep_fe_sha256 … data_delisted_sha256，含 data_mask_sha256，verify_panel 要用），值为实测 sha。多键、缺键、值不符都拒。
+#
+# ==== 执行方式（三项相同；在 nice 0 的 shell 里执行，cwd=/workspace/QuantLab；进程 niceness=10；无 || true；不重试） ====
+# 包装器：在非交互 shell（bash 脚本 / bash -c，无作业控制）里用 setsid 后台启动「准确命令」：setsid 不 fork，env、nice 都是 exec，PID 就是 python 进程本身，且自成进程组（PGID=PID，启动后核对）；
+#   每 1 秒读一次 /proc/$PID/status 的 VmRSS / VmHWM 写采样日志；VmHWM 超过本项停止线 <STOPKB>（T1 1331200，T2 / T3 1484800）即 kill -TERM -- -PGID，5 秒后仍有存活再 kill -KILL -- -PGID；
+#   然后 wait 取退出码；启动前、结束后各做一次 ps 快照；任何停下后先确认整个进程组已无进程，再写回执。采样只读 /proc，不读数据。模板（<Tn>、<CMD>、<STOPKB>、<SCR>、<uni> 按项替换）：
+#   mkdir -p /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs; ps -eo pid,pgid,ni,rss,etime,args > /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_ps_before.txt
+#   setsid <CMD> > /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>.log 2>&1 & PID=$!; PGID=$PID; STOPKB=<STOPKB>; STOPPED=0
+#   [ "$(ps -o pgid= -p $PID | tr -d ' ')" = "$PGID" ] || echo "PGID_MISMATCH pid=$PID" >> /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_sampler.txt
+#   while kill -0 $PID 2>/dev/null; do echo "$(date +%H:%M:%S.%N) $(grep -E '^(VmRSS|VmHWM):' /proc/$PID/status 2>/dev/null | tr -s ' \n' ' ')" >> /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_sampler.txt; H=$(awk '/^VmHWM:/{print $2}' /proc/$PID/status 2>/dev/null); if [ -n "$H" ] && [ "$H" -gt "$STOPKB" ]; then echo "$(date +%H:%M:%S.%N) STOPLINE hwm_kb=$H stop_kb=$STOPKB" >> /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_sampler.txt; STOPPED=1; kill -TERM -- -$PGID; sleep 5; if kill -0 -- -$PGID 2>/dev/null; then kill -KILL -- -$PGID; fi; break; fi; sleep 1; done
+#   rc=0; wait $PID || rc=$?; echo "exit=$rc stopped=$STOPPED" > /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_exit.txt; ps -eo pid,pgid,ni,rss,etime,args > /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_ps_after.txt
+#   if pgrep -g $PGID > /dev/null; then echo "PGID_ALIVE $PGID" >> /workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/<Tn>_exit.txt; fi   # 必须无输出（进程组已清空）才可写回执；有存活即报 Arch
+#   if [ "$rc" -ne 0 ]; then V=/workspace/QuantLab/output/ai_factory/_void/leaf24_r10_memtest_<Tn>_rc${rc}_$(date +%Y%m%d_%H%M%S); mkdir -p "$V"; for f in /workspace/QuantLab/output/ai_factory/g1g5_imax_intraday_* <SCR>/alpha_<uni>_* <SCR>/gate_<uni>_* <SCR>/coverage_<uni>.parquet <SCR>/build_<uni>_meta.json; do if [ -e "$f" ]; then sha256sum "$f" >> "$V/SHA_MTIME.before"; stat -c '%y %n' "$f" >> "$V/SHA_MTIME.before"; mv "$f" "$V/"; fi; done; fi
+#   rev3b P2-4：任何非零退出码（137 看门狗、143 停止线 TERM、137 KILL、1 STOP/refused 等）都把本项部分产物移到 _void（上行），不删除，报 Arch。各项取值：T1 STOPKB=1331200 SCR=/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10 uni=HILIQ；T2 STOPKB=1484800 SCR=同 T1 uni=FULLA；T3 STOPKB=1484800 SCR=/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_win60 uni=FULLA。
+# VmHWM 的来源：
+#   ① 脚本内看门狗：r10 rss_watchdog()，守护线程每 1 秒读 /proc/self/status，VmRSS 或 VmHWM > 1536000 kB 就打印 RSS_GUARD_KILL 并 exit 137；
+#      读取出错打印 RSS_WATCHDOG_ERROR 并 exit 137（fail-closed）；
+#   ② 分段 peak_check：r10 每段末尾读 VmHWM 和 ru_maxrss，超线同样 exit 137；外壳结束时再做 peak_check memtest end <test>；
+#   ③ 外部采样只作旁证。判定只用 MEMTEST_END 的 vmhwm_kb：VmHWM 是进程的历史最高值，不会被采样间隔漏掉。
+# 看门狗阈值：1536000 kB（r10 RSS_LIMIT_KB；外壳核对等于 1536000，.ok 的 rss_limit_kb 也必须是 1536000）。
+#
+# ==== 每项的成功判定（五条全满足才算成功；任一不满足即停，报 Arch，不跑下一项） ====
+#   C1 退出码 0（<Tn>_exit.txt）；
+#   C2 草稿目录新写出 build_<uni>_meta.json：stage=build_<uni>、script_sha256=r10、arch_ok_sha256=该项 .ok 的 sha、variant=primary（T3 为 win60），
+#      outputs（alpha_<uni>_2024/2025/2026、gate_<uni>_*、coverage_<uni>.parquet）齐全且 sha 一致；草稿目录里没有 eval 产物，_ext_root 为空；
+#      正式 out_dir 仍不存在或为空；output/ai_factory/ 下没有 g1g5_imax_intraday_*；
+#   C3 日志有 MEMTEST_START、6 行 peak_check build <uni> year Y imax / year Y（Y = 2024/2025/2026）、peak_check memtest end <test>、MEMTEST_END；没有 STAMP；
+#   C3b 日志里没有 RSS_GUARD_KILL / RSS_WATCHDOG_ERROR / STOP / refused / Traceback；
+#      rev3 P2-d：外壳在 build 结束后用 r10 check_meta 重读本项 build meta（stage / script / .ok / prereg / manifest / variant，outputs 逐个 sha），并逐条按 sha 核对 external_outputs；build 应不写外部文件，列出任何一条即 STOP。
+#   C4 MEMTEST_END vmhwm_kb ≤ 1536000，且 meta peak_rss_mb < 1500。另外如实报 vmhwm 对 1300 MiB 的结果：超过不算失败，但要停下报 Arch；
+#      C4 的「包装器」定义：就是上文「执行方式」中的模板（后台启动准确命令、每 1 秒读 /proc/$PID/status 的 VmRSS / VmHWM 写采样日志、wait 取退出码、前后各一次 ps 快照）；判定值取 MEMTEST_END 的 vmhwm_kb，采样只作旁证。
+#      rev3 P3：外壳结束前再确认正式 OUT_ROOT（output/ai_factory/leaf24_imax_intraday）不存在或为空，否则 STOP。
+#   C5 运行窗口内没有其他读真实数据的进程（ps_before / ps_after + meta ps_snapshot；外壳的 process_check 也会拒绝其他 research/ python 进程）。
+#
+# ==== 输出位置与作废 ====
+# 草稿 out_dir：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10/（alpha_<uni>_<Y>.parquet、gate_<uni>_<Y>.parquet、coverage_<uni>.parquet、build_<uni>_meta.json；空的 _ext_root/）。
+# 日志：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/（<Tn>.log、<Tn>_sampler.txt、<Tn>_exit.txt、<Tn>_ps_before/after.txt）。
+# 作废：T3 结束（或任一项停下）并由 Arch 读完日志和 meta 后，Arch 把整个 _memtest/leaf24_r10/ 和 _memtest/leaf24_r10_win60/ 移到 output/ai_factory/_void/leaf24_r10_memtest_<时间>/，不删除；日志目录保留作为证据。
+# 这些 build 产物不复用（见上）。正式 S01 只认正式 out_dir 并要求它为空，不受草稿目录影响；重测前必须先作废草稿目录（T1 要求它不存在或为空）。
+#
+# ==== 三项共同的前置检查 ====
+#   P1 叶23 主口径 A01–A03 和 4 个敏感性 A04–A27 全部跑完并经 Arch 审；没有叶23 进程在跑（pgrep -af 'research/' 为空）；
+#   P2 前一项进程已确认退出（kill -0 失败，ps_after 里没有它），五条判定已报 Arch 且通过；T1 之前没有任何复测进程；
+#   P3 实测 sha：r10 = 53d3f8b1fe0c9906…，外壳 = 7dac57612a9ac6c2def3cc67e5ee0bdda6072212877aaeeae9ec01311e28027d，research/g1g5_fund_resid_alpha.py = 2b49b10b1e79de49…，均与 .ok 一致；
+#   P4 该项 .ok 已由 Arch 安装在上述路径，test= 与本项一致，expires_et 未过期；记下 .ok 的 sha；
+#   P5 正式 out_dir output/ai_factory/leaf24_imax_intraday 不存在或为空；output/ai_factory/ 下没有 g1g5_imax_intraday_*；
+#   P6 草稿目录：T1 要求不存在或为空；T2 要求 T1 的 build_HILIQ_meta.json 在（外壳自动核对）；T3 要求 _memtest/leaf24_r10_win60 不存在或为空；
+#   P7 MemAvailable ≥ 2 GB；shell niceness 0（进程由 nice -n 10 降到 10）；94322 仍为 STOP（状态 T）。
+
+# ---- T1 build HILIQ（2024/2025/2026 三个年段全程） ----
+# 前置：P1–P7；草稿目录 _memtest/leaf24_r10 不存在或为空。
+# .ok：/workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_HILIQ.ok（test=build_HILIQ）。日志：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T1.log；采样：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T1_sampler.txt。
+# 静态预估（AI_LEAF24_R10_MEMORY_ESTIMATE_ZH.md，复刻口径）：≤ 约 1063 MiB（r8 复刻；r10 只减不增；2026 年段没测过）。
+T1 [memtest build_HILIQ] env -u QL_X2_EXTEND_END PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python /workspace/QuantLab/research/ai_memtest_l24_r10.py --test build_HILIQ --panel-dir /workspace/QuantLab/output/ai_factory/panel_cache_v2_resumefix --arch-ok /workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_HILIQ.ok
+
+# ---- T2 build FULLA（r10 P2-1 写法：Q 之后立即按年过滤 P） ----
+# 前置：P1–P7；T1 五条通过，且 T1 的 VmHWM ≤ 1300 MiB 或 Arch 已决定继续；草稿目录有 build_HILIQ_meta.json，没有 FULLA 的 build 产物。
+# .ok：/workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_FULLA.ok（test=build_FULLA）。日志：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T2.log；采样：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T2_sampler.txt。
+# 静态预估（复刻口径）：约 1095–1160 MiB。
+T2 [memtest build_FULLA] env -u QL_X2_EXTEND_END PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python /workspace/QuantLab/research/ai_memtest_l24_r10.py --test build_FULLA --panel-dir /workspace/QuantLab/output/ai_factory/panel_cache_v2_resumefix --arch-ok /workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_FULLA.ok
+
+# ---- T3 build FULLA --win 60（rev3 P2-a；敏感性 C 的窗口，只测 build；evaluate / merge 仍被外壳拦截） ----
+# 前置：P1–P7；T2 五条通过；草稿目录 _memtest/leaf24_r10_win60 不存在或为空（T3 自成一项，不需要上游 meta，不与 T1/T2 共用文件）。
+# .ok：/workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_FULLA_WIN60.ok（test=build_FULLA_win60，allow_sensitivity=true）。日志：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T3.log；采样：/workspace/QuantLab/output/ai_factory/_memtest/leaf24_r10_logs/T3_sampler.txt。
+# 静态预估：没有单独复刻；win 60 只改 imax 窗口和 min_valid（45），按 T2 的读数加窗口缓冲估计，以实测为准。
+T3 [memtest build_FULLA_win60] env -u QL_X2_EXTEND_END PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python /workspace/QuantLab/research/ai_memtest_l24_r10.py --test build_FULLA_win60 --panel-dir /workspace/QuantLab/output/ai_factory/panel_cache_v2_resumefix --arch-ok /workspace/QuantLab/output/ai_factory/ARCH_MEMTEST_AUTH_LEAF24_R10_BUILD_FULLA_WIN60.ok
+
+# 不在本表：eval HILIQ / eval FULLA（Arch 07:02：不复测，以正式 eval 的看门狗加五条判定为准；exit 137 → 停、报 Arch、不重试、部分产物移 _void）；merge；叶24 敏感性。

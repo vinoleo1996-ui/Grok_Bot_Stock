@@ -1,0 +1,3 @@
+ts_et,api,params,elapsed_s,http_status,rows,error
+2026-10-25 10:56:09,trade_cal,"{""exchange"":""SSE"",""start_date"":""20261019"",""end_date"":""20261025""}",15.09,,,"ReadTimeout: HTTPSConnectionPool(host='pcd.mobcvb.cn', port=443): Read timed out. (read timeout=15)"
+2026-10-25 10:56:17,stock_basic,"{""list_status"":""L"",""limit"":100,""offset"":0}",7.79,200,100,

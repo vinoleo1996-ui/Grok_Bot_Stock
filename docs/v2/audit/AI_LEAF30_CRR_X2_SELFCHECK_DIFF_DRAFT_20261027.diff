@@ -1,0 +1,225 @@
+# NEW FILE research/leaf30_crr_x2_selfcheck_v1.py (derived from leaf25_x2_selfcheck_v2.py)
+# script_sha8=797724d4 full=797724d411704ffc8dfe1fcc77039c87ffadda4e6dcd38fb60af60ee8bb27344
+# build 3ee9fed2 UNCHANGED; leaf_selfcheck_common UNCHANGED; EXECUTED=false
+--- research/leaf25_x2_selfcheck_v2.py	2026-10-27 01:35:44.566561565 +0800
++++ research/leaf30_crr_x2_selfcheck_v1.py	2026-10-27 13:27:39.024551960 +0800
+@@ -1,11 +1,12 @@
+ #!/usr/bin/env python3
+-"""叶25 X2 selfcheck_v2：钉既有 full-factor alpha → 生成评价权重 → leaf_selfcheck_common.evaluate。
++"""叶30 CRR X2 selfcheck_v1：钉既有 R3 peakcut alpha → 生成评价权重 → leaf_selfcheck_common.evaluate。
+ 
+-本票 ≠ 复跑 leaf25 alpha 构建；≠ Book-Smoke；≠ X2 ACCEPT。
++本票 ≠ 复跑 leaf30 alpha 构建（3ee9fed2 UNCHANGED）；≠ Book-Smoke；≠ X2 ACCEPT；≠升纸面。
+ live=false；promotion_approved=false；禁自签 .ok；禁抬帽。
+-§3.3 / 叶18 同类：NAME_W=0.04 · MAX_NAMES=20 · REBAL_EVERY=5 · IND_CAP(HILIQ)=0.25 · BALLAST=510300.SH
++§3.3 / 叶18/25/27 同类：NAME_W=0.04 · MAX_NAMES=20 · REBAL_EVERY=5 · IND_CAP(HILIQ)=0.25 · BALLAST=510300.SH
+ 硬排除 600519.SH / 002371.SZ；无单独 gate 列（按当日 alpha 表 α 降序）。
+-PIN_GAP PARTIAL：β120/mom/logADV20/vol20；CFACC TTM+desens 已实装；勿称全残差齐。
++PIN_GAP：IC/ICIR/WF 由本票 evaluate 补齐；Alpha 闸 1c992d62 仅 ACCEPT 构建过程（收益过程 ABSENT）。
++机制：CRR 16Q + CFOOE vol_pen λ=1.0；SW L1 demean+logmv OLS（构建侧已做）；本票只钉 alpha 做组合闸。
+ Gate 口径：leaf_selfcheck_common.evaluate → decay + portfolio A/B/current。
+ """
+ from __future__ import annotations
+@@ -24,19 +25,24 @@
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
+ 
+-# --- 硬钉（PRIMARY HILIQ × x2；叶25 全叶 alpha 构建 CONSUMED 产物）---
++# --- 硬钉（PRIMARY HILIQ × x2；叶30 R3 peakcut alpha CONSUMED 产物）---
+ PIN_ALPHA = (
+     ROOT
+-    / "output/ai_factory/_leaf25_full_factor/20261026_015610/alpha_HILIQ_x2_20261026_125138.parquet"
++    / "output/ai_factory/_leaf30_crr/20261027_003132/alpha_HILIQ_x2_20261027_010815.parquet"
+ )
+-PIN_META = ROOT / "output/ai_factory/_leaf25_full_factor/20261026_015610/run_meta.json"
+-PIN_ALPHA_SHA = "8be12024f57fc85833d99e44f94f5c2916b1aaab64f037eed223f0fc61792393"
+-PIN_META_SHA = "44c27f5467420861b2c28a6b0311674c06b69fe8d051fbc256ce31cd7bc7d7e9"
+-BUILD_SCRIPT_SHA8 = "de7b3647"  # research/leaf25_full_factor_alpha_build_r1.py UNCHANGED
++PIN_META = ROOT / "output/ai_factory/_leaf30_crr/20261027_003132/run_meta.json"
++PIN_OVERLAP = ROOT / "output/ai_factory/_leaf30_crr/20261027_003132/overlap_vs_leaf19_25.json"
++PIN_ALPHA_SHA = "c8c7a5a5c8df7f2c62d28b340602b6a4c3996d43285f8e78ec3a51e6c42a07a1"
++PIN_META_SHA = "a6acfe274481f19bbd643a91acb68cacd3c81456b2d7c649db2e7db8175fea5a"
++PIN_OVERLAP_SHA = "f9991d9de4526b3fbe94f5101c68ee09d5c3d996d64a0307cbb4682fb35687cd"
++BUILD_SCRIPT_SHA8 = "3ee9fed2"  # research/leaf30_crr_cfooe_volpen_alpha_build_r3_peakcut.py UNCHANGED
++ARCH_CONSUME_SHA8 = "20efb33f"
++ALPHA_GATE_SHA8 = "1c992d62"  # ACCEPT 仅构建过程；IC/ICIR/WF ABSENT
++AI_RUN_RECEIPT_SHA8 = "88a08738"
+ 
+-OUT_DIR = ROOT / "output/ai_factory/_leaf25_full_factor/20261026_015610"
++OUT_DIR = ROOT / "output/ai_factory/_leaf30_crr/20261027_003132"
+ SELFCHECK_SUB = OUT_DIR / "_selfcheck"
+-REPORT_DIR = ROOT / "output/ai_factory/leaf_reports/leaf25_full_factor"
++REPORT_DIR = ROOT / "output/ai_factory/leaf_reports/leaf30_crr"
+ SW_L1_PATH = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
+ 
+ BALLAST = "510300.SH"
+@@ -48,9 +54,13 @@
+ RSS_SOFT_MB = 1500  # 软/硬同钉；禁抬
+ RSS_HARD_MB = 1500
+ PEAK_PROOF_REQUIRED = True
+-SAMPLER_PREFIX = "/tmp/quantlab_leaf25_x2_selfcheck_"
+-PROPOSED_OK = "output/ai_factory/ARCH_RUN_AUTH_LEAF25_X2_SELFCHECK_V2_HILIQ_X2.ok"
++SAMPLER_PREFIX = "/tmp/quantlab_leaf30_x2_selfcheck_"
++PROPOSED_OK = "output/ai_factory/ARCH_RUN_AUTH_LEAF30_CRR_X2_SELFCHECK_V1_HILIQ_X2.ok"
+ FORBID_RESTORED = (
++    "7e239487",  # 叶30 R3 peakcut CONSUMED；禁 RESTORED
++    "5af20222",  # 叶30 R2 VOID
++    "5ae077fa",  # 叶30 R1 VOID
++    "3c297052",
+     "e107383f",
+     "2be59acd",
+     "a7d98ac9",
+@@ -62,10 +72,10 @@
+     "3c19dd7d",
+     "1c32ab1e",
+     "6054b3bf",
+-    "3c297052",  # 叶25 alpha 构建 CONSUMED 内容；禁 RESTORED
++    "6de02e74",
+ )
+-PIN_GAP_FIELDS = ("beta120", "mom", "logADV20", "vol20")
+-PIN_GAP_OVERALL = "PARTIAL"
++PIN_GAP_FIELDS = ("ic", "icir", "walk_forward")
++PIN_GAP_OVERALL = "ABSENT_UNTIL_SELFCHECK"
+ 
+ 
+ def sha256_file(path: Path) -> str:
+@@ -92,24 +102,34 @@
+ 
+ 
+ def assert_pins(alpha_path: Path, meta_path: Path) -> dict:
+-    """硬钉两件路径+全长 sha；不 MATCH 则 exit≠0。"""
++    """硬钉 alpha+meta+overlap 路径+全长 sha；不 MATCH 则 exit≠0。"""
+     if alpha_path.resolve() != PIN_ALPHA.resolve():
+         raise SystemExit(f"FATAL alpha-path 偏离钉盘: {alpha_path} ≠ {PIN_ALPHA}")
+     if meta_path.resolve() != PIN_META.resolve():
+         raise SystemExit(f"FATAL meta-path 偏离钉盘: {meta_path} ≠ {PIN_META}")
+     out = {}
+-    for p, exp in ((alpha_path.resolve(), PIN_ALPHA_SHA), (meta_path.resolve(), PIN_META_SHA)):
++    for p, exp in (
++        (alpha_path.resolve(), PIN_ALPHA_SHA),
++        (meta_path.resolve(), PIN_META_SHA),
++        (PIN_OVERLAP.resolve(), PIN_OVERLAP_SHA),
++    ):
+         if not p.is_file():
+             raise SystemExit(f"FATAL 缺件: {p}")
+         got = sha256_file(p)
+         if got != exp:
+             raise SystemExit(f"FATAL sha MISMATCH {p.name}: got={got} expect={exp}")
+         out[p.name] = got
++    # 构建脚本 UNCHANGED
++    build = ROOT / "research/leaf30_crr_cfooe_volpen_alpha_build_r3_peakcut.py"
++    bsha = sha256_file(build)
++    if not bsha.startswith(BUILD_SCRIPT_SHA8):
++        raise SystemExit(f"FATAL build script sha drift: {bsha[:8]} ≠ {BUILD_SCRIPT_SHA8}")
++    out["build_script_sha256"] = bsha
+     return out
+ 
+ 
+ def _normalize_alpha(alpha: pd.DataFrame) -> pd.DataFrame:
+-    """叶25 schema → selfcheck 通用列（date/instrument/alpha）。"""
++    """叶30 schema → selfcheck 通用列（date/instrument/alpha）。"""
+     a = alpha.copy()
+     colmap = {}
+     if "trade_date" in a.columns and "date" not in a.columns:
+@@ -123,7 +143,7 @@
+     if miss:
+         raise SystemExit(f"FATAL alpha 缺列: {sorted(miss)}")
+     raw_date = a["date"]
+-    # 叶25 trade_date 为 YYYYMMDD 字符串；兼容 Timestamp / ISO
++    # 叶30 trade_date 为 YYYYMMDD 字符串；兼容 Timestamp / ISO
+     d1 = pd.to_datetime(raw_date.astype(str), format="%Y%m%d", errors="coerce")
+     if d1.isna().mean() > 0.5:
+         d1 = pd.to_datetime(raw_date, errors="coerce")
+@@ -167,7 +187,7 @@
+     """§3.3：每 5 交易日按当日 base-α 重算；每名≤4%、≤20 名；行业帽；余额 510300；硬排除。
+ 
+     无单独 gate 列：只从当日 alpha 表有的票里按 α 降序取。
+-    ind：叶25 alpha 无行业列 → 执行路径用 SW L1 asof；缺则 UNK（仍受 IND_CAP）。
++    ind：叶30 alpha 无行业列 → 执行路径用 SW L1 asof；缺则 UNK（仍受 IND_CAP）。
+     """
+     if universe not in IND_CAP:
+         raise SystemExit(f"FATAL universe 不支持: {universe}")
+@@ -224,10 +244,14 @@
+     return {
+         "overall": PIN_GAP_OVERALL,
+         "gap_fields": list(PIN_GAP_FIELDS),
+-        "gap_fields_zh": "β120/mom/logADV20/vol20",
+-        "cfacc_ttm_desens": "IMPLEMENTED",
+-        "claim_full_residual": False,
+-        "note_zh": "PIN_GAP PARTIAL；CFACC TTM+desens 已实装；勿称全残差齐",
++        "gap_fields_zh": "IC/ICIR/walk-forward（Alpha 闸 1c992d62 标明 ABSENT；本票 evaluate 补齐）",
++        "alpha_gate_sha8": ALPHA_GATE_SHA8,
++        "alpha_gate_verdict": "ACCEPT_BUILD_PROCESS_ONLY",
++        "arch_consume_sha8": ARCH_CONSUME_SHA8,
++        "ai_run_receipt_sha8": AI_RUN_RECEIPT_SHA8,
++        "overlap_sha8": "f9991d9d",
++        "claim_x2_accept": False,
++        "note_zh": "Alpha ACCEPT 仅构建过程；IC/ICIR/WF 由 selfcheck evaluate 产出；≠X2 ACCEPT",
+     }
+ 
+ 
+@@ -248,7 +272,14 @@
+         "pin_alpha": str(PIN_ALPHA),
+         "pin_alpha_sha256": PIN_ALPHA_SHA,
+         "pin_meta_sha256": PIN_META_SHA,
++        "pin_overlap_sha256": PIN_OVERLAP_SHA,
+         "build_script_sha8_unchanged": BUILD_SCRIPT_SHA8,
++        "arch_consume_sha8": ARCH_CONSUME_SHA8,
++        "alpha_gate_sha8": ALPHA_GATE_SHA8,
++        "ai_run_receipt_sha8": AI_RUN_RECEIPT_SHA8,
++        "x2_end": "20261009",
++        "leaf": "leaf30_crr",
++        "selfcheck_version": "v1",
+         "name_w": NAME_W,
+         "max_names": MAX_NAMES,
+         "rebal_every": REBAL_EVERY,
+@@ -267,7 +298,7 @@
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+-    ap = argparse.ArgumentParser(description="叶25 X2 selfcheck_v2（钉既有 alpha；DRAFT/签窗后实跑）")
++    ap = argparse.ArgumentParser(description="叶30 CRR X2 selfcheck_v1（钉既有 R3 alpha；DRAFT/签窗后实跑）")
+     ap.add_argument("--universe", default="HILIQ", choices=["HILIQ"])
+     ap.add_argument("--window", default="x2", choices=["x2"])
+     ap.add_argument("--alpha-path", type=Path, default=PIN_ALPHA)
+@@ -324,7 +355,7 @@
+     result = LC.evaluate(wp)
+     peak = check_rss_hard("post_evaluate")
+     result_meta = {
+-        "leaf": "leaf25_full_factor",
++        "leaf": "leaf30_crr",
+         "universe": args.universe,
+         "window": args.window,
+         "live": False,
+@@ -339,7 +370,12 @@
+         "build_script_sha8_unchanged": BUILD_SCRIPT_SHA8,
+         "eval_weights_path": str(wp),
+         "eval_weights_sha256": w_sha,
+-        "eval_weights_dir_note": "output/ai_factory/_leaf25_full_factor/20261026_015610/_selfcheck/",
++        "eval_weights_dir_note": "output/ai_factory/_leaf30_crr/20261027_003132/_selfcheck/",
++        "overlap_path": str(PIN_OVERLAP),
++        "overlap_sha256": PIN_OVERLAP_SHA,
++        "arch_consume_sha8": ARCH_CONSUME_SHA8,
++        "alpha_gate_sha8": ALPHA_GATE_SHA8,
++        "ai_run_receipt_sha8": AI_RUN_RECEIPT_SHA8,
+         "n_weight_rows": int(len(weights)),
+         "n_weight_days": int(weights["date"].nunique()) if len(weights) else 0,
+         "name_w": NAME_W,
+@@ -364,7 +400,7 @@
+         "rss_mb_peak_self": round(peak, 2),
+         "evaluate": result,
+     }
+-    out_json = REPORT_DIR / "selfcheck_v2.json"
++    out_json = REPORT_DIR / "selfcheck_v1.json"
+     out_json.write_text(json.dumps(result_meta, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+ 
+     side_meta = SELFCHECK_SUB / f"selfcheck_run_meta_{args.universe}_{args.window}_{stamp}.json"
+@@ -375,7 +411,7 @@
+             {
+                 "ok": True,
+                 "live": False,
+-                "selfcheck_v2": str(out_json),
++                "selfcheck_v1": str(out_json),
+                 "eval_weights": str(wp),
+                 "side_meta": str(side_meta),
+                 "rss_mb": round(peak, 2),

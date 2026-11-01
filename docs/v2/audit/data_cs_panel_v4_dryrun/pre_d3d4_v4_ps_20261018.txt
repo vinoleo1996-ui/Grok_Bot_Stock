@@ -1,0 +1,12 @@
+# pre-D3D4 v4 ps evidence 2026-10-18 05:07:18.625105100 EDT
+  94322 Ssl  Sun Oct 18 01:22:39 2026 136612 python3 scripts/acquire/remaining_after_stk_surv.py
+--- /proc/94403/stat:
+cat: /proc/94403/stat: No such file or directory
+--- /proc/94322/stat state:
+pid=94322 state=S
+--- forbidden scan via /proc/*/cmdline + stat:
+(scan done)
+MemAvailable:   10443420 kB
+               total        used        free      shared  buff/cache   available
+Mem:           16002        5803        5242         115        5401       10198
+Swap:              0           0           0

@@ -1,0 +1,65 @@
+{
+ "2018": {
+  "elig_true_resume": 632,
+  "true_resume_excl_first_session": 1314,
+  "R_traded": 1291,
+  "R_traded_notfull": 1291,
+  "resume_with_R": 1291
+ },
+ "2019": {
+  "elig_true_resume": 402,
+  "true_resume_excl_first_session": 630,
+  "R_traded": 558,
+  "R_traded_notfull": 558,
+  "resume_with_R": 557
+ },
+ "2020": {
+  "elig_true_resume": 328,
+  "true_resume_excl_first_session": 732,
+  "R_traded": 536,
+  "R_traded_notfull": 536,
+  "resume_with_R": 533
+ },
+ "2021": {
+  "elig_true_resume": 331,
+  "true_resume_excl_first_session": 822,
+  "R_traded": 509,
+  "R_traded_notfull": 509,
+  "resume_with_R": 509
+ },
+ "2022": {
+  "elig_true_resume": 278,
+  "true_resume_excl_first_session": 699,
+  "R_traded": 453,
+  "R_traded_notfull": 453,
+  "resume_with_R": 453
+ },
+ "2023": {
+  "elig_true_resume": 160,
+  "true_resume_excl_first_session": 476,
+  "R_traded": 303,
+  "R_traded_notfull": 303,
+  "resume_with_R": 303
+ },
+ "2024": {
+  "elig_true_resume": 156,
+  "true_resume_excl_first_session": 374,
+  "R_traded": 318,
+  "R_traded_notfull": 318,
+  "resume_with_R": 318
+ },
+ "2025": {
+  "elig_true_resume": 330,
+  "true_resume_excl_first_session": 624,
+  "R_traded": 560,
+  "R_traded_notfull": 559,
+  "resume_with_R": 558
+ },
+ "2026": {
+  "elig_true_resume": 248,
+  "true_resume_excl_first_session": 479,
+  "R_traded": 450,
+  "R_traded_notfull": 450,
+  "resume_with_R": 440
+ }
+}

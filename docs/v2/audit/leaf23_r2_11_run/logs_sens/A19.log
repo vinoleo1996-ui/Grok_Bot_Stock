@@ -1,0 +1,12 @@
+peak_check pool_benchmarks hiliq_carry year 2018 rss_kb=668076 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2019 rss_kb=671832 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2020 rss_kb=676396 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2021 rss_kb=684980 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2022 rss_kb=675200 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2023 rss_kb=678920 hwm_kb=1072088
+peak_check pool_benchmarks hiliq_carry year 2024 rss_kb=746064 hwm_kb=1072440
+peak_check pool_benchmarks hiliq_carry year 2025 rss_kb=795276 hwm_kb=1094520
+peak_check pool_benchmarks hiliq_carry year 2026 rss_kb=851768 hwm_kb=1094520
+HILIQ eval done rss=1069
+peak_check eval HILIQ rss_kb=412432 hwm_kb=1094520
+STAMP 20261018_073848

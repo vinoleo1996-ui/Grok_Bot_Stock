@@ -1,0 +1,14 @@
+2026-10-18 04:44:03 EDT
+94403 state: T
+MemAvailable:   11273964 kB
+     53       7 Ss   14736    03:38:20  \_ /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S    32564    03:38:19      \_ /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+  27427   27186 S    35112    03:29:34      |   \_ /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27366      53 Ss   24192    03:29:34      \_ /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  80415   26442 Sl   170492   03:26:49  \_ python3 -X utf8 server.py
+ 460314   80415 ZN       0       00:05      \_ [python3] <defunct>
+ 460339  460338 SN   22684       00:03          \_ python3 export_static.py
+ 460632  460339 RNl  86260       00:00          |   \_ /usr/bin/python3 /workspace/quantlab-web/kline.py sh.601088
+  94322   94319 Ssl  141560   03:21:39  \_ python3 scripts/acquire/remaining_after_stk_surv.py
+  94403   94401 Ts   35780    03:21:37  \_ python3 scripts/acquire/relay_outage_backfill.py
+ 212762   94403 Z        0    02:15:42      \_ [python3] <defunct>

@@ -1,0 +1,332 @@
+{
+ "A": {
+  "600000_equity80_etf20_510300": {
+   "rows": 96,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "600000_equity_100": {
+   "rows": 96,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "1000000_equity80_etf20_510300": {
+   "rows": 81,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "1000000_equity_100": {
+   "rows": 81,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "tier_days_flip": {
+   "600000": 0,
+   "1000000": 0
+  },
+  "tier_days_flip_X2": {
+   "600000": 0,
+   "1000000": 0
+  }
+ },
+ "B": {
+  "600000_equity80_etf20_510300": {
+   "rows": 96,
+   "breach_rows": 52,
+   "X2_breach_rows": 13,
+   "size": {
+    "n": 1,
+    "max_pp_or_sigma": 0.009131144259564183
+   },
+   "mid": {
+    "n": 12,
+    "max_pp_or_sigma": 0.1644181954762335
+   },
+   "beta": {
+    "n": 28,
+    "max_pp_or_sigma": 0.04537222500802471
+   },
+   "ind_rel": {
+    "n": 9,
+    "max_pp_or_sigma": 0.002775168914871576
+   },
+   "ind_abs": {
+    "n": 11,
+    "max_pp_or_sigma": 0.0045467654177517025
+   }
+  },
+  "600000_equity_100": {
+   "rows": 96,
+   "breach_rows": 46,
+   "X2_breach_rows": 9,
+   "size": {
+    "n": 1,
+    "max_pp_or_sigma": 0.030863820317910018
+   },
+   "mid": {
+    "n": 7,
+    "max_pp_or_sigma": 0.07034802394717776
+   },
+   "beta": {
+    "n": 24,
+    "max_pp_or_sigma": 0.02217709525719122
+   },
+   "ind_rel": {
+    "n": 8,
+    "max_pp_or_sigma": 0.0036943831720217535
+   },
+   "ind_abs": {
+    "n": 11,
+    "max_pp_or_sigma": 0.003281018615334641
+   }
+  },
+  "1000000_equity80_etf20_510300": {
+   "rows": 81,
+   "breach_rows": 56,
+   "X2_breach_rows": 10,
+   "size": {
+    "n": 1,
+    "max_pp_or_sigma": 0.013589831055780599
+   },
+   "mid": {
+    "n": 11,
+    "max_pp_or_sigma": 0.1338725127833863
+   },
+   "beta": {
+    "n": 21,
+    "max_pp_or_sigma": 0.03155922546644216
+   },
+   "ind_rel": {
+    "n": 7,
+    "max_pp_or_sigma": 0.005629280569578699
+   },
+   "ind_abs": {
+    "n": 27,
+    "max_pp_or_sigma": 0.010535380047474202
+   }
+  },
+  "1000000_equity_100": {
+   "rows": 81,
+   "breach_rows": 60,
+   "X2_breach_rows": 11,
+   "size": {
+    "n": 2,
+    "max_pp_or_sigma": 0.022312104573948388
+   },
+   "mid": {
+    "n": 9,
+    "max_pp_or_sigma": 0.07327749019719676
+   },
+   "beta": {
+    "n": 27,
+    "max_pp_or_sigma": 0.04555281090285321
+   },
+   "ind_rel": {
+    "n": 6,
+    "max_pp_or_sigma": 0.0013070687644621132
+   },
+   "ind_abs": {
+    "n": 32,
+    "max_pp_or_sigma": 0.013422324710263805
+   }
+  },
+  "tier_days_flip": {
+   "600000": 60,
+   "1000000": 64
+  },
+  "tier_days_flip_X2": {
+   "600000": 15,
+   "1000000": 12
+  }
+ },
+ "C": {
+  "600000_equity80_etf20_510300": {
+   "rows": 96,
+   "breach_rows": 27,
+   "X2_breach_rows": 10,
+   "size": {
+    "n": 1,
+    "max_pp_or_sigma": 0.032834546371731776
+   },
+   "mid": {
+    "n": 17,
+    "max_pp_or_sigma": 0.08724195567039528
+   },
+   "beta": {
+    "n": 11,
+    "max_pp_or_sigma": 0.02485308883986534
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "600000_equity_100": {
+   "rows": 96,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "1000000_equity80_etf20_510300": {
+   "rows": 81,
+   "breach_rows": 18,
+   "X2_breach_rows": 5,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 12,
+    "max_pp_or_sigma": 0.0832143119665566
+   },
+   "beta": {
+    "n": 6,
+    "max_pp_or_sigma": 0.012988000523958848
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "1000000_equity_100": {
+   "rows": 81,
+   "breach_rows": 0,
+   "X2_breach_rows": 0,
+   "size": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "mid": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "beta": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_rel": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   },
+   "ind_abs": {
+    "n": 0,
+    "max_pp_or_sigma": 0.0
+   }
+  },
+  "tier_days_flip": {
+   "600000": 27,
+   "1000000": 18
+  },
+  "tier_days_flip_X2": {
+   "600000": 10,
+   "1000000": 5
+  }
+ }
+}

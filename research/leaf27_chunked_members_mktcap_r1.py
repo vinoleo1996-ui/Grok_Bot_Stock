@@ -1,0 +1,915 @@
+#!/usr/bin/env python3
+"""Leaf 27 — chunked members/mktcap load r1 (P1-4 next package).
+
+SUPERSEDES load path of:
+  research/g1g5_on_minus_id_idio_ivol_alpha_lowmem_v1.py
+  sha256 05bd81ea9da97cd53785b374c36273b327ff0302098c5b1cef1368c051d400f8
+  (LOWMEM v1 static PASS_WITH_CONDITIONS; ABORT_RSS @ members_loaded days=644 ≈1877MB)
+
+Arch audit pointer (P1-4):
+  docs/v2/audit/AUDIT_20261025_1211_ET_ZH.md sha8 c8877760
+  → next package MUST chunk-load members/mktcap; forbid same-cmd reuse;
+    forbid raise rss_limit; forbid RESTORED .ok 8bcd79dc / 725be3e0.
+
+Mechanism (load only + baseline_evac_r1):
+  - Split calendar into chunks (default: calendar quarter of open sessions)
+  - Per chunk: load members+suspend (mask RG date prune) + mktcap_cache_r1
+    (cross-chunk DayFloatMap; load ONLY missing trade_date via pyarrow filters)
+    + capadv (span filter) → process days → clear members/capadv + gc;
+    KEEP mktcap store across chunks (no mktcap.clear at chunk end)
+  - Rolling β/ε histories retained across chunks (factor continuity)
+  - hist_prune_r1: ALSO prune ret_hist/eps_hist at each chunk boundary
+    (alive_recent), then reset alive_recent to last-day codes; keep di%40
+    in-loop prune; drop empty deques; NO raise rss_limit
+  - baseline_evac_r1 (Post-GateA RECOMMENDED=A / Arch R2 c8dc89b6):
+    * lim_cache: at chunk end, evict LimitPanelCache session keys older than
+      the factor window (BETA_WIN/IVOL_WIN lookback); update _keep; touch _maps
+    * alpha: at chunk end, flush a_* buffers to part parquet under OUT_DIR,
+      clear lists; final concat → alpha_*.parquet (same schema as before)
+  - mktcap T-1 lookback: each chunk requests max(1 prev session, chunk start);
+    cache hits skip reload; drop_before still applies in-loop (T-1 unchanged)
+  - rss_limit HARD = 1500 MB (NO raise); soft abort if stage peak exceeds
+  - SUPERSEDES Gate A mktcap_cache-only ticket (CLOSED_INSUFFICIENT; peak 1507)
+  - Refs: Arch R2 c8dc89b6 / spike note 0b483746 / VOID ff0394d0 /
+    receipt f0f94c9e / main order 46dc8cb3 / prev script 27aae6db
+
+Factor pins UNCHANGED vs lowmem_v1 / baseline:
+  α_raw=-ivol; β60/min40; W20/min15; residual order SW→logMV T-1→β→capadv→ivol→domain
+  HI_LIQ only; FULLA GAP; limit_policy=exclude_hit_or_unknown; exposure_col=target_weight
+
+live=false; promotion_approved=false; NO .ok this turn; NO real run this turn.
+"""
+from __future__ import annotations
+
+import argparse
+import gc
+import json
+import sys
+from collections import defaultdict, deque
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+# Import factor-identical helpers from lowmem_v1 (layout/IO helpers + residual math).
+# This file owns ONLY the chunked load orchestration + run_one rewrite.
+import importlib.util as _ilu
+
+_lowmem_path = ROOT / "research" / "g1g5_on_minus_id_idio_ivol_alpha_lowmem_v1.py"
+_spec = _ilu.spec_from_file_location("leaf27_lowmem_v1_mod", _lowmem_path)
+assert _spec and _spec.loader
+_lm = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_lm)
+
+MECHANISM_TAG = _lm.MECHANISM_TAG
+BALLAST = _lm.BALLAST
+HARD_EXCLUDE = _lm.HARD_EXCLUDE
+IVOL_WIN = _lm.IVOL_WIN
+MIN_IVOL_OBS = _lm.MIN_IVOL_OBS
+BETA_WIN = _lm.BETA_WIN
+MIN_BETA_OBS = _lm.MIN_BETA_OBS
+DAILY = _lm.DAILY
+MKTCAP = _lm.MKTCAP
+MKTCAP_SHA = _lm.MKTCAP_SHA
+ETF_SHA = _lm.ETF_SHA
+CAPADV_HILIQ_SHA = _lm.CAPADV_HILIQ_SHA
+CAPADV_PATH = _lm.CAPADV_PATH
+SW = _lm.SW
+OUT_DIR = _lm.OUT_DIR
+WINDOWS = _lm.WINDOWS
+UNIVERSES = _lm.UNIVERSES
+DayFloatMap = _lm.DayFloatMap
+LimitPanelCache = _lm.LimitPanelCache
+rss_mb = _lm.rss_mb
+file_sha = _lm.file_sha
+assert_pinned_sha = _lm.assert_pinned_sha
+to_ts = _lm.to_ts
+sw_map = _lm.sw_map
+load_510300_ret = _lm.load_510300_ret
+load_capadv_target_weight = _lm.load_capadv_target_weight
+load_mktcap_by_session = _lm.load_mktcap_by_session
+mktcap_T_minus_1 = _lm.mktcap_T_minus_1
+limit_hit = _lm.limit_hit
+sw_demean = _lm.sw_demean
+resid_vs_x = _lm.resid_vs_x
+size_domain_arr = _lm.size_domain_arr
+domain_calibrate_arr = _lm.domain_calibrate_arr
+resid_ind_logmv = _lm.resid_ind_logmv
+_prune_hist = _lm._prune_hist
+
+CHUNKED_TAG = "leaf27_chunked_members_mktcap_r1"
+HIST_PRUNE_TAG = "hist_prune_r1"  # chunk-boundary prune; keep with Gate A
+MKTCAP_CACHE_TAG = "mktcap_cache_r1"  # Gate A: cross-chunk mktcap; miss-only + filters
+BASELINE_EVAC_TAG = "baseline_evac_r1"  # Post-GateA A: lim_cache evict + alpha mid-flush
+LOWMEM_V1_SHA = "05bd81ea9da97cd53785b374c36273b327ff0302098c5b1cef1368c051d400f8"
+AUDIT_P14_SHA8 = "c8877760"
+ARCH_MKTCAP_SPIKE_DRAFT_SHA8 = "c8dc89b6"  # Arch R2 RECOMMENDED=A
+SPIKE_NOTE_SHA8 = "0b483746"  # Gate A abort spike note
+VOID_AUTHORITY_SHA8 = "ff0394d0"  # Arch VOID after Gate A
+ABORT_RECEIPT_SHA8 = "f0f94c9e"  # Gate A RUN_RECEIPT
+MAIN_ORDER_SHA8 = "46dc8cb3"  # Leo open A baseline_evac order
+PREV_SCRIPT_SHA8 = "27aae6db"  # Gate A mktcap_cache_r1 (CLOSED_INSUFFICIENT)
+RSS_LIMIT_MB = 1500  # HARD — forbid raise
+DEFAULT_CHUNK_MODE = "quarter"  # quarter | month | ndays
+DEFAULT_CHUNK_NDAYS = 60
+# forbid RESTORED seven tickets (plain sha8); includes VOID Gate A .ok e107383f
+VOID_OK_SHA8 = (
+    "e107383f",
+    "2be59acd",
+    "a7d98ac9",
+    "8e51de63",
+    "3a6caa4f",
+    "8bcd79dc",
+    "725be3e0",
+)
+
+
+def _check_rss(stage: str) -> float:
+    r = rss_mb()
+    if r > RSS_LIMIT_MB:
+        raise SystemExit(
+            f"ABORT_RSS_OVER_LIMIT stage={stage} rss={r:.0f}MB "
+            f"limit={RSS_LIMIT_MB} (forbid raise; chunked r1 soft gate)"
+        )
+    return r
+
+
+def split_calendar_chunks(
+    cal: list[str], mode: str = DEFAULT_CHUNK_MODE, ndays: int = DEFAULT_CHUNK_NDAYS
+) -> list[list[str]]:
+    """Split open-session calendar into chunks. Preserves order; no overlap."""
+    if not cal:
+        return []
+    if mode == "ndays":
+        n = max(1, int(ndays))
+        return [cal[i : i + n] for i in range(0, len(cal), n)]
+    chunks: list[list[str]] = []
+    cur: list[str] = []
+    cur_key = None
+    for ds in cal:
+        ts = pd.Timestamp(ds)
+        key = (ts.year, ts.quarter) if mode == "quarter" else (ts.year, ts.month)
+        if cur_key is None:
+            cur_key = key
+        if key != cur_key:
+            chunks.append(cur)
+            cur = []
+            cur_key = key
+        cur.append(ds)
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def member_and_suspend_chunk(
+    mask_path: Path, sessions: list[str]
+) -> tuple[dict[str, set], dict[str, set]]:
+    """Load members/suspend for *sessions only*, using row-group date prune.
+
+    Avoids materializing the full HI_LIQ mask (≈11.7M rows) into pandas.
+    """
+    import pyarrow.parquet as pq
+
+    if not sessions:
+        return {}, {}
+    ss = set(sessions)
+    s_min, s_max = sessions[0], sessions[-1]
+    # Timestamps for RG stats compare (mask date is timestamp[us])
+    t_min = pd.Timestamp(s_min)
+
+    pf = pq.ParquetFile(mask_path)
+    members = {s: set() for s in sessions}
+    suspended = {s: set() for s in sessions}
+    md = pf.metadata
+    for rg_i in range(pf.num_row_groups):
+        # prune by date column stats when present
+        skip = False
+        if md is not None:
+            rg = md.row_group(rg_i)
+            for ci in range(rg.num_columns):
+                col = rg.column(ci)
+                if col.path_in_schema == "date" and col.statistics is not None:
+                    cmin = col.statistics.min
+                    cmax = col.statistics.max
+                    # convert to Timestamp
+                    cmin_t = pd.Timestamp(cmin)
+                    cmax_t = pd.Timestamp(cmax)
+                    if cmax_t < t_min or cmin_t > pd.Timestamp(s_max):
+                        skip = True
+                    break
+        if skip:
+            continue
+        df = pf.read_row_group(
+            rg_i, columns=["date", "instrument", "in_universe", "suspended"]
+        ).to_pandas()
+        df["s"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+        df = df[(df["s"] >= s_min) & (df["s"] <= s_max) & df["s"].isin(ss)]
+        if len(df) == 0:
+            del df
+            continue
+        in_u = df[df["in_universe"].astype(bool)]
+        for s, g in in_u.groupby("s", sort=False):
+            if s in members:
+                members[s] = set(g["instrument"].tolist())
+        sus = df[df["suspended"].astype(bool)]
+        for s, g in sus.groupby("s", sort=False):
+            if s in suspended:
+                suspended[s] = set(g["instrument"].tolist())
+        del df, in_u, sus
+        if rg_i % 2 == 1:
+            gc.collect()
+    gc.collect()
+    return members, suspended
+
+
+def load_mktcap_chunk(dates_needed: set[str]) -> DayFloatMap:
+    """Legacy one-shot wrapper (full-scan helper). Gate A path uses cached loader."""
+    return load_mktcap_by_session(dates_needed)
+
+
+def load_mktcap_chunk_cached(
+    store: DayFloatMap, dates_needed: set[str]
+) -> dict:
+    """Gate A: keep store across chunks; load ONLY missing trade_date via filters.
+
+    trade_date column type is timestamp[us] (schema probe). Filter values are
+    datetime.datetime midnight. Uses pyarrow.parquet.read_table(..., filters=)
+    to avoid per-chunk 12× RG read_row_group→to_pandas full-table materialize.
+    T-1 / drop_before semantics unchanged (caller still drop_before in-loop).
+    Does NOT modify lowmem_v1.
+    """
+    import pyarrow.parquet as pq
+
+    assert_pinned_sha(MKTCAP, MKTCAP_SHA, "float_mktcap_from2015")
+    want = set(dates_needed)
+    have = set(store._codes.keys())  # DayFloatMap private; intentional cache probe
+    hit = want & have
+    missing = sorted(want - have)
+    stats = {
+        "hit": int(len(hit)),
+        "miss": int(len(missing)),
+        "load_n": 0,
+        "cache_days_before": int(len(have)),
+    }
+    if not missing:
+        stats["cache_days_after"] = int(len(store._codes))
+        return stats
+
+    missing_ts = [pd.Timestamp(d).to_pydatetime() for d in missing]
+    table = pq.read_table(
+        MKTCAP,
+        columns=["instrument_id", "trade_date", "float_mktcap"],
+        filters=[("trade_date", "in", missing_ts)],
+    )
+    df = table.to_pandas()
+    del table
+    if len(df) == 0:
+        del df
+        gc.collect()
+        stats["cache_days_after"] = int(len(store._codes))
+        return stats
+
+    df["instrument"] = df["instrument_id"].map(to_ts)
+    df["ds"] = pd.to_datetime(df["trade_date"]).dt.strftime("%Y-%m-%d")
+    miss_set = set(missing)
+    df = df[df["ds"].isin(miss_set)]
+    loaded = 0
+    if len(df):
+        v = df["float_mktcap"].to_numpy(dtype=np.float64)
+        ok = np.isfinite(v) & (v > 0)
+        ds_arr = df["ds"].to_numpy()
+        inst = df["instrument"].to_numpy()
+        # group by day without giant groupby hold
+        order = np.argsort(ds_arr, kind="mergesort")
+        ds_arr = ds_arr[order]
+        inst = inst[order]
+        v = v[order]
+        ok = ok[order]
+        if len(ds_arr):
+            cuts = np.flatnonzero(ds_arr[1:] != ds_arr[:-1]) + 1
+            starts = np.concatenate(([0], cuts))
+            ends = np.concatenate((cuts, [len(ds_arr)]))
+            for a, b in zip(starts, ends):
+                d = str(ds_arr[a])
+                if d not in miss_set:
+                    continue
+                mask = ok[a:b]
+                if not mask.any():
+                    continue
+                store.put_day(
+                    d,
+                    np.asarray(inst[a:b][mask], dtype=object),
+                    np.asarray(v[a:b][mask], dtype=np.float32),
+                )
+                loaded += 1
+    del df
+    gc.collect()
+    stats["load_n"] = int(loaded)
+    stats["cache_days_after"] = int(len(store._codes))
+    return stats
+
+
+def load_capadv_chunk(universe: str, sessions: list[str]) -> DayFloatMap:
+    return load_capadv_target_weight(universe, sessions)
+
+
+def evict_lim_cache_sessions(lim_cache: LimitPanelCache, keep_sessions: set[str]) -> int:
+    """baseline_evac_r1: drop LimitPanelCache session keys outside keep set.
+
+    Updates lim_cache._keep and prunes each panel map in lim_cache._maps.
+    Does NOT touch lowmem_v1.py. Factor / T-1 semantics unchanged.
+    Returns count of removed (session) entries across all panels.
+    """
+    lim_cache._keep = keep_sessions
+    n_evict = 0
+    drop_keys: list[tuple[str, str]] = []
+    for key, m in lim_cache._maps.items():
+        if m is None:
+            continue
+        stale = [d for d in m if d not in keep_sessions]
+        for d in stale:
+            del m[d]
+            n_evict += 1
+        if len(m) == 0:
+            drop_keys.append(key)
+    for key in drop_keys:
+        del lim_cache._maps[key]
+    return int(n_evict)
+
+
+def flush_alpha_part(
+    out_dir: Path,
+    universe: str,
+    window: str,
+    stamp: str,
+    part_i: int,
+    a_date: list,
+    a_inst: list,
+    a_alpha: list,
+    a_raw: list,
+    a_ivol: list,
+    a_dom: list,
+    a_ind: list,
+) -> tuple[int, Path | None]:
+    """baseline_evac_r1: write a_* buffer to part parquet and clear lists.
+
+    Schema matches final alpha_*.parquet columns. Returns (n_rows, path|None).
+    """
+    n = len(a_date)
+    if n == 0:
+        return 0, None
+    df = pd.DataFrame(
+        {
+            "date": list(a_date),
+            "instrument": list(a_inst),
+            "alpha": np.asarray(a_alpha, dtype=np.float64),
+            "alpha_raw": np.asarray(a_raw, dtype=np.float64),
+            "ivol": np.asarray(a_ivol, dtype=np.float64),
+            "size_domain": list(a_dom),
+            "ind": list(a_ind),
+        }
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"alpha_part_{universe}_{window}_{stamp}_{part_i:04d}.parquet"
+    df.to_parquet(path, index=False)
+    del df
+    a_date.clear()
+    a_inst.clear()
+    a_alpha.clear()
+    a_raw.clear()
+    a_ivol.clear()
+    a_dom.clear()
+    a_ind.clear()
+    gc.collect()
+    return int(n), path
+
+
+def run_one(
+    universe: str,
+    window: str,
+    chunk_mode: str = DEFAULT_CHUNK_MODE,
+    chunk_ndays: int = DEFAULT_CHUNK_NDAYS,
+) -> dict:
+    """Chunked-load runner — factor-identical; members/mktcap/capadv per chunk."""
+    mask = UNIVERSES[universe]
+    start, end = WINDOWS[window]
+    warm_start = (pd.Timestamp(start) - pd.Timedelta(days=120)).strftime("%Y-%m-%d")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"[{CHUNKED_TAG}/{universe}/{window}] begin rss={rss_mb():.0f}MB "
+        f"chunk_mode={chunk_mode} rss_limit={RSS_LIMIT_MB} "
+        f"hist_prune={HIST_PRUNE_TAG} mktcap_cache={MKTCAP_CACHE_TAG} "
+        f"baseline_evac={BASELINE_EVAC_TAG}",
+        flush=True,
+    )
+    r_mkt = load_510300_ret()
+    _check_rss("after_etf")
+    cal = sorted([d for d in r_mkt.index if warm_start <= d <= end])
+    chunks = split_calendar_chunks(cal, mode=chunk_mode, ndays=chunk_ndays)
+    print(
+        f"  calendar_days={len(cal)} n_chunks={len(chunks)} "
+        f"chunk_lens={[len(c) for c in chunks]} rss={rss_mb():.0f}MB",
+        flush=True,
+    )
+    swm = sw_map()
+    _check_rss("after_sw")
+    # LimitPanelCache: keep only sessions we will touch; still whole cal for look-ups,
+    # but panels load lazily per name — peak driver was members/mktcap preload.
+    lim_cache = LimitPanelCache(keep_sessions=set(cal))
+    limit_hit_n = 0
+    limit_unknown_n = 0
+    bj_limit_empty_n = 0
+
+    ret_hist: dict[str, deque] = defaultdict(lambda: deque(maxlen=BETA_WIN))
+    mkt_hist: deque = deque(maxlen=BETA_WIN)
+    eps_hist: dict[str, deque] = defaultdict(lambda: deque(maxlen=IVOL_WIN))
+
+    a_date: list[str] = []
+    a_inst: list[str] = []
+    a_alpha: list[float] = []
+    a_raw: list[float] = []
+    a_ivol: list[float] = []
+    a_dom: list[str] = []
+    a_ind: list[str] = []
+    alpha_part_paths: list[Path] = []
+    alpha_part_i = 0
+    alpha_flush_total = 0
+    start_ts = pd.Timestamp(start)
+    alive_recent: set[str] = set()
+    peak = rss_mb()
+    di_global = 0  # index into full cal for T-1 prev session
+    # Gate A: process-lifetime mktcap cache (cross-chunk); NOT cleared at chunk end
+    mktcap = DayFloatMap()
+    factor_win = max(int(BETA_WIN), int(IVOL_WIN))
+
+    for ci, chunk in enumerate(chunks):
+        # lookback: need prev trading session mktcap for first day of chunk (T-1)
+        # find global index of chunk[0]
+        i0 = cal.index(chunk[0])
+        mkt_dates = set(chunk)
+        if i0 >= 1:
+            mkt_dates.add(cal[i0 - 1])
+        # members needed = chunk sessions only
+        members, suspended = member_and_suspend_chunk(mask, chunk)
+        r = _check_rss(f"chunk{ci}_members_loaded")
+        peak = max(peak, r)
+        print(
+            f"  chunk[{ci}] days={len(chunk)} span={chunk[0]}..{chunk[-1]} "
+            f"members_loaded rss={r:.0f}MB",
+            flush=True,
+        )
+        cap = load_capadv_chunk(universe, chunk)
+        r = _check_rss(f"chunk{ci}_capadv")
+        peak = max(peak, r)
+        print(f"  chunk[{ci}] capadv_days={cap.n_days()} rss={r:.0f}MB", flush=True)
+        mc_stats = load_mktcap_chunk_cached(mktcap, mkt_dates)
+        r = _check_rss(f"chunk{ci}_mktcap")
+        peak = max(peak, r)
+        print(
+            f"  chunk[{ci}] mktcap_cache hit={mc_stats['hit']} "
+            f"miss={mc_stats['miss']} load_n={mc_stats['load_n']} "
+            f"days={mktcap.n_days()} rss={r:.0f}MB",
+            flush=True,
+        )
+
+        for ds in chunk:
+            di = cal.index(ds)
+            di_global = di
+            pool = members.get(ds, set()) - suspended.get(ds, set()) - HARD_EXCLUDE
+            p = DAILY / f"{ds.replace('-', '')}.parquet"
+            if not pool or not p.exists():
+                continue
+            df = pd.read_parquet(p, columns=["ts_code", "open", "pre_close", "close"])
+            df = df[df["ts_code"].isin(pool)]
+            if len(df) < 30:
+                del df
+                continue
+
+            op = df["open"].to_numpy(dtype=np.float64)
+            pc = df["pre_close"].to_numpy(dtype=np.float64)
+            cl = df["close"].to_numpy(dtype=np.float64)
+            codes = df["ts_code"].to_numpy()
+            del df
+            good = (
+                np.isfinite(op)
+                & np.isfinite(pc)
+                & np.isfinite(cl)
+                & (pc > 0)
+                & (op > 0)
+            )
+            codes, op, pc, cl = codes[good], op[good], pc[good], cl[good]
+            if len(codes) < 30:
+                continue
+
+            keep_idx: list[int] = []
+            for i, (c, close_i) in enumerate(zip(codes, cl)):
+                hit = limit_hit(str(c), ds, float(close_i), lim_cache)
+                if hit is True:
+                    limit_hit_n += 1
+                    continue
+                if hit is None:
+                    limit_unknown_n += 1
+                    if str(c).endswith(".BJ"):
+                        bj_limit_empty_n += 1
+                    continue
+                keep_idx.append(i)
+            if len(keep_idx) < 30:
+                continue
+            keep_a = np.asarray(keep_idx, dtype=np.int32)
+            codes, op, pc, cl = codes[keep_a], op[keep_a], pc[keep_a], cl[keep_a]
+            close_by = {str(c): float(v) for c, v in zip(codes, cl)}
+
+            r_on = op / pc - 1.0
+            r_id = cl / op - 1.0
+            on_minus_id = r_on - r_id
+
+            r_stock = cl / pc - 1.0
+            rm = float(r_mkt.get(ds, np.nan))
+            if np.isfinite(rm):
+                mkt_hist.append(rm)
+            for c, rs in zip(codes, r_stock):
+                if np.isfinite(rs):
+                    ret_hist[str(c)].append(float(rs))
+
+            mc_tm1 = mktcap_T_minus_1(mktcap, cal, di)
+            if di >= 2:
+                mktcap.drop_before(cal[di - 1])
+
+            ind = np.array([swm.get(c, "_UNK") for c in codes], dtype=object)
+            mv = np.array([mc_tm1.get(c, np.nan) for c in codes], dtype=np.float64)
+            valid_mv = np.isfinite(mv) & (mv > 0)
+            logmv = np.full(len(codes), np.nan, dtype=np.float64)
+            logmv[valid_mv] = np.log(mv[valid_mv])
+
+            e2 = sw_demean(on_minus_id, ind)
+            e3 = resid_vs_x(e2, logmv)
+            e3[~valid_mv] = np.nan
+
+            betas = np.full(len(codes), np.nan, dtype=np.float64)
+            if len(mkt_hist) >= MIN_BETA_OBS:
+                mkt_arr = np.asarray(mkt_hist, dtype=np.float64)
+                for i, c in enumerate(codes):
+                    h = ret_hist.get(str(c))
+                    if not h or len(h) < MIN_BETA_OBS:
+                        continue
+                    n = min(len(h), len(mkt_arr))
+                    if n < MIN_BETA_OBS:
+                        continue
+                    yb = np.asarray(list(h)[-n:], dtype=np.float64)
+                    xb = mkt_arr[-n:]
+                    okb = np.isfinite(yb) & np.isfinite(xb)
+                    if okb.sum() < MIN_BETA_OBS:
+                        continue
+                    Xb = np.column_stack(
+                        [np.ones(okb.sum(), dtype=np.float64), xb[okb]]
+                    )
+                    b, *_ = np.linalg.lstsq(Xb, yb[okb], rcond=None)
+                    betas[i] = float(b[1]) if len(b) > 1 else np.nan
+            e4 = resid_vs_x(e3, betas)
+
+            cap_day = cap.as_dict(ds)
+            xcap = np.array(
+                [float(cap_day.get(c, 0.0)) for c in codes], dtype=np.float64
+            )
+            e5 = resid_vs_x(e4, xcap)
+
+            for c, e in zip(codes, e5):
+                if np.isfinite(e):
+                    eps_hist[str(c)].append(float(e))
+
+            alive_recent.update(str(c) for c in codes)
+            if di % 40 == 0 and di > 0:
+                _prune_hist(ret_hist, alive_recent)
+                _prune_hist(eps_hist, alive_recent)
+                alive_recent = set(str(c) for c in codes)
+                gc.collect()
+
+            if pd.Timestamp(ds) < start_ts:
+                continue
+
+            ivol_codes, ivols, mvs, inds = [], [], [], []
+            for c in pool:
+                if c in HARD_EXCLUDE:
+                    continue
+                cl_c = close_by.get(str(c))
+                if cl_c is None:
+                    continue
+                hit = limit_hit(str(c), ds, float(cl_c), lim_cache)
+                if hit is not False:
+                    continue
+                h = eps_hist.get(str(c))
+                if not h or len(h) < MIN_IVOL_OBS:
+                    continue
+                iv = float(np.std(h, ddof=1)) if len(h) >= 2 else np.nan
+                if not np.isfinite(iv):
+                    continue
+                mv_c = mc_tm1.get(c, np.nan)
+                if not (mv_c == mv_c and mv_c > 0):
+                    continue
+                ivol_codes.append(c)
+                ivols.append(iv)
+                mvs.append(mv_c)
+                inds.append(swm.get(c, "_UNK"))
+            if len(ivol_codes) < 50:
+                continue
+
+            ivols_a = np.asarray(ivols, dtype=np.float64)
+            mvs_a = np.asarray(mvs, dtype=np.float64)
+            inds_a = np.asarray(inds, dtype=object)
+            alpha_raw = -ivols_a
+            domains = size_domain_arr(mvs_a)
+            score = domain_calibrate_arr(alpha_raw, domains)
+            logmv2 = np.log(np.clip(mvs_a, 1.0, None))
+            alpha = resid_ind_logmv(score, inds_a, logmv2)
+            alpha = domain_calibrate_arr(alpha, domains)
+
+            for i, c in enumerate(ivol_codes):
+                a_date.append(ds)
+                a_inst.append(c)
+                a_alpha.append(float(alpha[i]))
+                a_raw.append(float(alpha_raw[i]))
+                a_ivol.append(float(ivols_a[i]))
+                a_dom.append(str(domains[i]))
+                a_ind.append(str(inds_a[i]))
+
+            if di % 60 == 0:
+                r = rss_mb()
+                peak = max(peak, r)
+                print(
+                    f"  {ds} n={len(ivol_codes)} rss={r:.0f}MB chunk={ci}",
+                    flush=True,
+                )
+
+        # end chunk — hist_prune_r1 (PRIMARY) then free chunk-local maps
+        # Keep in-loop di%40 prune; factor pins / BETA_WIN / IVOL_WIN UNCHANGED.
+        _prune_hist(ret_hist, alive_recent)
+        _prune_hist(eps_hist, alive_recent)
+        for _h in (ret_hist, eps_hist):
+            _empty = [c for c, dq in _h.items() if len(dq) == 0]
+            for c in _empty:
+                del _h[c]
+        try:
+            alive_recent = set(str(c) for c in codes)  # last-day codes only
+        except NameError:
+            alive_recent = set()
+        members.clear()
+        suspended.clear()
+        # Gate A: DO NOT mktcap.clear() — retain cross-chunk DayFloatMap cache
+        # (in-loop drop_before already prunes stale T-1 days)
+        cap.clear()
+        del members, suspended, cap
+        # baseline_evac_r1: flush alpha buffer → part parquet; clear a_* lists
+        n_flush, part_path = flush_alpha_part(
+            OUT_DIR,
+            universe,
+            window,
+            stamp,
+            alpha_part_i,
+            a_date,
+            a_inst,
+            a_alpha,
+            a_raw,
+            a_ivol,
+            a_dom,
+            a_ind,
+        )
+        if part_path is not None:
+            alpha_part_paths.append(part_path)
+            alpha_part_i += 1
+            alpha_flush_total += n_flush
+        # baseline_evac_r1: evict lim_cache sessions older than factor window
+        i_end = cal.index(chunk[-1])
+        keep_from_i = max(0, i_end - factor_win + 1)
+        keep_sessions = set(cal[keep_from_i:])
+        lim_evict_n = evict_lim_cache_sessions(lim_cache, keep_sessions)
+        gc.collect()
+        r = _check_rss(f"chunk{ci}_hist_pruned")
+        peak = max(peak, r)
+        print(
+            f"  chunk[{ci}] hist_pruned+freed rss={r:.0f}MB "
+            f"ret_hist_n={len(ret_hist)} eps_hist_n={len(eps_hist)} "
+            f"mktcap_cache_days={mktcap.n_days()} "
+            f"lim_evict_n={lim_evict_n} alpha_flush_rows={n_flush} "
+            f"a_buf_n={len(a_date)} lim_maps_n={len(lim_cache._maps)}",
+            flush=True,
+        )
+
+    # baseline_evac_r1: concat flushed parts + any residual buffer → final alpha
+    frames: list[pd.DataFrame] = []
+    for pp in alpha_part_paths:
+        if pp.exists():
+            frames.append(pd.read_parquet(pp))
+    if a_date:
+        frames.append(
+            pd.DataFrame(
+                {
+                    "date": a_date,
+                    "instrument": a_inst,
+                    "alpha": np.asarray(a_alpha, dtype=np.float64),
+                    "alpha_raw": np.asarray(a_raw, dtype=np.float64),
+                    "ivol": np.asarray(a_ivol, dtype=np.float64),
+                    "size_domain": a_dom,
+                    "ind": a_ind,
+                }
+            )
+        )
+    if frames:
+        alpha = pd.concat(frames, ignore_index=True)
+        del frames
+        gc.collect()
+    else:
+        alpha = pd.DataFrame(
+            columns=[
+                "date",
+                "instrument",
+                "alpha",
+                "alpha_raw",
+                "ivol",
+                "size_domain",
+                "ind",
+            ]
+        )
+    ap = OUT_DIR / f"alpha_{universe}_{window}_{stamp}.parquet"
+    if len(alpha):
+        alpha.to_parquet(ap, index=False)
+    # drop part files after successful final write (best-effort)
+    if len(alpha) and alpha_part_paths:
+        for pp in alpha_part_paths:
+            try:
+                pp.unlink(missing_ok=True)
+            except OSError:
+                pass
+    meta = dict(
+        mechanism_tag=MECHANISM_TAG,
+        chunked_tag=CHUNKED_TAG,
+        universe=universe,
+        window=window,
+        span=[start, end],
+        chunk_mode=chunk_mode,
+        chunk_ndays=chunk_ndays if chunk_mode == "ndays" else None,
+        n_chunks=len(chunks),
+        calendar_days=len(cal),
+        alpha_direction="minus_ivol",
+        beta_win=BETA_WIN,
+        min_beta_obs=MIN_BETA_OBS,
+        ivol_win=IVOL_WIN,
+        min_ivol_obs=MIN_IVOL_OBS,
+        exposure_col="target_weight",
+        capadv_path=str(CAPADV_PATH[universe]),
+        capadv_sha256=CAPADV_HILIQ_SHA if universe == "HILIQ" else "see_fulla_file",
+        etf_sha256=ETF_SHA,
+        mktcap_sha256=MKTCAP_SHA,
+        mktcap_rule="T-1_prev_trading_session",
+        limit_cols=["limit_up", "limit_down"],
+        limit_policy="exclude_hit_or_unknown",
+        limit_hit_n=int(limit_hit_n),
+        limit_unknown_n=int(limit_unknown_n),
+        bj_limit_empty_n=int(bj_limit_empty_n),
+        mktcap_available_at="RESEARCH_WAIVER_GRANTED",
+        mktcap_available_at_waiver_sha256=(
+            "b39954c3ff6ee4c03f904ec9f58660871b1b574bfab6498c57b825878f28ab7f"
+        ),
+        rss_limit_mb=RSS_LIMIT_MB,
+        live=False,
+        promotion_approved=False,
+        peak_rss_mb=max(peak, rss_mb()),
+        n_alpha_rows=int(len(alpha)),
+        alpha_path=str(ap) if len(alpha) else None,
+        supersedes_lowmem_v1_sha256=LOWMEM_V1_SHA,
+        audit_p14_sha8=AUDIT_P14_SHA8,
+        forbid_restored_ok_sha8=list(VOID_OK_SHA8),
+        hist_prune_tag=HIST_PRUNE_TAG,
+        mktcap_cache_tag=MKTCAP_CACHE_TAG,
+        baseline_evac_tag=BASELINE_EVAC_TAG,
+        arch_mktcap_spike_draft_sha8=ARCH_MKTCAP_SPIKE_DRAFT_SHA8,
+        spike_note_sha8=SPIKE_NOTE_SHA8,
+        void_authority_sha8=VOID_AUTHORITY_SHA8,
+        abort_receipt_sha8=ABORT_RECEIPT_SHA8,
+        main_order_sha8=MAIN_ORDER_SHA8,
+        prev_script_sha8=PREV_SCRIPT_SHA8,
+        alpha_flush_total_rows=int(alpha_flush_total),
+        alpha_part_n=int(len(alpha_part_paths)),
+        note=(
+            "CHUNKED_MEMBERS_MKTCAP_r1 + hist_prune_r1 + mktcap_cache_r1 + "
+            "baseline_evac_r1 DRAFT; factor pins UNCHANGED; miss-only mktcap; "
+            "lim_cache session evict + alpha mid-flush; no .ok this turn"
+        ),
+        baseline_script_sha256=(
+            "7a5f756c0a1ab09fb55aa2bc3c17f389bde44d222d7066237e503566c908f8c6"
+        ),
+        di_global_last=di_global,
+    )
+    mp = OUT_DIR / f"run_meta_{universe}_{window}_{stamp}.json"
+    mp.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+
+    mktcap.clear()
+    del mktcap
+    lim_cache.clear()
+    ret_hist.clear()
+    eps_hist.clear()
+    mkt_hist.clear()
+    del alpha, a_date, a_inst, a_alpha, a_raw, a_ivol, a_dom, a_ind
+    del lim_cache, ret_hist, eps_hist, r_mkt, swm
+    gc.collect()
+    print(
+        f"[{CHUNKED_TAG}/{universe}/{window}] done rss={rss_mb():.0f}MB peak={meta['peak_rss_mb']:.0f}MB",
+        flush=True,
+    )
+    return meta
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description=(
+            "Leaf27 chunked + hist_prune + mktcap_cache + baseline_evac_r1 — DRAFT; no .ok."
+        )
+    )
+    ap.add_argument("--universe", choices=["FULLA", "HILIQ", "both"], default="HILIQ")
+    ap.add_argument("--window", choices=["sealed", "x2", "both"], default="x2")
+    ap.add_argument(
+        "--chunk-mode",
+        choices=["quarter", "month", "ndays"],
+        default=DEFAULT_CHUNK_MODE,
+        help="Calendar split for members/mktcap/capadv load (default quarter).",
+    )
+    ap.add_argument(
+        "--chunk-ndays",
+        type=int,
+        default=DEFAULT_CHUNK_NDAYS,
+        help="When --chunk-mode=ndays, sessions per chunk (default 60).",
+    )
+    ap.add_argument(
+        "--dry-compile-only",
+        action="store_true",
+        help="Exit after importing constants (no data run).",
+    )
+    args = ap.parse_args()
+    if args.dry_compile_only:
+        print(
+            json.dumps(
+                {
+                    "mechanism_tag": MECHANISM_TAG,
+                    "chunked_tag": CHUNKED_TAG,
+                    "hist_prune_tag": HIST_PRUNE_TAG,
+                    "mktcap_cache_tag": MKTCAP_CACHE_TAG,
+                    "baseline_evac_tag": BASELINE_EVAC_TAG,
+                    "exposure_col": "target_weight",
+                    "rss_limit_mb": RSS_LIMIT_MB,
+                    "chunk_mode_default": DEFAULT_CHUNK_MODE,
+                    "etf_sha": ETF_SHA,
+                    "capadv_hiliq_sha": CAPADV_HILIQ_SHA,
+                    "mktcap_sha": MKTCAP_SHA,
+                    "supersedes_lowmem_v1_sha": LOWMEM_V1_SHA,
+                    "audit_p14_sha8": AUDIT_P14_SHA8,
+                    "arch_mktcap_spike_draft_sha8": ARCH_MKTCAP_SPIKE_DRAFT_SHA8,
+                    "spike_note_sha8": SPIKE_NOTE_SHA8,
+                    "void_authority_sha8": VOID_AUTHORITY_SHA8,
+                    "abort_receipt_sha8": ABORT_RECEIPT_SHA8,
+                    "main_order_sha8": MAIN_ORDER_SHA8,
+                    "prev_script_sha8": PREV_SCRIPT_SHA8,
+                    "forbid_restored_ok_sha8": list(VOID_OK_SHA8),
+                    "baseline_script_sha": (
+                        "7a5f756c0a1ab09fb55aa2bc3c17f389bde44d222d7066237e503566c908f8c6"
+                    ),
+                    "live": False,
+                    "ok_requested": False,
+                }
+            )
+        )
+        return
+    if args.universe == "FULLA" or args.universe == "both":
+        raise SystemExit(
+            "FULLA_GAP: leaf27 chunked r1 authorized path is HILIQ-only; "
+            "FULLA remains GAP (Arch). Refuse --universe FULLA|both."
+        )
+    if args.window == "both":
+        raise SystemExit(
+            "REFUSE: --window both forbidden for chunked r1 first auth "
+            "(Arch: single window x2; sealed另签)."
+        )
+    us = ["HILIQ"]
+    ws = [args.window]
+    results = []
+    for u in us:
+        for w in ws:
+            results.append(
+                run_one(u, w, chunk_mode=args.chunk_mode, chunk_ndays=args.chunk_ndays)
+            )
+            gc.collect()
+    summary = OUT_DIR / f"build_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    summary.write_text(
+        json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    print("SUMMARY", summary, "peak_rss", max(r["peak_rss_mb"] for r in results))
+
+
+if __name__ == "__main__":
+    main()

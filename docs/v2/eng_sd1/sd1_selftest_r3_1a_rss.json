@@ -1,0 +1,24 @@
+{
+ "cmd": [
+  "/workspace/qlvenv/bin/python",
+  "-m",
+  "pytest",
+  "tests/test_sd1_suspend_delist.py",
+  "-q",
+  "-p",
+  "no:cacheprovider"
+ ],
+ "started_et": "2026-10-18T03:09:02-04:00",
+ "finished_et": "2026-10-18T03:09:06-04:00",
+ "elapsed_s": 3.7,
+ "exit": 0,
+ "killed_over_cap": false,
+ "cap_mb": 1536,
+ "samples": 34,
+ "interval_s": 0.1,
+ "max_tree_pids": 2,
+ "distinct_pids_seen": 2,
+ "peak_tree_vmrss_sum_mb": 269.5,
+ "peak_vmhwm_any_pid_mb": 156.1,
+ "rusage_children_maxrss_mb": 155.8
+}

@@ -1,0 +1,173 @@
+--- a/research/strategy_fulla_b4_x2.py
++++ b/research/strategy_fulla_b4_x2.py
+@@ -15,6 +15,7 @@
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
++from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
+ OUT = ROOT / "output/strategy_fulla/b4"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = ROOT / "output/strategy_fulla/legs"
+@@ -250,6 +251,7 @@
+         })
+     )
+     # industry PIT: as-of join on in_date/out_date
++    sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])  # integrity raises; stale warns
+     ind = pd.read_parquet(ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+                           columns=["ts_code", "l1_name", "in_date", "out_date"])
+     ind["in_date"] = pd.to_datetime(ind["in_date"], errors="coerce")
+@@ -504,6 +506,8 @@
+                           for k, v in attrs.items()},
+         "charts": charts,
+         "mdd25_flag": {},
++        "sw_pit_freshness": sw_pit_last_result(),
++        "disclosure_zh": (sw_pit_last_result() or {}).get("disclosure_zh", ""),
+         "note_zh": "FULLA=研究轨；纸面=HI_LIQ（并行）；未动 FROZEN_CONFIG/纸面轨。S6/叶 为影子研究，不晋级。",
+     }
+     for tag, by in results.items():
+--- a/research/strategy_hiliq_capadv_b4_x2.py
++++ b/research/strategy_hiliq_capadv_b4_x2.py
+@@ -20,6 +20,7 @@
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT))
++from research.sw_pit_freshness import ensure_checked as sw_pit_ensure_checked, last_result as sw_pit_last_result  # 主 Agent 10-18 05:06; Arch ccc7546f
+ OUT = ROOT / "output/strategy_hiliq"
+ OUT.mkdir(parents=True, exist_ok=True)
+ LEGS = OUT / "legs"
+@@ -68,7 +69,9 @@
+     return d
+ 
+ 
+-def load_industry_map() -> dict:
++def load_industry_map(as_of: str | None = None) -> dict:
++    # as_of default = X2 end (receipt window last session); integrity raises, stale warns (Arch ccc7546f)
++    sw_pit_ensure_checked(ROOT, as_of=as_of or X2[1])
+     ind = pd.read_parquet(
+         ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+         columns=["ts_code", "l1_name", "in_date", "out_date"],
+@@ -308,6 +311,7 @@
+         }),
+         include_groups=False,
+     )
++    sw_pit_ensure_checked(ROOT, as_of=str(Wx["session"].max())[:10])
+     ind = pd.read_parquet(
+         ROOT / "data/v2/sw_pit/industry_members_sw_l1_pit.parquet",
+         columns=["ts_code", "l1_name", "in_date"],
+@@ -650,6 +654,9 @@
+         "banner_zh": "过渡 Top-N；主路径 = OPTIMIZER_V1 DRAFT（等 Leo）；未动 FROZEN/纸面轨；live/promotion=false",
+         "live": False,
+         "promotion": False,
++        "sw_pit_freshness": sw_pit_last_result(),
++        "industry_cap_on_stale_sw_pit": bool((sw_pit_last_result() or {}).get("stale")),
++        "disclosure_zh": (sw_pit_last_result() or {}).get("disclosure_zh", ""),
+         "frozen_config_touched": False,
+         "paper_tracks_touched": False,
+         "track": "HI_LIQ_V1.1_TRANSITIONAL_TOPN",
+--- /dev/null
++++ b/research/sw_pit_freshness.py
+@@ -0,0 +1,104 @@
++"""SW PIT (data/v2/sw_pit) freshness self-check — 主 Agent 2026-10-18 05:06 ET ruling; Arch ccc7546f + 05:18 unified rules (Intel bc9ef8a1) (r3).
++
++Consumers of sw_pit must check the table themselves; freshness overall=ok does NOT cover sw_pit.
++Freshness is judged by manifest `built` only (directory mtimes are unreliable).
++- `built` is naive America/New_York (queue_chain datetime.now()); convert to Asia/Shanghai.
++  coverage_day = built's SH date if it is an open SSE day and SH time >= 18:00, else the last open day before it.
++- ref_day = latest completed SSE session as of now (SH date if open and SH time >= 18:00, else last open day before).
++- lag_tdays = open SSE days in (coverage_day, ref_day]; stale (warn) if lag_tdays >= STALE_LAG_TDAYS.
++- coverage_gap (warn) if as_of (last rebalance day) > coverage_day.
++- Integrity failures RAISE (stop): manifest unreadable, parquet missing, sha256 != manifest, built missing.
++Calendar: data/v2/calendar/trade_cal_sse_pit.parquet (is_open). Read-only; cached per level per process.
++"""
++from __future__ import annotations
++
++import datetime as _dt
++import hashlib
++import json
++from pathlib import Path
++from zoneinfo import ZoneInfo
++
++import pandas as pd
++
++STALE_LAG_TDAYS = 3
++SH_AVAIL_HOUR = 18
++_ET = ZoneInfo("America/New_York")
++_SH = ZoneInfo("Asia/Shanghai")
++_CACHE: dict = {}
++
++
++class SwPitIntegrityError(RuntimeError):
++    pass
++
++
++def _open_days(root: Path) -> list:
++    cal = pd.read_parquet(root / "data/v2/calendar/trade_cal_sse_pit.parquet", columns=["cal_date", "is_open"])
++    return sorted(_dt.date(int(x[:4]), int(x[4:6]), int(x[6:8]))
++                  for x in cal.loc[cal["is_open"] == 1, "cal_date"].astype(str))
++
++
++def _completed_session(sh_dt: _dt.datetime, open_days: list) -> _dt.date:
++    d = sh_dt.date()
++    if d in set(open_days) and sh_dt.hour >= SH_AVAIL_HOUR:
++        return d
++    prev = [x for x in open_days if x < d]
++    if not prev:
++        raise SwPitIntegrityError(f"calendar has no open day before {d}")
++    return prev[-1]
++
++
++def check_sw_pit(root: Path, level: str = "l1", as_of: str | None = None,
++                 now_et: _dt.datetime | None = None) -> dict:
++    now_et = now_et or _dt.datetime.now(_ET)
++    mpath = root / "data/v2/sw_pit/manifest.json"
++    try:
++        man = json.loads(mpath.read_text(encoding="utf-8"))
++    except Exception as e:
++        raise SwPitIntegrityError(f"sw_pit manifest unreadable: {mpath} ({type(e).__name__}: {e})")
++    fpath = root / "data/v2/sw_pit" / f"industry_members_sw_{level}_pit.parquet"
++    if not fpath.exists():
++        raise SwPitIntegrityError(f"sw_pit parquet missing: {fpath}")
++    actual = hashlib.sha256(fpath.read_bytes()).hexdigest()
++    listed = (man.get("sha256") or {}).get(f"sw_pit/{fpath.name}")
++    if listed != actual:
++        raise SwPitIntegrityError(f"sw_pit sha mismatch: actual={actual} manifest={listed}")
++    built = man.get("built")
++    if not built:
++        raise SwPitIntegrityError("sw_pit manifest has no 'built'")
++    built_et = _dt.datetime.fromisoformat(str(built)).replace(tzinfo=_ET)  # naive ET by construction
++    built_sh = built_et.astimezone(_SH)
++    days = _open_days(root)
++    coverage = _completed_session(built_sh, days)
++    ref = _completed_session(now_et.astimezone(_SH), days)
++    lag = sum(1 for x in days if coverage < x <= ref)
++    rng = (man.get(level) or {}).get("in_date_range") or [None, None]
++    warns = []
++    if lag >= STALE_LAG_TDAYS:
++        warns.append(f"lag_tdays={lag}>={STALE_LAG_TDAYS}")
++    as_of_d = None if as_of is None else _dt.date.fromisoformat(str(as_of)[:10])
++    if as_of_d is not None and as_of_d > coverage:
++        warns.append(f"coverage_gap: as_of={as_of_d.isoformat()} > coverage_day={coverage.isoformat()}")
++    out = {"manifest": "data/v2/sw_pit/manifest.json", "level": level,
++           "checked_at_et": now_et.isoformat(timespec="seconds"),
++           "built_et": built_et.isoformat(timespec="seconds"), "built_sh": built_sh.isoformat(timespec="seconds"),
++           "coverage_day": coverage.isoformat(), "ref_day": ref.isoformat(), "lag_tdays": lag,
++           "as_of": None if as_of_d is None else as_of_d.isoformat(),
++           "in_date_range": rng, "in_date_max": rng[-1], "sha256": actual,
++           "promotion_approved": man.get("promotion_approved"),
++           "stale": bool(warns), "warns": warns,
++           "disclosure_zh": ("【披露】申万 sw_pit 表可能过期：" + "；".join(warns) +
++                             f"（built 上海 {built_sh:%Y-%m-%d %H:%M}，覆盖至 {coverage}，in_date 最大 {rng[-1]}）。"
++                             "行业相关结果仅作带披露参考。") if warns else ""}
++    print("[sw_pit_freshness]", json.dumps(out, ensure_ascii=False))
++    return out
++
++
++def ensure_checked(root: Path, level: str = "l1", as_of: str | None = None) -> dict:
++    """Check once per process (first caller's as_of wins); later calls return the cached result."""
++    if level not in _CACHE:
++        _CACHE[level] = check_sw_pit(root, level=level, as_of=as_of)
++    return _CACHE[level]
++
++
++def last_result(level: str = "l1") -> dict | None:
++    return _CACHE.get(level)

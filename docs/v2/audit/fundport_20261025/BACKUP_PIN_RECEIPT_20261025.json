@@ -1,0 +1,42 @@
+{
+  "ok_sha256": "aeb86f8d8fa3f90a58f7b34b3698bfc7494aaad745206a1e9668ff92b48bc780",
+  "start_et": "2026-10-25T00:15:37-04:00",
+  "end_et": "2026-10-25T00:15:37-04:00",
+  "pre_stat_src1": {
+    "inode": 346570,
+    "nlink": 1,
+    "size": 743884130,
+    "mtime_epoch": 1792300024
+  },
+  "pre_stat_src2": {
+    "inode": 2662401,
+    "nlink": 1,
+    "size": 744405927,
+    "mtime_epoch": 1792300033
+  },
+  "post_stat_src1": {
+    "inode": 346570,
+    "nlink": 2,
+    "size": 743884130,
+    "mtime_epoch": 1792300024
+  },
+  "post_stat_src2": {
+    "inode": 2662401,
+    "nlink": 2,
+    "size": 744405927,
+    "mtime_epoch": 1792300033
+  },
+  "post_stat_dst1": {
+    "inode": 346570,
+    "nlink": 2,
+    "size": 743884130,
+    "mtime_epoch": 1792300024
+  },
+  "post_stat_dst2": {
+    "inode": 2662401,
+    "nlink": 2,
+    "size": 744405927,
+    "mtime_epoch": 1792300033
+  },
+  "result": "OK"
+}

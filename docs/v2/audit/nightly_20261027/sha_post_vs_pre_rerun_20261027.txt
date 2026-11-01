@@ -1,0 +1,4 @@
+DIFF EXPECTED_CHANGE /workspace/QuantLab/output/data_freshness_status.json 4c38fa5c8c0b -> 5578cc9dd5d9
+DIFF EXPECTED_CHANGE /workspace/QuantLab/output/daily_update_status.json 2ca1d697bd8f -> 6fb4075ed020
+META_ONLY_CHANGE (sha same, mtime/ctime/inode differ) /workspace/QuantLab/data/v2/tushare_raw/trade_cal.parquet
+RESULT OK

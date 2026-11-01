@@ -1,0 +1,21 @@
+# AI 叶30 R3 PEAKCUT X2 RUNNING_ACK
+
+- ET: 2026-10-27 00:31:56 EDT
+- status: **RUNNING**
+- ET_TS: `20261027_003132`
+- pid: `3630722` alive=True nice=10
+- script: `research/leaf30_crr_cfooe_volpen_alpha_build_r3_peakcut.py` sha8 **`3ee9fed2`** / 全长 `3ee9fed2c91a8c523128d9a0b0956f29a11fd2935d961e978aa07b9eafb0a182`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF30_CRR_CFOOE_VOLPEN_ALPHA_BUILD_R3_PEAKCUT_HILIQ_X2.ok` sha8 **`7e239487`** / 全长 `7e2394879ff83f19c52e36895cbf200bffd9e957817026d2ed4a489b60359991`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`69ea8560`** holder=`leaf30_CRR_CFOOE_VOLPEN_ALPHA_BUILD_R3_PEAKCUT`（do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF30_CRR_ALPHA_BUILD_R3_PEAKCUT_OK_SIGNED_20261027_ZH.md` sha8 **`927b1fed`**
+- 脚本审: `d081054e` / AI落盘 `4d951ea3` / 提案审 `61830035` APPROVE_A
+- out: `output/ai_factory/_leaf30_crr/20261027_003132/`
+- log: `output/ai_factory/_leaf30_crr/20261027_003132_logs/run_20261027_003132.log`
+- samp: `/tmp/quantlab_leaf30_crr_r3_20261027_003132`
+- approved_cmd: **exact**（含 `--allow-real-data --arch-ok-path`；**无** `--no-overlap-report`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf30_crr_cfooe_volpen_alpha_build_r3_peakcut.py --universe HILIQ --window x2 --x2-end 20261009 --out output/ai_factory/_leaf30_crr/20261027_003132/ --allow-real-data --arch-ok-path output/ai_factory/ARCH_RUN_AUTH_LEAF30_CRR_CFOOE_VOLPEN_ALPHA_BUILD_R3_PEAKCUT_HILIQ_X2.ok`
+- prelaunch: QUIET MATCH；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈6.8Gi≥soft；dry-compile-only PASS（qend_ok_filter/primary_load=rebal_day/rss=1500/forbid∋5af20222+5ae077fa n=16）
+- rss_limit_mb: **1500 禁抬**；硬 Exit 94/95；PRIMARY=A 按日懒加载
+- VmRSS_kb≈538048 VmHWM_kb≈866332
+- ≠X2 ACCEPT / ≠selfcheck / ≠Book-Smoke；live=false；禁触 A18；禁 RESTORED `5af20222`/`5ae077fa`
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**

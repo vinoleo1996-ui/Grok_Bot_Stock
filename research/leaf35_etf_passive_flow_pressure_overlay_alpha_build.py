@@ -1,0 +1,2006 @@
+#!/usr/bin/env python3
+"""Leaf35 ETF passive flow pressure overlay build — HILIQ×x2 (NOT authorized).
+
+NEW file (2026-10-27). Nails PREREG_FROZEN sha8 be9fc459;
+Arch FROZEN review 5a082d18 PASS_WITH_CONDITIONS (C2 formal script).
+who_pays review ee7ec307 / WHO_PAYS 05942769 / COVER f41d7db8 / COUNT cbca88e7 /
+JSON a17b75fb / PIN dd17044a / FROZEN RECEIPT 132ba6f1 / count script 4e964d40.
+Skeleton morphology from leaf34 mask-only overlay build (read-only sha8 482009dc;
+leaf33 afbbe7e7 UNCHANGED; leaf32 HOLD 45dd87dc no rollback;
+leaf34 HOLD CLOSED 178e90e9 no rollback).
+Mechanism is mask-only overlay — NOT leaf26 full multi-layer residual alpha /
+moneyflow main / industry ETF holdings / share-unlock / margin / Amihud / CFACC.
+
+Mechanism (FROZEN; mechanism_tag=g1g5_ashare_etf_passive_flow_pressure_overlay_v1):
+  pressure_raw(i,t)=Σ_e w(i,index(e),asof_PIT)×flow_est_proxy(e,t)
+  e ∈ {510300.SH,510500.SH,512100.SH}
+  PRIMARY = mask-only: top_q=0.20 by |pressure_raw| -> mask=0;
+            other computable -> mask=1; non-mappable excluded (no fake 0)
+  soft-penalty: OFF by default (non PRIMARY); explicit CLI enable requires SW+style
+  Ban leaf26 full residual alpha as this leaf's main alpha (C11)
+  Ban moneyflow / industry ETF holdings as main input
+  Ban post-hoc q / sign flip from returns (C5)
+
+C3 PIN dd17044a (scheme A):
+  index_weight_csi300_500_1000 month-end point -> next month first TRADE day
+  09:00 Asia/Shanghai = weight_available_at (trade_cal_sse_pit; not calendar day)
+  rebal uses weight_available_at <= timestamp(t, 15:00 Asia/Shanghai)
+  share etf_share_flow_pit_major available_at<=t_ts
+  flow proxy: prefer flow_est_wan_yuan else d_share_wan
+  weight unit percent_div100
+  Ban silent month-end backward asof as PIT-complete (COUNT APPROX only)
+
+PRIMARY: --universe HILIQ --window x2  (FULLA only via --also-fulla-research; never PRIMARY)
+X2: 2024-06-03 -> 2026-10-09; rebal every 20 trade days
+C7 overlap: vs moneyflow_resid + leaf26 residual(if any else PIN_GAP) + leaf8a(if any else PIN_GAP)
+     + leaf25/27/30/31/32/33/34; Jaccard>=0.7 hard reject; rho>0.5 strength;
+     leaf26-like raw J=1.0 diagnostic NOT hard reject; missing required -> PIN_GAP
+Real path: --allow-real-data + existing --arch-ok-path; ok sha8 not in forbid
+--dry-compile-only: print pins; ZERO big-table load
+rss soft 1500 MB hard ABORT + peak_proof; sampler /tmp/quantlab_leaf35_etf_passive_
+out intent: output/ai_factory/_leaf35_etf_passive_flow_pressure/
+forbid: 178e90e9+c1b71e64+245df63f+c5ed13df+5774bb6e+81521fb5 + twenty tickets
+C10: leaf30 KEEP 0087c928 NOT merged; leaf28/29 separate
+decay KEEP pin: three gates; KEEP does NOT unblock X2 ACCEPT
+  (leaf32 HOLD 45dd87dc / leaf34 HOLD CLOSED 178e90e9)
+live=false; promotion_approved=false; ok_requested=false
+No Book-Smoke / selfcheck entry; !=X2 ACCEPT; COUNT APPROX != X2 ACCEPT (C12).
+"""
+from __future__ import annotations
+
+import argparse
+import gc
+import hashlib
+import json
+import resource
+import sys
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+SH = ZoneInfo("Asia/Shanghai")
+ROOT = Path(__file__).resolve().parents[1]
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+MECHANISM_TAG = "g1g5_ashare_etf_passive_flow_pressure_overlay_v1"
+SCRIPT_REL = "research/leaf35_etf_passive_flow_pressure_overlay_alpha_build.py"
+FROZEN_REL = (
+    "docs/v2/audit/AI_LEAF35_ETF_PASSIVE_FLOW_PRESSURE_OVERLAY_PREREG_FROZEN_20261027_ZH.md"
+)
+FROZEN_SHA8 = "be9fc459"
+FROZEN_RECEIPT_SHA8 = "132ba6f1"
+ARCH_FROZEN_REVIEW_SHA8 = "5a082d18"
+ARCH_WHO_PAYS_REVIEW_SHA8 = "ee7ec307"
+WHO_PAYS_SHA8 = "05942769"
+COVER_SHA8 = "f41d7db8"
+COUNT_RECEIPT_SHA8 = "cbca88e7"
+COUNT_JSON_SHA8 = "a17b75fb"
+PIN_SHA8 = "dd17044a"
+COUNT_SCRIPT_SHA8 = "4e964d40"
+LEAF34_SKELETON_SHA8 = "482009dc"  # read-only template; ban edit
+LEAF33_FORMAL_SHA8_READONLY = "afbbe7e7"  # ban edit
+LEAF32_HOLD_SHA8 = "45dd87dc"  # ban rollback
+LEAF34_HOLD_CLOSED_OK_SHA8 = "178e90e9"  # ban RESTORED / ban rollback
+LEAF30_KEEP_REPAIR_SHA8_SEPARATE = "0087c928"
+
+RSS_LIMIT_MB = 1500
+C4_KB = 1331200
+STOP_KB = 1484800
+HARD_KB = 1536000
+SPLIT_THRESH_KB = int(0.85 * C4_KB)
+
+X2_START = "2024-06-03"
+X2_END = "2026-10-09"
+X2_END_TRADE_DATE = "20261009"
+REBAL_EVERY = 20
+TOP_Q = 0.20
+PRIMARY_DELIVERY = "mask_only"
+SOFT_PENALTY_DEFAULT = False
+ALPHA_SIGN = "high_abs_pressure_mask0_exclusion"
+IC_SIGN_EXPECTED = "n/a_overlay_mask"
+
+C3_FORMULA_PIN = (
+    "pressure_raw=sum_e w(i,index(e),asof_PIT)*flow_est_proxy(e,t); "
+    "e={510300.SH,510500.SH,512100.SH}; "
+    "weight_available_at=next_month_first_trade_day_09:00_Asia/Shanghai (scheme A); "
+    "rebal: weight_available_at<=timestamp(t,15:00 Asia/Shanghai); "
+    "share available_at<=t_ts; flow=flow_est_wan_yuan else d_share_wan; "
+    "weight_unit=percent_div100; ban silent month-end asof as PIT-complete"
+)
+WEIGHT_SHA8_PIN = "d543a485"
+SHARE_MAJOR_SHA8_PIN = "a3eac35b"
+CAL_SHA8_PIN = "fa4260b8"
+
+ETF_INDEX_MAP = {
+    "510300.SH": "000300.SH",
+    "510500.SH": "000905.SH",
+    "512100.SH": "000852.SH",
+}
+
+STYLE_COLS_PINNED = ("mom20", "vol20", "logADV20")
+STYLE_SOURCE_PINNED = "derived_from_daily_bars_W20"
+COST_BP_EVAL = 30
+
+DECAY_KEEP_PIN = {
+    "latest_resid_alpha_gt_0": True,
+    "not_five_quarter_decline": True,
+    "H2_net_cagr_gt_510300": True,
+    "near_window_td": 252,
+    "keep_does_not_unblock_x2_accept": True,
+    "note": (
+        "KEEP = conjunction of three gates; script does not execute decay gate; "
+        "KEEP does NOT unblock X2 ACCEPT "
+        "(leaf32 HOLD 45dd87dc / leaf34 HOLD CLOSED 178e90e9)"
+    ),
+}
+
+FORBID_OK_SHA8 = (
+    "178e90e9",
+    "c1b71e64",
+    "245df63f",
+    "c5ed13df",
+    "5774bb6e",
+    "81521fb5",
+    "02426b73",
+    "4bb141c9",
+    "fdbaa512",
+    "aa25e989",
+    "7e239487",
+    "5af20222",
+    "5ae077fa",
+    "3c297052",
+    "e107383f",
+    "2be59acd",
+    "a7d98ac9",
+    "8e51de63",
+    "3a6caa4f",
+    "8bcd79dc",
+    "725be3e0",
+    "0f50daf7",
+    "3c19dd7d",
+    "1c32ab1e",
+    "6054b3bf",
+    "6de02e74",
+)
+
+ETF_SHARE_DEFAULT = ROOT / "data/v2/etf/share_pit/etf_share_flow_pit_major.parquet"
+IDX_WEIGHT_DEFAULT = (
+    ROOT / "data/v2/index_members/index_weight_csi300_500_1000.parquet"
+)
+DAILY_DIR_DEFAULT = ROOT / "data/v2/tushare_raw/daily"
+ADJ_FACTOR_DEFAULT = ROOT / "data/v2/adj/adj_factor_2023h2plus.parquet"
+HI_LIQ_MASK_DEFAULT = ROOT / "output/strategy_hiliq/universe_mask_hiliq_v1.parquet"
+FULLA_MASK_DEFAULT = ROOT / "output/strategy_fulla/universe_mask_fulla_v1.parquet"
+SW_L1_DEFAULT = ROOT / "data/v2/sw_l1_pit/industry_members_sw_l1_tushare.parquet"
+FLOAT_MKTCAP_DEFAULT = (
+    ROOT / "data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet"
+)
+CAL_DEFAULT = ROOT / "data/v2/calendar/trade_cal_sse_pit.parquet"
+OUT_DEFAULT = ROOT / "output/ai_factory/_leaf35_etf_passive_flow_pressure"
+
+MONEYFLOW_RESID_DEFAULT = ROOT / (
+    "output/ai_factory/g1g5_moneyflow_resid_daily_weights_20261013_050716.parquet"
+)
+# Optional / often GAP — do not forge; PIN_GAP if missing (not hard-required like 25–34)
+LEAF26_RESID_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf26_broad_etf_flow/"
+    "alpha_HILIQ_x2_ABSENT_PIN_GAP.parquet"
+)
+LEAF8A_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf8a_ind_etf_flow_rev/"
+    "alpha_HILIQ_x2_ABSENT_PIN_GAP.parquet"
+)
+LEAF25_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf25_full_factor/20261026_015610/"
+    "alpha_HILIQ_x2_20261026_125138.parquet"
+)
+LEAF27_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/leaf27_on_minus_id_idio_ivol/"
+    "alpha_HILIQ_x2_20261025_224033.parquet"
+)
+LEAF30_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf30_crr/20261027_003132/"
+    "alpha_HILIQ_x2_20261027_010815.parquet"
+)
+LEAF31_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf31_amihud/20261027_024204/"
+    "alpha_HILIQ_x2_20261027_024422.parquet"
+)
+LEAF32_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf32_margin_flow/20261027_042805/"
+    "alpha_HILIQ_x2_20261027_044214.parquet"
+)
+LEAF33_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf33_share_unlock/20261027_072135/"
+    "alpha_HILIQ_x2_20261027_072552.parquet"
+)
+LEAF34_ALPHA_DEFAULT = ROOT / (
+    "output/ai_factory/_leaf34_high_accrual/20261027_105941/"
+    "exclusion_mask_HILIQ_x2_20261027_105958.parquet"
+)
+
+SAMPLER_PREFIX = "/tmp/quantlab_leaf35_etf_passive_"
+
+KNOWN_ETF_COLS = [
+    "ts_code", "trade_date", "fd_share", "nav_ann_date", "unit_nav", "adj_nav",
+    "share_wan", "d_share_wan", "flow_est_wan_yuan", "share_available_at",
+    "nav_available_at", "available_at",
+]
+KNOWN_WEIGHT_COLS = ["index_code", "con_code", "trade_date", "weight"]
+KNOWN_MASK_COLS = ["date", "instrument", "in_universe"]
+KNOWN_MASK_OUT_COLS = ["trade_date", "ts_code", "mask", "alpha"]
+KNOWN_SW_COLS = [
+    "instrument_id", "sw_code", "sw_name", "in_date", "out_date", "available_at",
+]
+KNOWN_FLOAT_COLS = ["instrument_id", "trade_date", "float_mktcap"]
+KNOWN_DAILY_COLS = ["ts_code", "trade_date", "close", "pre_close", "amount", "vol"]
+KNOWN_CAL_COLS = ["cal_date", "is_open", "pretrade_date", "available_at"]
+JACCARD_HARD = 0.7
+RHO_STRENGTH = 0.5
+COVERAGE_MEDIAN_HILIQ = 300
+COVERAGE_MEDIAN_FULLA = 800
+# Optional overlap tags: missing -> PIN_GAP disclose, NOT hard-required for exit 3
+OPTIONAL_OVERLAP_TAGS = frozenset({"leaf26_resid", "leaf8a", "leaf26_like_raw"})
+REQUIRED_OVERLAP_TAGS = (
+    "moneyflow_resid", "leaf25", "leaf27", "leaf30", "leaf31", "leaf32", "leaf33", "leaf34",
+)
+
+def stage(name: str) -> None:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    print(f"STAGE {name} ru_maxrss={rss}", file=sys.stderr, flush=True)
+
+
+def vmhwm_kb() -> int | None:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def vmrss_kb() -> int | None:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def peak_kb() -> int:
+    ru = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    hw = vmhwm_kb()
+    return max(ru, hw) if hw is not None else ru
+
+
+def check_rss(label: str, *, rss_limit_mb: int, c4_kb: int, hard_kb: int, split_kb: int) -> int:
+    pk = peak_kb()
+    soft_kb = int(rss_limit_mb) * 1024
+    vr = vmrss_kb()
+    print(
+        f"RSS_CHECK {label} peak_kb={pk} vmrss_kb={vr} "
+        f"soft={soft_kb} split={split_kb} c4={c4_kb} hard={hard_kb}",
+        flush=True,
+    )
+    if pk >= hard_kb or (vr is not None and vr >= hard_kb):
+        print(
+            f"STOP: RSS hard breached peak_kb={pk} vmrss={vr} >= hard={hard_kb}",
+            file=sys.stderr,
+        )
+        raise SystemExit(95)
+    if (vr is not None and vr >= soft_kb) or pk >= soft_kb:
+        print(
+            f"STOP: RSS soft 1500MB breached peak_kb={pk} vmrss={vr} >= soft={soft_kb}; "
+            f"ABORT no self-retry",
+            file=sys.stderr,
+        )
+        raise SystemExit(94)
+    if pk >= split_kb:
+        print(
+            f"STOP: RSS >= 0.85*C4 peak_kb={pk} >= split={split_kb}; "
+            f"split further — ban raise cap",
+            file=sys.stderr,
+        )
+        raise SystemExit(94)
+    return pk
+
+
+def assert_tmp_quantlab(path: Path, what: str) -> None:
+    resolved = path.resolve()
+    parts = resolved.parts
+    ok = False
+    if len(parts) >= 3 and parts[1] == "tmp":
+        name = parts[2]
+        if name.startswith("quantlab"):
+            ok = True
+    if not ok:
+        raise SystemExit(f"STOP: {what} must be under /tmp/quantlab_* got={resolved}")
+
+
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def script_sha256() -> str:
+    return sha256_file(Path(__file__).resolve())
+
+
+def to_ts(x) -> str:
+    s = str(x)
+    if s.startswith(("sh.", "sz.", "bj.")):
+        mkt, code = s.split(".", 1)
+        return f"{code}.{mkt.upper()}"
+    return s
+
+
+def normalize_universe(u: str) -> str:
+    u = (u or "").strip()
+    if u in ("HILIQ", "HI_LIQ"):
+        return "HILIQ"
+    if u == "FULLA":
+        return "FULLA"
+    raise SystemExit(f"STOP: unknown --universe={u!r}; PRIMARY is HILIQ")
+
+
+def _as_naive_norm_ts(x):
+    import pandas as pd
+
+    if x is None:
+        return pd.NaT
+    try:
+        if pd.isna(x):
+            return pd.NaT
+    except (TypeError, ValueError):
+        pass
+    ts = pd.Timestamp(x)
+    if pd.isna(ts):
+        return pd.NaT
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("Asia/Shanghai").tz_localize(None)
+    return ts.normalize()
+
+
+def _as_naive_norm_series(s):
+    import pandas as pd
+
+    s = pd.Series(s)
+    if isinstance(s.dtype, pd.DatetimeTZDtype):
+        return s.dt.tz_convert("Asia/Shanghai").dt.tz_localize(None).dt.normalize()
+    if pd.api.types.is_datetime64_dtype(s.dtype):
+        return pd.to_datetime(s, errors="coerce").dt.normalize()
+    return pd.to_datetime(s.map(_as_naive_norm_ts), errors="coerce")
+
+
+def _t_ts_1500(day):
+    """PRIMARY PIT decision timestamp: t-day 15:00 Asia/Shanghai (naive local)."""
+    import pandas as pd
+
+    d = pd.Timestamp(day).normalize()
+    return d + pd.Timedelta(hours=15)
+
+
+def dry_compile_only_print(args) -> int:
+    """Zero big-table load; print hard pins for Arch/Main precheck."""
+    uni = normalize_universe(args.universe) if args.universe != "FULLA" else "FULLA"
+    try:
+        scr = script_sha256()
+    except OSError:
+        scr = "<unreadable>"
+    also_fulla = bool(getattr(args, "also_fulla_research", False))
+    soft_pen = bool(getattr(args, "enable_soft_penalty", False))
+    payload = {
+        "live": False,
+        "ok_requested": False,
+        "promotion_approved": False,
+        "executed": False,
+        "x2_accept": False,
+        "approx": False,
+        "count_approx_not_x2_accept": True,
+        "rss_limit_mb": RSS_LIMIT_MB,
+        "c4_kb": C4_KB,
+        "stop_kb": STOP_KB,
+        "hard_kb": HARD_KB,
+        "universe_cli": uni,
+        "primary_universe": "HILIQ",
+        "also_fulla_research": also_fulla,
+        "ban_silent_fulla_as_primary": True,
+        "window": args.window,
+        "x2_end": args.x2_end,
+        "x2_window": f"{X2_START} → {X2_END}",
+        "rebal_every_td": REBAL_EVERY,
+        "top_q": TOP_Q,
+        "primary_delivery": PRIMARY_DELIVERY,
+        "soft_penalty_enabled": soft_pen,
+        "soft_penalty_default": SOFT_PENALTY_DEFAULT,
+        "soft_penalty_is_primary": False,
+        "alpha_sign": ALPHA_SIGN,
+        "ic_sign_expected": IC_SIGN_EXPECTED,
+        "mechanism_tag": MECHANISM_TAG,
+        "script": SCRIPT_REL,
+        "script_sha256": scr,
+        "script_sha8": scr[:8] if isinstance(scr, str) and len(scr) >= 8 else None,
+        "frozen_rel": FROZEN_REL,
+        "frozen_sha8": FROZEN_SHA8,
+        "frozen_receipt_sha8": FROZEN_RECEIPT_SHA8,
+        "arch_frozen_review_sha8": ARCH_FROZEN_REVIEW_SHA8,
+        "arch_who_pays_review_sha8": ARCH_WHO_PAYS_REVIEW_SHA8,
+        "who_pays_sha8": WHO_PAYS_SHA8,
+        "cover_sha8": COVER_SHA8,
+        "count_receipt_sha8": COUNT_RECEIPT_SHA8,
+        "count_json_sha8": COUNT_JSON_SHA8,
+        "pin_sha8": PIN_SHA8,
+        "count_script_sha8": COUNT_SCRIPT_SHA8,
+        "leaf34_skeleton_sha8_readonly": LEAF34_SKELETON_SHA8,
+        "leaf33_formal_sha8_readonly": LEAF33_FORMAL_SHA8_READONLY,
+        "leaf32_hold_sha8_no_rollback": LEAF32_HOLD_SHA8,
+        "leaf34_hold_closed_ok_sha8_no_restored": LEAF34_HOLD_CLOSED_OK_SHA8,
+        "leaf30_keep_repair_sha8_separate": LEAF30_KEEP_REPAIR_SHA8_SEPARATE,
+        "forbid_ok_sha8": list(FORBID_OK_SHA8),
+        "sampler_prefix": SAMPLER_PREFIX,
+        "out_intent": str(OUT_DEFAULT.relative_to(ROOT)),
+        "etf_share": str(ETF_SHARE_DEFAULT.relative_to(ROOT)),
+        "idx_weight": str(IDX_WEIGHT_DEFAULT.relative_to(ROOT)),
+        "calendar": str(CAL_DEFAULT.relative_to(ROOT)),
+        "weight_sha8_pin": WEIGHT_SHA8_PIN,
+        "share_major_sha8_pin": SHARE_MAJOR_SHA8_PIN,
+        "cal_sha8_pin": CAL_SHA8_PIN,
+        "c3_formula_pin": C3_FORMULA_PIN,
+        "etf_index_map": dict(ETF_INDEX_MAP),
+        "weight_unit": "percent_div100",
+        "c3_scheme": "A_next_month_first_trade_day_0900_Asia_Shanghai",
+        "ban_silent_month_end_asof_as_pit_complete": True,
+        "style_cols_pinned": list(STYLE_COLS_PINNED),
+        "style_source_pinned": STYLE_SOURCE_PINNED,
+        "cost_bp_eval": COST_BP_EVAL,
+        "decay_keep_pin": DECAY_KEEP_PIN,
+        "mask_pipeline": [
+            "C3 scheme A: synthesize weight_available_at from month-end via trade cal",
+            "PIT: weight_available_at<=t_ts(15:00 SH); share available_at<=t_ts",
+            "pressure_raw = Σ w(i,index(e),asof_PIT) * flow_est_proxy(e,t)",
+            f"cross_section_quantile on |pressure_raw| q={TOP_Q}",
+            "mask=0 if |pressure|>=Q_(1-q) else 1 (computable/mappable only)",
+            "non_mappable excluded (no fake 0)",
+            "optional soft-penalty OFF by default (non PRIMARY)",
+        ],
+        "overlap_targets": [
+            "moneyflow_resid",
+            "leaf26_resid",
+            "leaf8a",
+            "leaf25",
+            "leaf27",
+            "leaf30",
+            "leaf31",
+            "leaf32",
+            "leaf33",
+            "leaf34",
+            "leaf26_like_raw_diagnostic",
+        ],
+        "optional_overlap_tags": sorted(OPTIONAL_OVERLAP_TAGS),
+        "required_overlap_tags": list(REQUIRED_OVERLAP_TAGS),
+        "jaccard_hard": JACCARD_HARD,
+        "rho_strength_filter": RHO_STRENGTH,
+        "leaf26_like_raw_jaccard_not_hard_reject": True,
+        "coverage_median_hiliq": COVERAGE_MEDIAN_HILIQ,
+        "coverage_median_fulla_research": COVERAGE_MEDIAN_FULLA,
+        "moneyflow_resid": str(MONEYFLOW_RESID_DEFAULT.relative_to(ROOT)),
+        "leaf26_resid_alpha": str(LEAF26_RESID_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf8a_alpha": str(LEAF8A_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf25_alpha": str(LEAF25_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf27_alpha": str(LEAF27_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf30_alpha": str(LEAF30_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf31_alpha": str(LEAF31_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf32_alpha": str(LEAF32_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf33_alpha": str(LEAF33_ALPHA_DEFAULT.relative_to(ROOT)),
+        "leaf34_alpha": str(LEAF34_ALPHA_DEFAULT.relative_to(ROOT)),
+        "primary_cli": (
+            f"PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python {SCRIPT_REL} "
+            f"--universe HILIQ --window x2 --x2-end {X2_END_TRADE_DATE} "
+            f"--allow-real-data --arch-ok-path <OK> --out <OUT>"
+        ),
+        "dry_cli": (
+            f"PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python {SCRIPT_REL} "
+            f"--dry-compile-only"
+        ),
+        "ban_book_smoke": True,
+        "ban_selfcheck": True,
+        "ban_leaf26_full_residual_alpha_main": True,
+        "ban_moneyflow_main_input": True,
+        "ban_industry_etf_holdings_main": True,
+        "ban_share_unlock_main": True,
+        "ban_margin_flow_main": True,
+        "ban_amihud_main": True,
+        "ban_on_minus_id_main": True,
+        "ban_crr_accounting_main": True,
+        "ban_high_accrual_main": True,
+        "ban_seller_report_jin_gu": True,
+        "keep_does_not_unblock_x2_accept": True,
+        "primary_load": "rebal_day_lazy_etf_share_x_weight_scheme_A_pit",
+        "schema": "leaf35_etf_passive_flow_pressure_overlay_alpha_build_v1",
+        "known_schema_static": {
+            "etf_cols": KNOWN_ETF_COLS,
+            "weight_cols": KNOWN_WEIGHT_COLS,
+            "mask_cols": KNOWN_MASK_COLS,
+            "mask_out_cols": KNOWN_MASK_OUT_COLS,
+            "sw_cols": KNOWN_SW_COLS,
+            "float_cols": KNOWN_FLOAT_COLS,
+            "daily_cols": KNOWN_DAILY_COLS,
+            "cal_cols": KNOWN_CAL_COLS,
+        },
+        "sign_notes": {
+            "ban_no_overlap_report_bypass_on_real": True,
+            "peak_proof_required": [
+                "after_mask",
+                "after_weight_pin",
+                "after_pressure_rebal_*",
+                "after_mask_cs_rebal_*",
+                "after_daily_concat",
+            ],
+            "rss_limit_mb": 1500,
+            "jaccard_ge_0_7_hard_reject": True,
+            "rho_gt_0_5_strength_filter_only": True,
+            "leaf26_like_raw_diagnostic_not_hard_reject": True,
+            "ban_restored_ok": list(FORBID_OK_SHA8),
+            "ban_raise_rss": True,
+            "ban_posthoc_q_or_sign_flip": True,
+            "c10_leaf30_keep_not_merged": True,
+            "c11_overlay_not_leaf26_full_residual_alpha": True,
+            "c12_approx_not_x2_accept": True,
+            "arch_ok_path_required_for_real": True,
+            "process_gate_note": (
+                "Real build requires existing --arch-ok-path (file must exist; "
+                "sha8 not in forbid). Process gate = that .ok + Main window; "
+                "ban inventing / self-opening a fake .ok."
+            ),
+        },
+        "arch_conditions": {
+            "C1": "FROZEN_prereg_complete",
+            "C2": "formal_script_this_ticket",
+            "C3": "weight_scheme_A_PIN_dd17044a_share_available_at_le_t",
+            "C4": "mask_only_PRIMARY_soft_penalty_non_PRIMARY",
+            "C5": "top_q_0_20_sign_frozen_high_abs_pressure_exclude",
+            "C6": "HILIQ_primary_FULLA_research_optional",
+            "C7": "overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34",
+            "C8": "forbid_178e90e9_c1b71e64_245df63f_c5ed13df_5774bb6e_81521fb5_twenty",
+            "C9": "rss_1500_peak_proof",
+            "C10": "0087c928_and_leaf28_29_separate",
+            "C11": "overlay_not_leaf26_full_residual_alpha",
+            "C12": "APPROX_not_X2_ACCEPT",
+            "C13": "decay_KEEP_three_gates_KEEP_does_not_unblock",
+        },
+        "note": (
+            "dry-compile-only; ZERO big-table load; "
+            "NOT authorized to execute; wait Arch script review -> new X2 .ok "
+            f"(ban RESTORED {'+'.join(FORBID_OK_SHA8)}); "
+            "peak_proof REQUIRED; rss=1500 ban raise; "
+            "PRIMARY=HILIQ mask-only top_q=0.20; FULLA only --also-fulla-research; "
+            f"FROZEN={FROZEN_SHA8}; PIN={PIN_SHA8}; ArchFROZEN={ARCH_FROZEN_REVIEW_SHA8}; "
+            "C3 scheme A; C11 != leaf26 full residual alpha; "
+            "KEEP does NOT unblock X2 ACCEPT; COUNT APPROX != X2 ACCEPT"
+        ),
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if uni == "FULLA":
+        print(
+            "STOP: --universe FULLA forbidden as PRIMARY; "
+            "use --universe HILIQ and optional --also-fulla-research",
+            file=sys.stderr,
+        )
+        return 2
+    if getattr(args, "window", "x2") != "x2":
+        print(
+            f"STOP: --window must be x2 this ticket (got {args.window})",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+def ols_resid(y, X):
+    import numpy as np
+
+    b, *_ = np.linalg.lstsq(X, y, rcond=None)
+    return y - X @ b
+
+
+def spearman_rho(a, b) -> float:
+    import numpy as np
+    import pandas as pd
+
+    if len(a) < 5:
+        return float("nan")
+    ra = pd.Series(a).rank().to_numpy()
+    rb = pd.Series(b).rank().to_numpy()
+    if np.nanstd(ra) == 0 or np.nanstd(rb) == 0:
+        return float("nan")
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def top_jaccard(codes_a, scores_a, codes_b, scores_b, k: int = 20) -> float:
+    import pandas as pd
+
+    if len(codes_a) == 0 or len(codes_b) == 0:
+        return float("nan")
+    sa = pd.Series(scores_a, index=codes_a)
+    sb = pd.Series(scores_b, index=codes_b)
+    ta = set(sa.nlargest(min(k, len(sa))).index)
+    tb = set(sb.nlargest(min(k, len(sb))).index)
+    u = ta | tb
+    if not u:
+        return float("nan")
+    return float(len(ta & tb) / len(u))
+
+
+def _load_mask_members(mask_path: Path, start: str, end: str, *, label: str):
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not mask_path.is_file():
+        raise SystemExit(
+            f"STOP: {label} mask missing at {mask_path}; refuse silent empty-universe"
+        )
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    tab = pq.read_table(
+        mask_path,
+        columns=["date", "instrument", "in_universe"],
+        filters=[
+            ("date", ">=", start_ts),
+            ("date", "<=", end_ts),
+            ("in_universe", "==", True),
+        ],
+    )
+    df = tab.to_pandas()
+    if df.empty:
+        raise SystemExit(
+            f"STOP: {label} mask empty for [{start}, {end}] at {mask_path}"
+        )
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df["instrument"] = df["instrument"].map(to_ts)
+    by_day: dict = {}
+    for d, g in df.groupby("date", sort=True):
+        by_day[pd.Timestamp(d)] = sorted(set(g["instrument"].tolist()))
+    codes = sorted({c for v in by_day.values() for c in v})
+    return by_day, codes, {
+        "mask_path": str(
+            mask_path.relative_to(ROOT) if mask_path.is_relative_to(ROOT) else mask_path
+        ),
+        "mask_sha256": sha256_file(mask_path),
+        "n_codes_union": len(codes),
+        "n_days_with_members": len(by_day),
+        "label": label,
+    }
+
+
+def _load_trade_cal(cal_path: Path, start: str | None = None, end: str | None = None) -> list:
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not cal_path.is_file():
+        raise SystemExit(f"STOP: trade calendar missing {cal_path}")
+    t = pq.read_table(cal_path, columns=["cal_date", "is_open"])
+    df = t.to_pandas()
+    df = df[df["is_open"] == 1].copy()
+    df["d"] = pd.to_datetime(df["cal_date"].astype(str), format="%Y%m%d", errors="coerce")
+    df = df.dropna(subset=["d"])
+    days = sorted(df["d"].tolist())
+    days = [pd.Timestamp(d).normalize() for d in days]
+    if start is not None or end is not None:
+        lo = pd.Timestamp(start) if start is not None else days[0]
+        hi = pd.Timestamp(end) if end is not None else days[-1]
+        days = [d for d in days if lo <= d <= hi]
+    return days
+
+
+def _load_weight_pin_scheme_a(weight_path: Path, cal_path: Path):
+    """C3 scheme A: synthesize weight_available_at = next-month first trade day 09:00 SH.
+
+    Ban silent month-end backward asof as PIT-complete.
+    Returns (w_idx dict, meta).
+    w_idx[(index_code, month_end_trade_date)] -> Series con_code->w_fraction
+    plus parallel avail map weight_available_at_naive for each month_end key.
+    """
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not weight_path.is_file():
+        raise SystemExit(f"STOP: PIN_GAP index weight missing {weight_path}")
+    t = pq.read_table(weight_path)
+    w = t.to_pandas()
+    w["trade_date"] = pd.to_datetime(w["trade_date"].astype(str), errors="coerce").dt.normalize()
+    w["index_code"] = w["index_code"].astype(str)
+    w["con_code"] = w["con_code"].map(to_ts)
+    w["weight_raw"] = w["weight"].astype(float)
+    sample_sum = (
+        w[w["index_code"] == "000300.SH"].groupby("trade_date")["weight_raw"].sum().median()
+        if (w["index_code"] == "000300.SH").any()
+        else float("nan")
+    )
+    if sample_sum == sample_sum and sample_sum > 2.0:
+        w["w"] = w["weight_raw"] / 100.0
+        weight_unit = "percent_div100"
+    else:
+        w["w"] = w["weight_raw"]
+        weight_unit = "fraction"
+
+    # Full open calendar for next-month first trade day (need beyond X2)
+    cal_all = _load_trade_cal(cal_path, start=None, end=None)
+    if not cal_all:
+        raise SystemExit("STOP: empty trade calendar for scheme A")
+    cal_index = pd.DatetimeIndex(cal_all)
+
+    month_ends = sorted(w["trade_date"].unique())
+    avail_map: dict = {}
+    for me in month_ends:
+        me = pd.Timestamp(me).normalize()
+        # next natural month
+        if me.month == 12:
+            nxt_y, nxt_m = me.year + 1, 1
+        else:
+            nxt_y, nxt_m = me.year, me.month + 1
+        month_start = pd.Timestamp(year=nxt_y, month=nxt_m, day=1)
+        # first open trade day in that month
+        pos = cal_index.searchsorted(month_start, side="left")
+        d_star = None
+        while pos < len(cal_index):
+            cand = pd.Timestamp(cal_index[pos]).normalize()
+            if cand.year == nxt_y and cand.month == nxt_m:
+                d_star = cand
+                break
+            if (cand.year, cand.month) > (nxt_y, nxt_m):
+                break
+            pos += 1
+        if d_star is None:
+            raise SystemExit(
+                f"STOP: PIN_GAP scheme A cannot find next-month first trade day "
+                f"after month-end {me.date()}"
+            )
+        # 09:00 Asia/Shanghai naive local (PIN convention)
+        avail_map[me] = d_star + pd.Timedelta(hours=9)
+
+    w_idx = {}
+    for (ic, td), g in w.groupby(["index_code", "trade_date"]):
+        me = pd.Timestamp(td).normalize()
+        w_idx[(str(ic), me)] = g.set_index("con_code")["w"].astype(float)
+
+    meta = {
+        "weight_path": str(
+            weight_path.relative_to(ROOT) if weight_path.is_relative_to(ROOT) else weight_path
+        ),
+        "weight_sha256": sha256_file(weight_path),
+        "weight_sha8_pin": WEIGHT_SHA8_PIN,
+        "weight_unit": weight_unit,
+        "sample_sum_median_000300": float(sample_sum) if sample_sum == sample_sum else None,
+        "n_month_end_points": len(month_ends),
+        "scheme": "A_next_month_first_trade_day_0900_Asia_Shanghai",
+        "ban_silent_month_end_asof_as_pit_complete": True,
+        "n_avail_mapped": len(avail_map),
+    }
+    return w_idx, avail_map, meta
+
+
+def _asof_weight_scheme_a(w_idx, avail_map, index_code: str, t_ts):
+    """Latest month-end weight point with weight_available_at <= t_ts."""
+    import pandas as pd
+
+    t_ts = pd.Timestamp(t_ts)
+    candidates = []
+    for (ic, me), series in w_idx.items():
+        if ic != index_code:
+            continue
+        av = avail_map.get(me)
+        if av is None:
+            continue
+        if pd.Timestamp(av) <= t_ts:
+            candidates.append(me)
+    if not candidates:
+        return None
+    me_best = max(candidates)
+    return w_idx[(index_code, me_best)]
+
+
+def _load_etf_flows_window(share_path: Path, rebal_days: list):
+    """Load broad-ETF share rows covering rebal window; PIT filter applied per day later.
+
+    PATCH B1 LANDED (align PIN §1.3 / dd17044a): do NOT hard-filter to
+    trade_date ∈ rebal_days only. Keep a buffered trade_date window so
+    _pressure_on_day can asof-select latest available_at≤t_ts rows whose
+    trade_date may precede the rebal day (common when same-day share rows
+    publish available_at after 15:00).
+    """
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not share_path.is_file():
+        raise SystemExit(f"STOP: PIN_GAP etf share major missing {share_path}")
+    t = pq.read_table(
+        share_path,
+        columns=[
+            "ts_code", "trade_date", "d_share_wan", "flow_est_wan_yuan", "available_at",
+        ],
+    )
+    df = t.to_pandas()
+    df = df[df["ts_code"].isin(list(ETF_INDEX_MAP.keys()))].copy()
+    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.normalize()
+    df["available_at"] = pd.to_datetime(df["available_at"], utc=False)
+    # normalize available_at to naive Shanghai wall for comparison with t_ts
+    df["available_at_naive"] = _as_naive_norm_series(df["available_at"])
+    # also keep clock for <= t_ts (15:00) when same-day
+    def _to_naive_sh(x):
+        import pandas as pd
+
+        ts = pd.Timestamp(x)
+        if pd.isna(ts):
+            return pd.NaT
+        if ts.tzinfo is not None:
+            return ts.tz_convert("Asia/Shanghai").tz_localize(None)
+        return ts
+
+    df["available_at_clock"] = df["available_at"].map(_to_naive_sh)
+    rebal_ts = sorted(pd.Timestamp(d).normalize() for d in rebal_days)
+    if not rebal_ts:
+        return df.iloc[0:0].copy()
+    # buffer before first rebal so prior trade_date rows with avail<=t_ts remain
+    lo = rebal_ts[0] - pd.Timedelta(days=40)
+    hi = rebal_ts[-1]
+    df = df[(df["trade_date"] >= lo) & (df["trade_date"] <= hi)].copy()
+    import numpy as np
+
+    flow = df["flow_est_wan_yuan"].astype(float)
+    dsh = df["d_share_wan"].astype(float)
+    ok = flow.notna() & np.isfinite(flow.to_numpy(dtype=float, na_value=np.nan))
+    df["flow_proxy"] = flow.where(ok, dsh)
+    return df
+
+
+def _pressure_on_day(d, members: set[str], etf_df, w_idx, avail_map):
+    """pressure_raw for mappable members on rebal day d under scheme A PIT.
+
+    PATCH B1 LANDED (align PIN §1.3): share row selection =
+      available_at_clock ≤ t_ts  AND  trade_date ≤ d
+    then latest available_at_clock per ETF. Cancels the stricter
+    trade_date == d hard filter that caused 30/30 share_avail_late on VTRUE.
+    Still forbids peeking available_at > t_ts. Weight scheme A unchanged.
+    """
+    import numpy as np
+    import pandas as pd
+
+    d = pd.Timestamp(d).normalize()
+    t_ts = _t_ts_1500(d)
+    # B1 / PIN §1.3: NOT trade_date == d; asof by available_at ≤ t_ts
+    day_etf = etf_df[
+        etf_df["available_at_clock"].notna()
+        & (etf_df["available_at_clock"] <= t_ts)
+        & (etf_df["trade_date"] <= d)
+    ].copy()
+    if day_etf.empty:
+        return None
+    # one row per etf (latest available_at if dup)
+    day_etf = day_etf.sort_values("available_at_clock").drop_duplicates(
+        "ts_code", keep="last"
+    )
+    pressure = {}
+    any_component = False
+    for etf, index_code in ETF_INDEX_MAP.items():
+        row = day_etf[day_etf["ts_code"] == etf]
+        if row.empty:
+            continue
+        z = float(row.iloc[0]["flow_proxy"])
+        if not np.isfinite(z):
+            continue
+        wser = _asof_weight_scheme_a(w_idx, avail_map, index_code, t_ts)
+        if wser is None or wser.empty:
+            continue
+        any_component = True
+        for con, ww in wser.items():
+            c = to_ts(con)
+            if c not in members:
+                continue
+            if not np.isfinite(float(ww)):
+                continue
+            pressure[c] = pressure.get(c, 0.0) + float(ww) * z
+    if not any_component or not pressure:
+        return None
+    df = pd.DataFrame(
+        {"ts_code": list(pressure.keys()), "pressure_raw": list(pressure.values())}
+    )
+    df["abs_pressure"] = df["pressure_raw"].abs()
+    return df
+
+
+def _cross_section_mask(pressure_df, top_q: float = TOP_Q):
+    import numpy as np
+
+    df = pressure_df.copy()
+    if df.empty:
+        return df
+    q = float(top_q)
+    if not (0.0 < q < 1.0):
+        raise SystemExit(f"STOP: top_q must be in (0,1); got {q}")
+    thr = float(df["abs_pressure"].quantile(1.0 - q))
+    df["mask"] = np.where(df["abs_pressure"] >= thr, 0.0, 1.0)
+    # alpha for overlap continuity with COUNT: prefer low |pressure|
+    # NOT leaf26 full residual alpha main (C11)
+    df["alpha"] = -df["abs_pressure"].astype(float)
+    df["mask_threshold"] = thr
+    return df
+
+def _load_sw_table(sw_path: Path):
+    import pyarrow.parquet as pq
+
+    if not sw_path.is_file():
+        raise SystemExit(f"STOP: SW L1 missing {sw_path}; PIN_GAP refuse silent skip")
+    t = pq.read_table(
+        sw_path,
+        columns=[
+            "instrument_id", "sw_code", "sw_name", "in_date", "out_date", "available_at",
+        ],
+    )
+    sw = t.to_pandas()
+    sw["ts_code"] = sw["instrument_id"].map(to_ts)
+    sw["in_date"] = _as_naive_norm_series(sw["in_date"])
+    sw["out_date"] = _as_naive_norm_series(sw["out_date"])
+    sw["available_at"] = _as_naive_norm_series(sw["available_at"])
+    return sw
+
+
+def _sw_asof_codes(sw, asof, codes: list[str]) -> dict[str, str]:
+    import pandas as pd
+
+    asof = pd.Timestamp(asof).normalize()
+    out = {}
+    sub = sw[sw["ts_code"].isin(codes)].copy()
+    if sub.empty:
+        return out
+    ok = (sub["available_at"].isna() | (sub["available_at"] <= asof)) & (
+        sub["in_date"].isna() | (sub["in_date"] <= asof)
+    )
+    ok = ok & (sub["out_date"].isna() | (sub["out_date"] > asof))
+    sub = sub[ok]
+    for c, g in sub.groupby("ts_code"):
+        g2 = g.sort_values("available_at")
+        out[str(c)] = str(g2.iloc[-1]["sw_code"])
+    return out
+
+
+def _load_logmv_t1(float_path: Path, dates: list, codes: list[str]):
+    import numpy as np
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    if not float_path.is_file():
+        raise SystemExit(f"STOP: PIN_GAP float_mktcap missing {float_path}")
+    dmin = min(pd.Timestamp(d) for d in dates) - pd.Timedelta(days=10)
+    dmax = max(pd.Timestamp(d) for d in dates)
+    t = pq.read_table(
+        float_path,
+        columns=["instrument_id", "trade_date", "float_mktcap"],
+        filters=[
+            ("trade_date", ">=", dmin.to_datetime64()),
+            ("trade_date", "<=", dmax.to_datetime64()),
+        ],
+    )
+    df = t.to_pandas()
+    df["ts_code"] = df["instrument_id"].map(to_ts)
+    df = df[df["ts_code"].isin(set(codes))].copy()
+    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.normalize()
+    df["float_mktcap"] = df["float_mktcap"].astype(float)
+    df = df[df["float_mktcap"] > 0]
+    df["logmv"] = np.log(df["float_mktcap"])
+    out = {}
+    by_code = {c: g.sort_values("trade_date") for c, g in df.groupby("ts_code")}
+    for d in dates:
+        d = pd.Timestamp(d).normalize()
+        for c in codes:
+            g = by_code.get(c)
+            if g is None or g.empty:
+                continue
+            prev = g[g["trade_date"] < d]
+            if prev.empty:
+                continue
+            out[(d, c)] = float(prev.iloc[-1]["logmv"])
+    return out
+
+
+def _load_style_from_bars(daily_dir: Path, adj_path: Path, day, codes: list[str], cal_days: list):
+    import numpy as np
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    d = pd.Timestamp(day).normalize()
+    if d not in set(cal_days):
+        return {}
+    i = cal_days.index(d)
+    win = cal_days[max(0, i - 19) : i + 1]
+    if len(win) < 15:
+        return {}
+    frames = []
+    for wd in win:
+        ds = pd.Timestamp(wd).strftime("%Y%m%d")
+        p = daily_dir / f"{ds}.parquet"
+        if not p.is_file():
+            continue
+        df = pd.read_parquet(p, columns=["ts_code", "trade_date", "close", "amount"])
+        df["ts_code"] = df["ts_code"].map(to_ts)
+        df = df[df["ts_code"].isin(set(codes))]
+        frames.append(df)
+    if not frames:
+        return {}
+    bars = pd.concat(frames, ignore_index=True)
+    bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
+    if adj_path.is_file():
+        at = pq.read_table(
+            adj_path,
+            columns=["ts_code", "trade_date", "adj_factor"],
+            filters=[
+                ("trade_date", ">=", min(win).strftime("%Y%m%d")),
+                ("trade_date", "<=", max(win).strftime("%Y%m%d")),
+            ],
+        )
+        adj = at.to_pandas()
+        adj["ts_code"] = adj["ts_code"].map(to_ts)
+        adj["trade_date"] = pd.to_datetime(
+            adj["trade_date"].astype(str), errors="coerce"
+        ).dt.normalize()
+        bars = bars.merge(adj, on=["ts_code", "trade_date"], how="left")
+    else:
+        bars["adj_factor"] = np.nan
+    bars["hfq"] = bars["close"].astype(float) * bars["adj_factor"].astype(float)
+    bars["amount_cny"] = bars["amount"].astype(float) * 1000.0
+    out = {}
+    for c, g in bars.groupby("ts_code"):
+        g = g.sort_values("trade_date")
+        if len(g) < 15:
+            continue
+        hfq = g["hfq"].astype(float)
+        if hfq.isna().all():
+            continue
+        r = hfq.pct_change()
+        mom = float(hfq.iloc[-1] / hfq.iloc[0] - 1.0) if hfq.iloc[0] == hfq.iloc[0] else np.nan
+        vol = float(r.std()) if r.notna().sum() >= 10 else np.nan
+        adv = g["amount_cny"].astype(float)
+        adv = adv[adv > 0]
+        logadv = float(np.log(adv.mean())) if len(adv) else np.nan
+        if not np.isfinite(mom) or not np.isfinite(vol) or not np.isfinite(logadv):
+            continue
+        out[str(c)] = {"mom20": mom, "vol20": vol, "logADV20": logadv}
+    return out
+
+
+def _soft_penalty_resid(df):
+    import numpy as np
+    import pandas as pd
+
+    df = df.copy()
+    df["y"] = -df["abs_pressure"].astype(float)
+    out_rows = []
+    for sw, g in df.groupby("sw_code"):
+        g = g.copy()
+        if len(g) < 5:
+            g["soft_penalty"] = g["y"] - g["y"].mean()
+            out_rows.append(g)
+            continue
+        g["y"] = g["y"] - g["y"].mean()
+        X = np.column_stack(
+            [
+                np.ones(len(g)),
+                g["logmv"].to_numpy(float),
+                g["mom20"].to_numpy(float),
+                g["vol20"].to_numpy(float),
+                g["logADV20"].to_numpy(float),
+            ]
+        )
+        if not np.isfinite(X).all() or not np.isfinite(g["y"].to_numpy(float)).all():
+            continue
+        resid = ols_resid(g["y"].to_numpy(float), X)
+        g["soft_penalty"] = resid
+        out_rows.append(g)
+    if not out_rows:
+        return df.iloc[0:0]
+    return pd.concat(out_rows, ignore_index=True)
+
+
+def write_overlap_report(
+    alpha_df,
+    out_path: Path,
+    paths: dict[str, Path],
+    sample_n: int = 6,
+    *,
+    leaf26_like_raw_by_day: dict | None = None,
+) -> dict:
+    """C7: Jaccard top20 + Spearman rho vs moneyflow / leaf26resid / 8a / 25/27/30–34.
+
+    leaf26-like raw diagnostic (if provided) is disclosed; J=1.0 must NOT hard-reject.
+    Optional tags missing -> PIN_GAP disclose (not exit-3 required).
+    """
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    alpha_df = alpha_df.copy()
+    alpha_df["trade_date"] = pd.to_datetime(alpha_df["trade_date"])
+    days = sorted(alpha_df["trade_date"].unique())
+    if not days:
+        payload = {
+            "error": "empty_alpha",
+            "schema": "leaf35_overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34",
+        }
+        out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        return payload
+    rebal = days[::REBAL_EVERY]
+    if rebal[-1] != days[-1]:
+        rebal = list(rebal) + [days[-1]]
+    if len(rebal) <= sample_n:
+        sample = list(rebal)
+    else:
+        idxs = np.linspace(0, len(rebal) - 1, sample_n)
+        sample = []
+        seen = set()
+        for i in idxs:
+            d = rebal[int(round(i))]
+            if d not in seen:
+                sample.append(d)
+                seen.add(d)
+    sample = sorted(sample)
+
+    pin_gaps_ov = []
+
+    def _load_other(path: Path, date_col: str, inst_col: str, score_col: str):
+        if not path.is_file():
+            return None
+        schema = pq.read_schema(path)
+        names = set(schema.names)
+        if date_col not in names or inst_col not in names or score_col not in names:
+            return None
+        field = schema.field(date_col)
+        is_str = pa.types.is_string(field.type) or pa.types.is_large_string(field.type)
+        cols = [date_col, inst_col, score_col]
+        if is_str:
+            dmin = min(sample).strftime("%Y-%m-%d")
+            dmax = max(sample).strftime("%Y-%m-%d")
+            t = pq.read_table(
+                path,
+                columns=cols,
+                filters=[(date_col, ">=", dmin), (date_col, "<=", dmax)],
+            )
+        else:
+            t = pq.read_table(
+                path,
+                columns=cols,
+                filters=[
+                    (date_col, ">=", min(sample).to_datetime64()),
+                    (date_col, "<=", max(sample).to_datetime64()),
+                ],
+            )
+        df = t.to_pandas()
+        df[date_col] = pd.to_datetime(df[date_col])
+        want = set(pd.Timestamp(d) for d in sample)
+        df = df[df[date_col].isin(want)].copy()
+        df.rename(
+            columns={date_col: "date", inst_col: "instrument", score_col: "score"},
+            inplace=True,
+        )
+        df["instrument"] = df["instrument"].map(to_ts)
+        return df
+
+    others = {}
+    score_meta = {}
+    for tag, path in paths.items():
+        o = _load_other(path, "trade_date", "ts_code", "alpha")
+        if o is None:
+            o = _load_other(path, "date", "instrument", "alpha")
+        if o is None:
+            o = _load_other(path, "date", "instrument", "weight")
+        if o is None:
+            o = _load_other(path, "date", "instrument", "target_weight")
+        if o is None:
+            o = _load_other(path, "trade_date", "ts_code", "mask")
+        score_meta[tag] = "loaded" if o is not None else None
+        if o is None and not path.is_file():
+            pin_gaps_ov.append(
+                {
+                    "tag": tag,
+                    "gap": "PIN_GAP_missing_file",
+                    "path": str(
+                        path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+                    ),
+                    "optional": tag in OPTIONAL_OVERLAP_TAGS,
+                }
+            )
+        others[tag] = o
+
+    rows = []
+    any_hard = False
+    for d in sample:
+        a = alpha_df[alpha_df["trade_date"] == pd.Timestamp(d)]
+        if a.empty:
+            continue
+        codes = a["ts_code"].astype(str).map(to_ts).tolist()
+        scores = a["alpha"].to_numpy(float)
+        ent = {"date": str(pd.Timestamp(d).date()), "n_alpha": len(codes)}
+        for tag, other in others.items():
+            if other is None:
+                ent[f"rho_{tag}"] = None
+                ent[f"j20_{tag}"] = None
+                ent[f"n_common_{tag}"] = 0
+                ent[f"missing_{tag}"] = True
+                continue
+            o = other[other["date"] == pd.Timestamp(d)]
+            if o.empty:
+                ent[f"rho_{tag}"] = None
+                ent[f"j20_{tag}"] = None
+                ent[f"n_common_{tag}"] = 0
+                continue
+            o = o.copy()
+            o["instrument"] = o["instrument"].map(to_ts)
+            m = pd.DataFrame({"instrument": codes, "a": scores}).merge(
+                o.rename(columns={"score": "b"})[["instrument", "b"]],
+                on="instrument",
+                how="inner",
+            )
+            ent[f"n_common_{tag}"] = int(len(m))
+            ent[f"rho_{tag}"] = spearman_rho(m["a"].to_numpy(), m["b"].to_numpy())
+            ent[f"j20_{tag}"] = top_jaccard(
+                codes,
+                scores,
+                o["instrument"].tolist(),
+                o["score"].to_numpy(float),
+                20,
+            )
+            # leaf26-like raw diagnostic: never hard-reject even if J=1.0
+            if tag == "leaf26_like_raw":
+                ent[f"jaccard_hard_reject_{tag}"] = False
+                ent[f"diagnostic_only_{tag}"] = True
+            else:
+                jhard = bool(
+                    ent[f"j20_{tag}"] is not None and ent[f"j20_{tag}"] >= JACCARD_HARD
+                )
+                ent[f"jaccard_hard_reject_{tag}"] = jhard
+                if jhard:
+                    any_hard = True
+            ent[f"strength_filter_{tag}"] = bool(
+                ent[f"rho_{tag}"] is not None and ent[f"rho_{tag}"] > RHO_STRENGTH
+            )
+        # optional in-memory leaf26-like raw diagnostic
+        if leaf26_like_raw_by_day is not None:
+            raw = leaf26_like_raw_by_day.get(pd.Timestamp(d).normalize())
+            if raw is not None and not raw.empty:
+                ent["j20_leaf26_like_raw"] = top_jaccard(
+                    codes,
+                    scores,
+                    raw["ts_code"].astype(str).map(to_ts).tolist(),
+                    (-raw["abs_pressure"].astype(float)).to_numpy(),
+                    20,
+                )
+                ent["jaccard_hard_reject_leaf26_like_raw"] = False
+                ent["diagnostic_only_leaf26_like_raw"] = True
+                ent["note_leaf26_like_raw"] = (
+                    "by-construction magnitude share possible; NOT hard reject; "
+                    "NOT proof of orthogonality (C7/C11)"
+                )
+        rows.append(ent)
+
+    required_missing = [
+        g
+        for g in pin_gaps_ov
+        if (not g.get("optional")) and str(g.get("tag", "")) in REQUIRED_OVERLAP_TAGS
+    ]
+    payload = {
+        "schema": "leaf35_overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34",
+        "note": (
+            "C7 formal overlap on ETF passive flow pressure overlay. "
+            "Score for overlap = -|pressure_raw| (COUNT continuity); PRIMARY delivery = mask. "
+            "Jaccard>=0.7 hard reject (exit non-zero) except leaf26-like raw diagnostic. "
+            "rho>0.5 strength filter only. "
+            "missing required file -> PIN_GAP (not silent skip). "
+            "leaf26 resid / leaf8a optional PIN_GAP if ABSENT. "
+            "COUNT APPROX cannot replace this file. !=X2 ACCEPT."
+        ),
+        "mechanism_tag": MECHANISM_TAG,
+        "sample_dates": [str(pd.Timestamp(d).date()) for d in sample],
+        "paths": {
+            k: str(v.relative_to(ROOT) if v.is_relative_to(ROOT) else v)
+            for k, v in paths.items()
+        },
+        "score_col_meta": score_meta,
+        "rows": rows,
+        "any_jaccard_hard_reject": any_hard,
+        "jaccard_hard": JACCARD_HARD,
+        "rho_strength": RHO_STRENGTH,
+        "leaf26_like_raw_diagnostic_not_hard_reject": True,
+        "pin_gaps": pin_gaps_ov,
+        "any_required_pin_gap": bool(required_missing),
+        "live": False,
+    }
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(out_path)
+    return payload
+
+
+def _month_chunks(start: str, end: str) -> list[dict]:
+    import pandas as pd
+
+    s = pd.Timestamp(start)
+    e = pd.Timestamp(end)
+    chunks = []
+    cur = pd.Timestamp(s.year, s.month, 1)
+    cid = 0
+    while cur <= e:
+        nxt = (cur + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+        c0 = max(cur, s)
+        c1 = min(nxt, e)
+        if c0 <= c1:
+            chunks.append(
+                {
+                    "chunk_id": cid,
+                    "start": c0.strftime("%Y-%m-%d"),
+                    "end": c1.strftime("%Y-%m-%d"),
+                }
+            )
+            cid += 1
+        cur = cur + pd.offsets.MonthBegin(1)
+    return chunks
+
+def build_mask_for_window(args, *, universe_label: str = "HILIQ") -> tuple:
+    """Build daily exclusion mask with rebal-day ETF pressure under C3 scheme A."""
+    import numpy as np
+    import pandas as pd
+
+    stage("build_start")
+    split_kb = int(0.85 * args.c4_kb)
+
+    def _rss(label: str) -> int:
+        return check_rss(
+            label,
+            rss_limit_mb=args.rss_limit_mb,
+            c4_kb=args.c4_kb,
+            hard_kb=args.hard_kb,
+            split_kb=split_kb,
+        )
+
+    _rss("build_start")
+
+    mask_path = (
+        Path(args.hi_liq_mask)
+        if universe_label == "HILIQ"
+        else Path(args.fulla_mask)
+    )
+    by_day, codes, mask_meta = _load_mask_members(
+        mask_path, X2_START, X2_END, label=universe_label
+    )
+    _rss("after_mask")
+
+    soft_pen = bool(getattr(args, "enable_soft_penalty", False))
+    sw = None
+    cal_days = _load_trade_cal(Path(args.calendar), X2_START, X2_END)
+    w_idx, avail_map, weight_meta = _load_weight_pin_scheme_a(
+        Path(args.idx_weight), Path(args.calendar)
+    )
+    _rss("after_weight_pin")
+    if soft_pen:
+        sw = _load_sw_table(Path(args.sw_l1))
+        _rss("after_sw_soft_penalty")
+
+    all_days = sorted(by_day.keys())
+    rebal_idx = list(range(0, len(all_days), REBAL_EVERY))
+    if rebal_idx and rebal_idx[-1] != len(all_days) - 1:
+        rebal_idx.append(len(all_days) - 1)
+    rebal_days = [all_days[i] for i in rebal_idx]
+
+    etf_df = _load_etf_flows_window(Path(args.etf_share), rebal_days)
+    _rss("after_etf_share_window")
+
+    rebal_rows = []
+    coverage = []
+    pin_gaps = []
+    thr_hist = []
+    leaf26_like_raw_by_day = {}
+
+    for d in rebal_days:
+        d = pd.Timestamp(d).normalize()
+        members = set(by_day.get(d, []))
+        if not members:
+            coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
+            continue
+
+        press = _pressure_on_day(d, members, etf_df, w_idx, avail_map)
+        _rss(f"after_pressure_rebal_{d.strftime('%Y%m%d')}")
+        if press is None or press.empty:
+            pin_gaps.append({"date": str(d.date()), "gap": "pressure_empty_or_unmappable"})
+            coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
+            del press
+            gc.collect()
+            continue
+
+        # disclose raw pressure panel for leaf26-like diagnostic (same magnitude family)
+        leaf26_like_raw_by_day[d] = press[["ts_code", "abs_pressure"]].copy()
+
+        cs = _cross_section_mask(press, TOP_Q)
+        del press
+        gc.collect()
+
+        if soft_pen:
+            sw_map = _sw_asof_codes(sw, d, cs["ts_code"].tolist())
+            logmv = _load_logmv_t1(Path(args.float_mktcap), [d], cs["ts_code"].tolist())
+            styles = _load_style_from_bars(
+                Path(args.daily_dir),
+                Path(args.adj_factor),
+                d,
+                cs["ts_code"].tolist(),
+                cal_days,
+            )
+            rows = []
+            for _, r in cs.iterrows():
+                c = str(r["ts_code"])
+                if c not in sw_map:
+                    continue
+                lm = logmv.get((d, c))
+                st = styles.get(c)
+                if lm is None or st is None:
+                    continue
+                rows.append(
+                    {
+                        "ts_code": c,
+                        "abs_pressure": float(r["abs_pressure"]),
+                        "mask": float(r["mask"]),
+                        "alpha": float(r["alpha"]),
+                        "logmv": lm,
+                        "mom20": st["mom20"],
+                        "vol20": st["vol20"],
+                        "logADV20": st["logADV20"],
+                        "sw_code": sw_map[c],
+                    }
+                )
+            if not rows:
+                pin_gaps.append({"date": str(d.date()), "gap": "soft_penalty_no_rows"})
+                coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
+                del cs, rows
+                gc.collect()
+                continue
+            for col in STYLE_COLS_PINNED:
+                if any(col not in r for r in rows):
+                    raise SystemExit(
+                        f"STOP: PIN_GAP missing style col {col} at {d.date()}; "
+                        f"refuse silent skip (FROZEN C4 soft-penalty)"
+                    )
+            sp = _soft_penalty_resid(pd.DataFrame(rows))
+            if sp.empty:
+                pin_gaps.append({"date": str(d.date()), "gap": "soft_penalty_empty"})
+                coverage.append({"date": str(d.date()), "n": 0, "n_excl": 0})
+                continue
+            n_excl = int((sp["mask"] == 0).sum())
+            coverage.append({"date": str(d.date()), "n": int(len(sp)), "n_excl": n_excl})
+            thr_hist.append(float(cs["mask_threshold"].iloc[0]))
+            for _, r in sp.iterrows():
+                rebal_rows.append(
+                    {
+                        "rebal_date": d,
+                        "ts_code": r["ts_code"],
+                        "mask": float(r["mask"]),
+                        "alpha": float(r["alpha"]),
+                        "soft_penalty": float(r["soft_penalty"]),
+                    }
+                )
+            del cs, sp, rows, logmv, styles
+            gc.collect()
+        else:
+            n_excl = int((cs["mask"] == 0).sum())
+            coverage.append({"date": str(d.date()), "n": int(len(cs)), "n_excl": n_excl})
+            thr_hist.append(float(cs["mask_threshold"].iloc[0]))
+            for _, r in cs.iterrows():
+                rebal_rows.append(
+                    {
+                        "rebal_date": d,
+                        "ts_code": r["ts_code"],
+                        "mask": float(r["mask"]),
+                        "alpha": float(r["alpha"]),
+                    }
+                )
+            del cs
+            gc.collect()
+        _rss(f"after_mask_cs_rebal_{d.strftime('%Y%m%d')}")
+
+    if not rebal_rows:
+        raise SystemExit(
+            "STOP: zero mask rows (check etf share / weights scheme A / HI_LIQ / top_q)"
+        )
+
+    A = pd.DataFrame(rebal_rows)
+    del rebal_rows
+    gc.collect()
+    A = A.sort_values(["rebal_date", "ts_code"])
+    rebal_sorted = sorted(A["rebal_date"].unique())
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    month_chunks = _month_chunks(X2_START, X2_END)
+    ts_tag = datetime.now(ET).strftime("%Y%m%d_%H%M%S")
+    tmp_root = Path(f"{SAMPLER_PREFIX}chunk_{ts_tag}")
+    assert_tmp_quantlab(tmp_root, "leaf35-month-chunk-tmp")
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    part_paths: list[Path] = []
+
+    for ch in month_chunks:
+        c0 = pd.Timestamp(ch["start"])
+        c1 = pd.Timestamp(ch["end"])
+        days_in = [dd for dd in all_days if c0 <= pd.Timestamp(dd) <= c1]
+        if not days_in:
+            continue
+        month_rows = []
+        for dd in days_in:
+            prev = [r for r in rebal_sorted if r <= dd]
+            if not prev:
+                continue
+            rd = prev[-1]
+            members = set(by_day.get(pd.Timestamp(dd), []))
+            g = A[A["rebal_date"] == rd]
+            g = g[g["ts_code"].isin(members)]
+            if g.empty:
+                continue
+            td = pd.Timestamp(dd).strftime("%Y-%m-%d")
+            rec = {
+                "trade_date": td,
+                "ts_code": g["ts_code"].astype(str).to_numpy(),
+                "mask": g["mask"].astype(float).to_numpy(),
+                "alpha": g["alpha"].astype(float).to_numpy(),
+            }
+            if soft_pen and "soft_penalty" in g.columns:
+                rec["soft_penalty"] = g["soft_penalty"].astype(float).to_numpy()
+            month_rows.append(pd.DataFrame(rec))
+        if month_rows:
+            cdf = pd.concat(month_rows, ignore_index=True)
+            pth = tmp_root / f"chunk_{int(ch['chunk_id']):03d}.parquet"
+            table = pa.Table.from_pandas(cdf, preserve_index=False)
+            tmpf = pth.with_suffix(pth.suffix + ".tmp")
+            pq.write_table(table, tmpf, compression="zstd")
+            tmpf.replace(pth)
+            part_paths.append(pth)
+            del cdf, table, month_rows
+        else:
+            del month_rows
+        gc.collect()
+        _rss(f"month_chunk_{int(ch['chunk_id']):03d}_{ch['start'][:7]}")
+
+    if not part_paths:
+        raise SystemExit("STOP: zero daily mask rows after month-chunk expand")
+
+    frames = [pd.read_parquet(pth) for pth in part_paths]
+    out_df = pd.concat(frames, ignore_index=True)
+    del frames
+    gc.collect()
+    _rss("after_daily_concat")
+
+    if args.sample_dir is None:
+        for pth in part_paths:
+            try:
+                pth.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            tmp_root.rmdir()
+        except OSError:
+            pass
+
+    med_cov = float(np.median([c["n"] for c in coverage])) if coverage else 0.0
+    gate = (
+        COVERAGE_MEDIAN_HILIQ if universe_label == "HILIQ" else COVERAGE_MEDIAN_FULLA
+    )
+    meta = {
+        "schema": "leaf35_etf_passive_flow_pressure_overlay_alpha_build_v1",
+        "live": False,
+        "promotion_approved": False,
+        "ok_requested": False,
+        "x2_accept": False,
+        "approx": False,
+        "count_approx_not_x2_accept": True,
+        "mechanism_tag": MECHANISM_TAG,
+        "primary_delivery": PRIMARY_DELIVERY,
+        "top_q": TOP_Q,
+        "alpha_sign": ALPHA_SIGN,
+        "soft_penalty_enabled": soft_pen,
+        "soft_penalty_is_primary": False,
+        "rebal_every_td": REBAL_EVERY,
+        "c3_formula_pin": C3_FORMULA_PIN,
+        "weight_meta": weight_meta,
+        "etf_index_map": dict(ETF_INDEX_MAP),
+        "style_cols_pinned": list(STYLE_COLS_PINNED),
+        "style_source_pinned": STYLE_SOURCE_PINNED,
+        "cost_bp_eval": COST_BP_EVAL,
+        "decay_keep_pin": DECAY_KEEP_PIN,
+        "universe": universe_label,
+        "primary_universe": "HILIQ",
+        "window": "x2",
+        "x2_start": X2_START,
+        "x2_end": X2_END,
+        "mask_meta": mask_meta,
+        "coverage_rebal": coverage,
+        "coverage_median": med_cov,
+        "coverage_gate": gate,
+        "coverage_gate_pass": bool(med_cov >= gate),
+        "mask_threshold_median": float(np.median(thr_hist)) if thr_hist else None,
+        "pin_gaps": pin_gaps[:50],
+        "n_pin_gaps": len(pin_gaps),
+        "n_daily_rows": int(len(out_df)),
+        "n_month_chunks_written": int(len(part_paths)),
+        "frozen_sha8": FROZEN_SHA8,
+        "frozen_receipt_sha8": FROZEN_RECEIPT_SHA8,
+        "arch_frozen_review_sha8": ARCH_FROZEN_REVIEW_SHA8,
+        "pin_sha8": PIN_SHA8,
+        "count_script_sha8": COUNT_SCRIPT_SHA8,
+        "forbid_ok_sha8": list(FORBID_OK_SHA8),
+        "leaf30_keep_repair_sha8_separate": LEAF30_KEEP_REPAIR_SHA8_SEPARATE,
+        "leaf33_formal_sha8_readonly": LEAF33_FORMAL_SHA8_READONLY,
+        "leaf34_skeleton_sha8_readonly": LEAF34_SKELETON_SHA8,
+        "leaf32_hold_sha8_no_rollback": LEAF32_HOLD_SHA8,
+        "leaf34_hold_closed_ok_sha8_no_restored": LEAF34_HOLD_CLOSED_OK_SHA8,
+        "sampler_prefix": SAMPLER_PREFIX,
+        "rss_limit_mb": args.rss_limit_mb,
+        "peak_kb": peak_kb(),
+        "primary_load": "rebal_day_lazy_etf_share_x_weight_scheme_A_pit",
+        "leaf26_like_raw_days": len(leaf26_like_raw_by_day),
+        "created_et": datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "notes": [
+            "PRIMARY delivery = daily exclusion mask (mask-only); top_q=0.20",
+            "high |pressure| mask=0; other computable mask=1; non-mappable excluded",
+            "alpha col = -|pressure_raw| for overlap continuity; NOT leaf26 full residual alpha",
+            "C3 scheme A: weight_available_at = next-month first trade day 09:00 Asia/Shanghai",
+            "share available_at<=t_ts; ban silent month-end asof as PIT-complete",
+            "soft-penalty non PRIMARY; default OFF",
+            "PRIMARY=HILIQ; FULLA research only via --also-fulla-research",
+            "C7 overlap vs moneyflow/leaf26resid/8a/25/27/30/31/32/33/34",
+            "leaf26-like raw diagnostic J may be 1.0 — NOT hard reject",
+            "peak_proof REQUIRED; rss=1500 ban raise",
+            "C10 0087c928 not merged; leaf28/29 separate",
+            "C11 overlay != leaf26 full residual alpha; C12 APPROX != X2 ACCEPT",
+            "decay KEEP pin only (not run); KEEP does NOT unblock X2 ACCEPT",
+            "leaf33 formal afbbe7e7 UNCHANGED; leaf32 HOLD 45dd87dc no rollback",
+            "leaf34 HOLD CLOSED 178e90e9 no RESTORED/rollback",
+        ],
+    }
+    # stash diagnostic panel on meta object for run_build (not serialized huge)
+    meta["_leaf26_like_raw_by_day"] = leaf26_like_raw_by_day
+    return out_df, meta
+
+def run_build(args) -> int:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    uni = normalize_universe(args.universe)
+    if uni == "FULLA":
+        print(
+            "STOP: FULLA forbidden as PRIMARY (use --also-fulla-research)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.window != "x2":
+        print(
+            f"STOP: --window must be x2 this ticket (got {args.window})",
+            file=sys.stderr,
+        )
+        return 2
+    if str(args.x2_end).replace("-", "") != X2_END_TRADE_DATE:
+        print(
+            f"STOP: --x2-end must be {X2_END_TRADE_DATE} (got {args.x2_end})",
+            file=sys.stderr,
+        )
+        return 2
+    if args.rss_limit_mb > RSS_LIMIT_MB:
+        print("STOP: ban raise rss_limit above 1500", file=sys.stderr)
+        return 2
+    if args.c4_kb > C4_KB or args.stop_kb > STOP_KB or args.hard_kb > HARD_KB:
+        print(
+            "STOP: ban raise C4/stop/hard above 1331200/1484800/1536000",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.sample_dir is not None:
+        assert_tmp_quantlab(args.sample_dir, "sample-dir")
+        sd = str(args.sample_dir.resolve())
+        if not sd.startswith(SAMPLER_PREFIX.rstrip("_")) and not sd.startswith(
+            "/tmp/quantlab_leaf35_etf_passive"
+        ):
+            print(
+                f"STOP: sampler must be under {SAMPLER_PREFIX}* got={sd}",
+                file=sys.stderr,
+            )
+            return 2
+
+    if not args.allow_real_data:
+        print(
+            "STOP: real build requires --allow-real-data + --arch-ok-path "
+            "(use --dry-compile-only for static pins)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.arch_ok_path is None or not Path(args.arch_ok_path).is_file():
+        print(
+            "STOP: --allow-real-data requires existing --arch-ok-path",
+            file=sys.stderr,
+        )
+        return 2
+    ok_sha = sha256_file(Path(args.arch_ok_path))
+    if ok_sha[:8] in FORBID_OK_SHA8:
+        print(
+            f"STOP: ban reuse forbid/CONSUMED/VOID .ok sha={ok_sha} sha8={ok_sha[:8]}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.out is None:
+        print("STOP: --out is required for build", file=sys.stderr)
+        return 2
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Required overlap targets must exist; optional leaf26_resid / leaf8a may PIN_GAP
+    for label, pth in (
+        ("moneyflow_resid", Path(args.moneyflow_resid)),
+        ("leaf25", Path(args.leaf25_alpha)),
+        ("leaf27", Path(args.leaf27_alpha)),
+        ("leaf30", Path(args.leaf30_alpha)),
+        ("leaf31", Path(args.leaf31_alpha)),
+        ("leaf32", Path(args.leaf32_alpha)),
+        ("leaf33", Path(args.leaf33_alpha)),
+        ("leaf34", Path(args.leaf34_alpha)),
+    ):
+        if not pth.is_file():
+            print(
+                f"STOP: PIN_GAP {label} alpha/weights missing {pth}; "
+                f"refuse silent skip (set --{label.replace('_','-')} or restore product)",
+                file=sys.stderr,
+            )
+            return 3
+
+    mask_df, meta = build_mask_for_window(args, universe_label="HILIQ")
+    leaf26_like = meta.pop("_leaf26_like_raw_by_day", None)
+    et_ts = datetime.now(ET).strftime("%Y%m%d_%H%M%S")
+    final_name = f"exclusion_mask_HILIQ_x2_{et_ts}.parquet"
+    final_path = out / final_name
+    table = pa.Table.from_pandas(mask_df, preserve_index=False)
+    tmpf = final_path.with_suffix(final_path.suffix + ".tmp")
+    pq.write_table(table, tmpf, compression="zstd")
+    tmpf.replace(final_path)
+
+    meta.update(
+        {
+            "script": SCRIPT_REL,
+            "script_sha256": script_sha256(),
+            "script_sha8": script_sha256()[:8],
+            "arch_ok_path": str(args.arch_ok_path),
+            "arch_ok_sha256": ok_sha,
+            "arch_ok_sha8": ok_sha[:8],
+            "exclusion_mask_path": str(final_path.name),
+            "exclusion_mask_sha256": sha256_file(final_path),
+            "peak_kb_final": peak_kb(),
+        }
+    )
+
+    hard_reject = False
+    pin_gap_fail = False
+    if args.no_overlap_report and not args.overlap_report:
+        print(
+            "STOP: --no-overlap-report banned on real path "
+            "(C7 overlap required; same spirit as leaf32/33/34 hard gate)",
+            file=sys.stderr,
+        )
+        return 2
+    ov_path = out / "overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34.json"
+    try:
+        ov = write_overlap_report(
+            mask_df,
+            ov_path,
+            {
+                "moneyflow_resid": Path(args.moneyflow_resid),
+                "leaf26_resid": Path(args.leaf26_resid_alpha),
+                "leaf8a": Path(args.leaf8a_alpha),
+                "leaf25": Path(args.leaf25_alpha),
+                "leaf27": Path(args.leaf27_alpha),
+                "leaf30": Path(args.leaf30_alpha),
+                "leaf31": Path(args.leaf31_alpha),
+                "leaf32": Path(args.leaf32_alpha),
+                "leaf33": Path(args.leaf33_alpha),
+                "leaf34": Path(args.leaf34_alpha),
+            },
+            leaf26_like_raw_by_day=leaf26_like,
+        )
+        meta["overlap_report"] = str(ov_path.name)
+        meta["overlap_any_jaccard_hard_reject"] = bool(
+            ov.get("any_jaccard_hard_reject")
+        )
+        meta["overlap_any_required_pin_gap"] = bool(ov.get("any_required_pin_gap"))
+        hard_reject = bool(ov.get("any_jaccard_hard_reject"))
+        pin_gap_fail = bool(ov.get("any_required_pin_gap"))
+    except Exception as e:
+        meta["overlap_report_error"] = repr(e)
+        print(f"STOP: overlap report failed: {e!r}", file=sys.stderr)
+        return 3
+
+    if args.also_fulla_research:
+        try:
+            a_f, m_f = build_mask_for_window(args, universe_label="FULLA")
+            m_f.pop("_leaf26_like_raw_by_day", None)
+            fp = out / f"exclusion_mask_FULLA_x2_research_{et_ts}.parquet"
+            t2 = pa.Table.from_pandas(a_f, preserve_index=False)
+            tmp2 = fp.with_suffix(fp.suffix + ".tmp")
+            pq.write_table(t2, tmp2, compression="zstd")
+            tmp2.replace(fp)
+            meta["fulla_research_mask"] = str(fp.name)
+            meta["fulla_research_meta"] = {
+                "coverage_median": m_f.get("coverage_median"),
+                "coverage_gate_pass": m_f.get("coverage_gate_pass"),
+                "n_daily_rows": m_f.get("n_daily_rows"),
+                "note": "research only; NOT PRIMARY verdict",
+            }
+            del a_f, m_f
+            gc.collect()
+        except Exception as e:
+            meta["fulla_research_error"] = repr(e)
+            print(
+                f"WARN: FULLA research failed (PRIMARY HILIQ kept): {e!r}",
+                file=sys.stderr,
+            )
+
+    meta_path = out / "run_meta.json"
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+    print(
+        f"OK leaf35_etf_passive_flow_pressure_overlay universe=HILIQ window=x2 "
+        f"final={final_path} peak_kb={peak_kb()} "
+        f"overlap_hard_reject={hard_reject} pin_gap={pin_gap_fail}",
+        flush=True,
+    )
+    if pin_gap_fail:
+        print(
+            "STOP: C7 PIN_GAP missing required overlap target "
+            "(moneyflow_resid/leaf25/27/30/31/32/33/34); "
+            "see overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34.json",
+            file=sys.stderr,
+        )
+        return 3
+    if hard_reject:
+        print(
+            "STOP: C7 Jaccard>=0.7 hard reject vs "
+            "moneyflow_resid/leaf26_resid/leaf8a/leaf25/27/30/31/32/33/34 "
+            "(leaf26-like raw diagnostic excluded from hard reject; "
+            "see overlap_vs_moneyflow_leaf26resid_8a_25_27_30_31_32_33_34.json)",
+            file=sys.stderr,
+        )
+        return 4
+    if not meta.get("coverage_gate_pass"):
+        print(
+            f"STOP: coverage median {meta.get('coverage_median')} "
+            f"< gate {COVERAGE_MEDIAN_HILIQ}",
+            file=sys.stderr,
+        )
+        return 5
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description=(
+            "Leaf35 ETF passive flow pressure overlay build (HILIQ x x2); "
+            "NOT authorized without --allow-real-data + --arch-ok-path"
+        )
+    )
+    ap.add_argument(
+        "--universe",
+        default="HILIQ",
+        choices=("HILIQ", "HI_LIQ", "FULLA"),
+        help="PRIMARY must be HILIQ (FULLA as --universe → STOP; use --also-fulla-research)",
+    )
+    ap.add_argument("--window", default="x2", choices=("x2",))
+    ap.add_argument("--x2-end", default=X2_END_TRADE_DATE)
+    ap.add_argument("--out", type=Path, default=None, help="Required for real build")
+    ap.add_argument("--rss-limit-mb", type=int, default=RSS_LIMIT_MB)
+    ap.add_argument("--c4-kb", type=int, default=C4_KB)
+    ap.add_argument("--stop-kb", type=int, default=STOP_KB)
+    ap.add_argument("--hard-kb", type=int, default=HARD_KB)
+    ap.add_argument("--allow-real-data", action="store_true", default=False)
+    ap.add_argument(
+        "--arch-ok-path",
+        type=Path,
+        default=None,
+        help="Existing Arch .ok (sha8 not in forbid); process gate with Main window",
+    )
+    ap.add_argument(
+        "--execute",
+        action="store_true",
+        default=False,
+        help="Optional; still requires --allow-real-data + --arch-ok-path",
+    )
+    ap.add_argument("--hi-liq-mask", type=Path, default=HI_LIQ_MASK_DEFAULT)
+    ap.add_argument("--fulla-mask", type=Path, default=FULLA_MASK_DEFAULT)
+    ap.add_argument("--etf-share", type=Path, default=ETF_SHARE_DEFAULT)
+    ap.add_argument("--idx-weight", type=Path, default=IDX_WEIGHT_DEFAULT)
+    ap.add_argument("--sw-l1", type=Path, default=SW_L1_DEFAULT)
+    ap.add_argument("--float-mktcap", type=Path, default=FLOAT_MKTCAP_DEFAULT)
+    ap.add_argument("--daily-dir", type=Path, default=DAILY_DIR_DEFAULT)
+    ap.add_argument("--adj-factor", type=Path, default=ADJ_FACTOR_DEFAULT)
+    ap.add_argument("--calendar", type=Path, default=CAL_DEFAULT)
+    ap.add_argument("--moneyflow-resid", type=Path, default=MONEYFLOW_RESID_DEFAULT)
+    ap.add_argument("--leaf26-resid-alpha", type=Path, default=LEAF26_RESID_ALPHA_DEFAULT)
+    ap.add_argument("--leaf8a-alpha", type=Path, default=LEAF8A_ALPHA_DEFAULT)
+    ap.add_argument("--leaf25-alpha", type=Path, default=LEAF25_ALPHA_DEFAULT)
+    ap.add_argument("--leaf27-alpha", type=Path, default=LEAF27_ALPHA_DEFAULT)
+    ap.add_argument("--leaf30-alpha", type=Path, default=LEAF30_ALPHA_DEFAULT)
+    ap.add_argument("--leaf31-alpha", type=Path, default=LEAF31_ALPHA_DEFAULT)
+    ap.add_argument("--leaf32-alpha", type=Path, default=LEAF32_ALPHA_DEFAULT)
+    ap.add_argument("--leaf33-alpha", type=Path, default=LEAF33_ALPHA_DEFAULT)
+    ap.add_argument("--leaf34-alpha", type=Path, default=LEAF34_ALPHA_DEFAULT)
+    ap.add_argument("--sample-dir", type=Path, default=None)
+    ap.add_argument(
+        "--also-fulla-research",
+        action="store_true",
+        default=False,
+        help="Optional FULLA research mask (never PRIMARY verdict)",
+    )
+    ap.add_argument(
+        "--enable-soft-penalty",
+        action="store_true",
+        default=False,
+        help="Optional soft-penalty path (NON PRIMARY; requires SW+style; default OFF)",
+    )
+    ap.add_argument(
+        "--overlap-report",
+        action="store_true",
+        default=False,
+        help="Force write overlap JSON (also default/required on real path)",
+    )
+    ap.add_argument(
+        "--no-overlap-report",
+        action="store_true",
+        default=False,
+        help="Banned on real path (C7); dry/dev only — real build STOPs if set",
+    )
+    ap.add_argument(
+        "--dry-compile-only",
+        action="store_true",
+        default=False,
+        help="Print pins; ZERO big-table load; exit 0",
+    )
+    args = ap.parse_args(argv)
+
+    if args.dry_compile_only:
+        return dry_compile_only_print(args)
+
+    if not args.allow_real_data and not args.execute:
+        print(
+            "STOP: missing authorization flags "
+            "(need --allow-real-data + --arch-ok-path; or --dry-compile-only)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.execute and not args.allow_real_data:
+        print(
+            "STOP: --execute requires --allow-real-data + --arch-ok-path",
+            file=sys.stderr,
+        )
+        return 2
+    if args.out is None:
+        print(
+            "STOP: --out is required for build (or pass --dry-compile-only)",
+            file=sys.stderr,
+        )
+        return 2
+    return run_build(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,32 @@
+Calendar fa4260b8 metadata check (Arch condition 1), research lock b5e78069 lifted 10:13:21 ET
+94322 state at start: 94322 (python3) T
+start: 2026-10-18 10:14:06 EDT
+script: /tmp/calchk/chk.py sha b63ec1c77a3af690b6f6ce1f9d93d932c50e739b471a0f8c4c50358bf55c0587
+cmd: sha256sum /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41  /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+cmd: PYTHONDONTWRITEBYTECODE=1 nice -n 10 /workspace/qlvenv/bin/python /tmp/calchk/chk.py </dev/null
+schema: cal_date: large_string
+is_open: int64
+pretrade_date: large_string
+available_at: timestamp[us]
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 588
+PANDAS_ATTRS: '{"source": "relay"}'
+num_rows: 8035
+columns: ['cal_date', 'is_open', 'pretrade_date', 'available_at']
+cal_date                    str
+is_open                   int64
+pretrade_date               str
+available_at     datetime64[us]
+date_cols: ['cal_date', 'pretrade_date']
+range: 20050101 20261231
+      cal_date  is_open pretrade_date        available_at
+7958  20261016        1      20261015 2025-12-31 09:00:00
+7961  20261019        1      20261016 2025-12-31 09:00:00
+7962  20261020        1      20261019 2025-12-31 09:00:00
+7963  20261021        1      20261020 2025-12-31 09:00:00
+open_col: ['is_open']
+cmd: sha256sum /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet (after)
+fa4260b808755b9a1c91e3ade210edec84bbdb91e0dfff4c6a955c4d35fd8a41  /workspace/QuantLab/data/v2/calendar/trade_cal_sse_pit.parquet
+end: 2026-10-18 10:14:06 EDT
+94322 state at end: 94322 (python3) T

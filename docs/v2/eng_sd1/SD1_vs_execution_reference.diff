@@ -1,0 +1,610 @@
+--- a/quantlab/platform/execution.py
++++ b/quantlab/platform/execution_sd1.py
+@@ -1,4 +1,11 @@
+-"""Platform execution + cost engine (opt-in, research-grade).
++"""exec_SD1 SIDE ENGINE (2026-10-18, Eng). Fork of quantlab/platform/execution.py @ sha256 373fed30…486c (git HEAD
++e7b240d) plus the SD1 suspend/delist fix (spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md sha256 2e428f39…bdbb0b).
++主 Agent 01:33 ET ruling: execution.py stays byte-identical (paper path); SD1 lives here until a separate merge ruling.
++With every SD1 switch at its default (exec_SD0) run_weight_schedule here must be bit-identical to execution.py
++(acceptance T9 / scripts_eng/sd0_parity_runner.py). No paper code imports this file. live=false.
++
++--- original execution.py docstring follows ---
++Platform execution + cost engine (opt-in, research-grade).
+ 
+ Strategy calls these helpers; nothing here changes the defaults of
+ ``quantlab.backtest.ledger.Ledger`` or ``quantlab.smallcap.sim.simulate``.
+@@ -302,6 +309,66 @@
+     return np.abs(tv) * rate
+ 
+ 
++# ----------------------------------------------------------------- SD1 constants (spec 3.0 / rulings 主 Agent 01:03 ET)
++SD1_SPEC = "docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md"
++SD1_SPEC_SHA256 = "2e428f3956fcb6d2de8204a0b7226242763045afdd280a4d1e860bc6d0fbdb0b"
++SD1_MA_CONSIDERATION_TABLE = Path(__file__).resolve().parents[2] / "data/v2/ref/delist_consideration.parquet"
++SD1_BLOCKED_BUY_BUDGET_BY_TRACK = {"core": "cash"}   # ruling 1: Core keeps blocked budget as cash; others renorm
++SD1_DELIST_TYPES = ("FORCED_PERIOD", "FORCED_NO_PERIOD", "MERGER_SWAP", "CASH_OUT", "UNKNOWN")
++SD1_ANNOUNCED_FORCED = ("FORCED_PERIOD", "FORCED_NO_PERIOD")
++SD1_G2_WRITEOFF_THRESHOLD = 0.01   # spec §4 G2 / 主 Agent E-1 final (01:53 ET)
++
++
++def sd1_blocked_buy_budget(track: str) -> str:
++    """Ruling 1 (final): ``cash`` for the Core track, ``renorm`` for every other track. ``track`` is REQUIRED
++    (Arch SD1 review P2-2): None / empty raises, so a forgotten Core track can never silently get renorm."""
++    if track is None or not str(track).strip():
++        raise ValueError("track is required (e.g. 'core', 'capacity_adv', 'b4', 's6'); no silent pro-rata default")
++    return SD1_BLOCKED_BUY_BUDGET_BY_TRACK.get(str(track).strip().lower(), "renorm")
++
++
++def sd1_delist_summary(sd1_events, *, delist_events=None, unknown_policy: str = "writeoff",
++                       recovery: float = 0.0, threshold: float = SD1_G2_WRITEOFF_THRESHOLD, basis: str = "main") -> dict:
++    """主 Agent E-1 final (01:53 ET): announced write-offs (DELIST_WRITEOFF, FORCED_*) and UNKNOWN write-offs
++    (DELIST_WRITEOFF_UNKNOWN) are separate categories; 0 recovery is the main basis. UNKNOWN alone does NOT trigger
++    G2; G2 IS triggered when announced + UNKNOWN write-off weight >= 1%. Implemented reading (flagged for 主 Agent):
++    g2_triggered = (n_announced >= 1) and (combined_weight >= threshold); ``g2_if_unknown_alone_counted`` reports the
++    alternative reading (combined >= threshold with no announced write-off) for transparency.
++    Weight = book weight of the position on the write-off session (value at the last tradable close / NAV of the
++    previous close), summed over the run; independent of the recovery assumption."""
++    ev = sd1_events if isinstance(sd1_events, pd.DataFrame) else pd.DataFrame(sd1_events)
++    typ = ev["type"] if "type" in ev.columns else pd.Series(dtype=object)
++    w = pd.to_numeric(ev["weight"], errors="coerce") if "weight" in ev.columns else pd.Series(np.nan, index=ev.index)
++    val = pd.to_numeric(ev["writeoff_value"], errors="coerce") if "writeoff_value" in ev.columns else pd.Series(np.nan, index=ev.index)
++    pos = pd.to_numeric(ev["position_value"], errors="coerce") if "position_value" in ev.columns else pd.Series(np.nan, index=ev.index)
++    ann, unk = typ == "DELIST_WRITEOFF", typ == "DELIST_WRITEOFF_UNKNOWN"
++    unk_cash = typ == "DELIST_UNKNOWN_LAST_CLOSE_CASH"
++    wa, wu = float(w[ann].fillna(0).sum()), float(w[unk].fillna(0).sum())
++    comb = wa + wu
++    n_a, n_u = int(ann.sum()), int(unk.sum())
++    held = typ == "BLOCKED_BUDGET_CASH_HELD"
++    from quantlab.platform.delist_accounting import delist_source_info
++    src = delist_source_info(delist_events)
++    return dict(basis=basis, unknown_policy=unknown_policy, recovery=float(recovery), g2_threshold=float(threshold),
++                n_writeoff_announced=n_a, writeoff_weight_announced=wa,
++                writeoff_value_announced=float(val[ann].fillna(0).sum()),
++                max_single_writeoff_weight_announced=float(w[ann].max()) if n_a else 0.0,
++                n_writeoff_unknown=n_u, writeoff_weight_unknown=wu,
++                writeoff_value_unknown=float(val[unk].fillna(0).sum()),
++                position_value_unknown=float(pos[unk].fillna(0).sum()),
++                n_unknown_last_close_cash=int(unk_cash.sum()),
++                combined_writeoff_weight=comb,
++                g2_triggered=bool(n_a >= 1 and comb >= threshold),
++                g2_if_unknown_alone_counted=bool(comb >= threshold),
++                g2_rule="n_announced>=1 and announced+UNKNOWN write-off weight>=threshold (主 Agent E-1 01:53; reading flagged)",
++                blocked_budget_cash_held_sessions=int(pd.to_numeric(ev.loc[held, "sessions"], errors="coerce").fillna(0).sum())
++                if held.any() else 0,
++                blocked_budget_cash_held_weight_sessions=float((pd.to_numeric(ev.loc[held, "sessions"], errors="coerce")
++                                                                * pd.to_numeric(ev.loc[held, "weight"], errors="coerce")).fillna(0).sum())
++                if held.any() else 0.0,
++                **src)
++
++
+ @dataclass
+ class ExecConfig:
+     fill: str = "next_open"            # close | next_open | next_vwap
+@@ -338,6 +405,27 @@
+     cash_rate_kind: str = "annual"           # Series: annual (decimal rate fixed at t-1, ACT/day_count) | return (per-session return, e.g. 511880)
+     cash_rate_day_count: float | None = None # Series 'annual': 365 default; 360 for Shibor basis
+     price_tick: float | str | None = None    # 'auto' = tick_for_code per code (0.001 funds, 0.01 stocks); e.g. 0.01: fill price (after slippage) rounded half-up like Ledger; None = off (backward compatible)
++    # ---- SD1 suspend/delist fix (2026-10-18; spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md sha256 2e428f39…bdbb0b).
++    # Defaults below are the SD0 (legacy) values: with all of them untouched the engine is exec_SD0 and none of the
++    # SD1 code runs, so the NAV is bit-identical to the pre-SD1 engine (acceptance T9). strategy_v1_sd1() = SD1.
++    halt_policy: str = "legacy"             # legacy | freeze_renorm (spec 3.1/3.2)
++    blocked_buy_budget: str = "renorm"      # renorm | cash (only with freeze_renorm; Core track = cash, ruling 1)
++    limit_policy: str = "open_touch"        # open_touch (legacy) | one_price_only | off (spec 3.4)
++    delist_policy: str = "legacy_lastmark"  # legacy_lastmark | sd1 (spec 3.5; sd1 needs delist_events, accounting layer only)
++    delist_forced_recovery: float = 0.0     # FORCED_* / UNKNOWN terminal value = recovery x last tradable close (ruling 2: 0)
++    delist_sensitivity: tuple = (0.0, 0.3, 0.7)   # recoveries for run_delist_sensitivity (scorecard columns, ruling 2)
++    delist_force_sell_in_period: bool = False     # SD1 (ruling 3): sell at every open from the PUBLIC period start, limit-down bound
++    ma_consideration_table: str | None = None     # Data's consideration table (MERGER_SWAP / CASH_OUT); None/missing -> fallback
++    ma_fallback: str = "last_close_cash"          # MERGER_SWAP / CASH_OUT without consideration: last close -> cash, flag MA_FALLBACK_LAST_CLOSE
++    delist_unknown_policy: str = "writeoff"       # E-1: writeoff (DELIST_WRITEOFF_UNKNOWN, recovery as forced; MAIN) | last_close_cash (disclosure)
++    g2_writeoff_threshold: float = SD1_G2_WRITEOFF_THRESHOLD
++
++    @property
++    def engine_version(self) -> str:
++        """exec_SD0 when every SD1 switch has its legacy value, else exec_SD1."""
++        legacy = (self.halt_policy == "legacy" and self.limit_policy == "open_touch"
++                  and self.delist_policy == "legacy_lastmark" and not self.delist_force_sell_in_period)
++        return "exec_SD0" if legacy else "exec_SD1"
+ 
+     @classmethod
+     def strategy_v1(cls, impact_k: float = 1.0, **overrides) -> "ExecConfig":
+@@ -350,9 +438,36 @@
+         kw.update(overrides)
+         return cls(**kw)
+ 
++    @classmethod
++    def strategy_v1_sd1(cls, impact_k: float = 1.0, *, track: str, **overrides) -> "ExecConfig":
++        """exec_SD1 = strategy_v1 + SD1 defaults (spec 3.0 table; rulings 主 Agent 01:03 ET, final):
++        halt freeze_renorm, limit open_touch, delist sd1 with recovery 0 (sensitivity 0/0.3/0.7),
++        forced sell from the public delisting-period start. Blocked-buy budget: ``cash`` for the Core track
++        (``track='core'``), ``renorm`` (pro-rata to the other holdings) for every other track. ``track`` is required."""
++        kw = dict(halt_policy="freeze_renorm", blocked_buy_budget=sd1_blocked_buy_budget(track),
++                  limit_policy="open_touch", delist_policy="sd1", delist_forced_recovery=0.0,
++                  delist_sensitivity=(0.0, 0.3, 0.7), delist_force_sell_in_period=True,
++                  ma_consideration_table=str(SD1_MA_CONSIDERATION_TABLE), ma_fallback="last_close_cash")
++        kw.update(overrides)
++        return cls.strategy_v1(impact_k=impact_k, **kw)
++
+     def __post_init__(self):
+         if self.fill not in ("close", "next_open", "next_vwap"):
+             raise ValueError(f"bad fill mode {self.fill}")
++        if self.halt_policy not in ("legacy", "freeze_renorm"):
++            raise ValueError(f"bad halt_policy {self.halt_policy}")
++        if self.blocked_buy_budget not in ("renorm", "cash"):
++            raise ValueError(f"bad blocked_buy_budget {self.blocked_buy_budget}")
++        if self.limit_policy not in ("open_touch", "one_price_only", "off"):
++            raise ValueError(f"bad limit_policy {self.limit_policy}")
++        if self.delist_policy not in ("legacy_lastmark", "sd1"):
++            raise ValueError(f"bad delist_policy {self.delist_policy}")
++        if not (0.0 <= float(self.delist_forced_recovery) <= 1.0):
++            raise ValueError(f"delist_forced_recovery must be in [0, 1], got {self.delist_forced_recovery}")
++        if self.ma_fallback != "last_close_cash":
++            raise ValueError(f"bad ma_fallback {self.ma_fallback}")
++        if self.delist_unknown_policy not in ("writeoff", "last_close_cash"):
++            raise ValueError(f"bad delist_unknown_policy {self.delist_unknown_policy}")
+         if self.unfilled not in ("carry", "drop"):
+             raise ValueError(f"bad unfilled rule {self.unfilled}")
+         if self.order_rounding not in ("target", "delta"):
+@@ -401,15 +516,18 @@
+     share_ratio: pd.DataFrame | None = None # bonus+transfer shares per held share on the ex-date (1.0 = 10-for-10)
+     adj_factor: pd.DataFrame | None = None  # multiplicative price adj factor (adj_px = px * F); fallback for events w/o data
+     terminal_price: pd.DataFrame | None = None  # CB redemption/maturity/put: CNY per bond paid to cash before the open on that row
++    halt_extra: pd.DataFrame | None = None  # SD1 only (bool): suspend_d full-day S, or intraday halt covering 09:30 (spec 3.1)
+ 
+     def aligned(self) -> "ExecPanels":
+         idx, cols = self.close.index, self.close.columns
+         def al(x):
+             return None if x is None else x.reindex(index=idx, columns=cols).astype(float)
+         sus = self.suspended.reindex(index=idx, columns=cols).fillna(False).astype(bool) if self.suspended is not None else None
++        hx = self.halt_extra.reindex(index=idx, columns=cols).fillna(False).astype(bool) if self.halt_extra is not None else None
+         return ExecPanels(self.close.astype(float), al(self.open), al(self.high), al(self.low), al(self.volume),
+                           al(self.amount), al(self.limit_up), al(self.limit_down), sus,
+-                          al(self.cash_div), al(self.share_ratio), al(self.adj_factor), al(self.terminal_price))
++                          al(self.cash_div), al(self.share_ratio), al(self.adj_factor), al(self.terminal_price),
++                          halt_extra=hx)
+ 
+ 
+ # ----------------------------------------------------------------- panel policy (NAV gap 2026-10-12)
+@@ -622,7 +740,8 @@
+ 
+ def run_weight_schedule(panels: ExecPanels, schedule: Mapping, *, initial_cash: float = 600_000.0,
+                         config: ExecConfig | None = None, record_fills: bool = False,
+-                        record_weights: bool = True, futures=None, margin=None) -> dict:
++                        record_weights: bool = True, futures=None, margin=None,
++                        delist_events: "pd.DataFrame | None" = None) -> dict:
+     """Run a weight schedule through the platform engine.
+ 
+     Order of a session t: (1) mark open -> ``nav_open``; (2) execute pending
+@@ -633,12 +752,28 @@
+ 
+     Returns dict: nav, nav_open (Series), costs breakdown, requested/filled
+     notional, fill_ratio, events (list), fills (optional), and (when
+-    ``record_weights``) ``target_weights`` / ``actual_weights`` float32
+-    DataFrames (session x code). target_weights: the latest signal's weights,
++    ``record_weights``) ``target_weights`` / ``actual_weights`` DataFrames (session x code): float32 for exec_SD0
++    (pristine execution.py 373fed30 L718-720/L882/L940 store them as float32 diagnostics; kept bit-identical), float64
++    for exec_SD1 (r3, Arch ruling 3: bookkeeping-grade weights; cash/shares/NAV were always float64). target_weights: the latest signal's weights,
+     carried forward until the next signal (0 before the first signal).
+     actual_weights: post-fill holdings at that session's close mark / nav.
++
++    SD1 (``cfg.engine_version == 'exec_SD1'``; spec docs/v2/ARCH_ENGINE_SUSPEND_DELIST_FIX_SPEC_ZH.md):
++    ``halt_policy='freeze_renorm'`` freezes names whose order is blocked at the execution open and re-normalises
++    the remaining budget pro-rata (no code-order squeeze); ``limit_policy`` selects open_touch / one_price_only /
++    off; ``delist_policy='sd1'`` settles post-last-trade holdings via ``delist_events`` (accounting layer, see
++    :mod:`quantlab.platform.delist_accounting`). SD1 adds ``sd1_events`` (DataFrame) to the result. With every
++    switch at its legacy value (exec_SD0) none of the SD1 code runs and the NAV is bit-identical to pre-SD1.
+     """
+     cfg = config or ExecConfig()
++    SD1_HALT = cfg.halt_policy == "freeze_renorm"
++    SD1_DELIST = cfg.delist_policy == "sd1"
++    LIM_MODE = cfg.limit_policy
++    if SD1_DELIST and delist_events is None:
++        raise ValueError("delist_policy='sd1' needs delist_events from quantlab.platform.delist_accounting "
++                         "(pass an empty frame to state 'no delisting in this universe')")
++    if (SD1_HALT or SD1_DELIST or cfg.delist_force_sell_in_period) and cfg.fill == "close":
++        raise NotImplementedError("exec_SD1 freeze/delist logic is specified for next_open / next_vwap fills only")
+     p = panels.aligned()
+     dates, codes = p.close.index, list(p.close.columns)
+     C = p.close.to_numpy()
+@@ -680,6 +815,27 @@
+         SUS = p.suspended.to_numpy() | ~np.isfinite(C)
+     else:
+         SUS = ~np.isfinite(C) | (np.isfinite(V) & (V <= 0))
++    sd1_ev: list = []
++    DL = _sd1_delist_plan(delist_events, dates, codes, C) if (SD1_DELIST or cfg.delist_force_sell_in_period) else {}
++    FS_FROM = {j: d["force_from"] for j, d in DL.items() if cfg.delist_force_sell_in_period and d.get("force_from") is not None}
++    if not SD1_DELIST:
++        DL = {}   # force-sell may be on without terminal settlement; terminal settlement only under delist_policy='sd1'
++    if SD1_HALT:
++        # spec 3.1: halted = suspend_d full-day S (halt_extra) | no bar while still listed (t <= last_trade_date)
++        #           | open_status halted AND volume == 0 (D-2: a traded one-price bar flagged 'halted' is NOT a halt)
++        has_vol = np.isfinite(V) & (V > 0)
++        nobar = ~np.isfinite(C)
++        for j, d in DL.items():
++            nobar[d["ltd_pos"] + 1:, j] = False   # after the last trade date: delisted, not halted (SD1 step 2)
++        SUS = nobar.copy()
++        if p.suspended is not None:
++            SUS |= p.suspended.to_numpy() & ~has_vol
++        elif p.volume is not None:
++            SUS |= np.isfinite(V) & (V <= 0)
++        if p.halt_extra is not None:
++            SUS |= p.halt_extra.to_numpy()
++    HI = p.high.to_numpy() if p.high is not None else None
++    LO = p.low.to_numpy() if p.low is not None else None
+     use_ca = bool(cfg.corporate_actions)
+     ca_flags: list = []
+     CD, SR, FR = corporate_action_arrays(p, flags=ca_flags) if use_ca else (None, None, None)
+@@ -715,9 +871,10 @@
+     requested = filled = 0.0
+     events, fills = [], []
+     impact_missing = 0
+-    TW = np.zeros((len(dates), len(codes)), dtype=np.float32) if record_weights else None
+-    AW = np.zeros((len(dates), len(codes)), dtype=np.float32) if record_weights else None
+-    cur_tw = np.zeros(len(codes), dtype=np.float32)
++    WDT = np.float32 if cfg.engine_version == "exec_SD0" else np.float64   # r3: SD0 = pristine float32; SD1 float64
++    TW = np.zeros((len(dates), len(codes)), dtype=WDT) if record_weights else None
++    AW = np.zeros((len(dates), len(codes)), dtype=WDT) if record_weights else None
++    cur_tw = np.zeros(len(codes), dtype=WDT)
+     reserve = [0.0]   # cash encumbered as futures margin (stock buys cannot use it)
+     from quantlab.platform.futures import FuturesBook, cash_rate_per_session
+     RATE = cash_rate_per_session(dates, cfg.cash_rate, cfg.cash_rate_convention, cfg.cash_rate_kind,
+@@ -738,6 +895,8 @@
+         done = {}
+         # Code-sorted fill order: independent of panel column index / width (NAV-gap fix).
+         for side in (-1, 1):
++            if SD1_HALT and side > 0:
++                _sd1_prorata_buys(t, day, mode_px)   # SD1 3.2: scale buys pro-rata to cash, no code-order squeeze
+             for j in sorted(pending.keys(), key=lambda i: codes[i]):
+                 rem = pending.get(j)
+                 if rem is None or rem == 0 or np.sign(rem) != side:
+@@ -748,11 +907,15 @@
+                     events.append(dict(date=str(day.date()), code=code, side=side, reason="suspended"))
+                     continue
+                 eps = LIMIT_EPS if TICK_LIM[j] >= 0.01 else 0.0005
+-                if cfg.enforce_limits and j not in free:
++                if cfg.enforce_limits and j not in free and LIM_MODE == "open_touch":
+                     if side > 0 and np.isfinite(LU[t, j]) and px0 >= LU[t, j] - eps:
+                         events.append(dict(date=str(day.date()), code=code, side=side, reason="limit_up")); continue
+                     if side < 0 and np.isfinite(LD[t, j]) and px0 <= LD[t, j] + eps:
+                         events.append(dict(date=str(day.date()), code=code, side=side, reason="limit_down")); continue
++                elif cfg.enforce_limits and j not in free and LIM_MODE == "one_price_only":
++                    if _one_price(t, j, side, px0, eps):
++                        events.append(dict(date=str(day.date()), code=code, side=side,
++                                           reason="limit_up" if side > 0 else "limit_down")); continue
+                 qty = abs(rem)
+                 if cfg.participation_cap is not None:
+                     vol = V[t, j]
+@@ -805,11 +968,192 @@
+                 if record_fills:
+                     fills.append(dict(date=str(day.date()), code=code, side=side, qty=qty, price=px, ref_price=px0,
+                                       commission=comm, stamp=stamp, impact=imp))
++                if FS_FROM and side < 0 and j in FS_FROM and t >= FS_FROM[j]:
++                    sd1_ev.append(dict(date=str(day.date()), code=code, type="DELIST_SOLD_IN_PERIOD", qty=float(qty),
++                                       price=float(px)))
+         if cfg.unfilled == "drop":
+             for j in list(pending):
+                 events.append(dict(date=str(day.date()), code=codes[j], reason="dropped_unfilled", remaining=pending[j]))
+             pending.clear()
+ 
++    def _one_price(t, j, side, px0, eps):
++        """one_price_only: block only a one-price bar (open=high=low=close at the limit)."""
++        lim = LU[t, j] if side > 0 else LD[t, j]
++        if not np.isfinite(lim):
++            return False
++        if HI is None or LO is None:   # no high/low panel: cannot prove an open board -> conservative open_touch
++            return bool((px0 >= lim - eps) if side > 0 else (px0 <= lim + eps))
++        at = (lambda x: bool(np.isfinite(x) and abs(x - lim) <= eps))
++        return at(px0) and at(HI[t, j]) and at(LO[t, j]) and at(C[t, j])
++
++    def _blocked(t, j, side, mode_px):
++        """Reason an order on (t, j, side) cannot fill at all (mirrors execute), else None."""
++        px0 = mode_px[t, j]
++        if SUS[t, j] or not np.isfinite(px0) or px0 <= 0:
++            return "HALT_BLOCKED"
++        if cfg.enforce_limits and j not in free and LIM_MODE != "off":
++            eps = LIMIT_EPS if TICK_LIM[j] >= 0.01 else 0.0005
++            if LIM_MODE == "open_touch":
++                if side > 0 and np.isfinite(LU[t, j]) and px0 >= LU[t, j] - eps:
++                    return "LIMIT_BLOCKED"
++                if side < 0 and np.isfinite(LD[t, j]) and px0 <= LD[t, j] + eps:
++                    return "LIMIT_BLOCKED"
++            elif _one_price(t, j, side, px0, eps):
++                return "LIMIT_BLOCKED"
++        return None
++
++    def _lot_floor(j, desired):
++        if not cfg.lots:
++            return desired
++        rule = lot_rule_for(codes[j])
++        units = desired / rule.step
++        if abs(units - round(units)) <= 1e-10:
++            units = round(units)
++        return np.floor(units) * rule.step
++
++    def _sd1_renorm(t, day, mode_px, nav_open, mo):
++        """Spec 3.2 at the execution open (info known at the t open): freeze blocked holdings F, drop blocked buys B,
++        re-normalise the remaining budget pro-rata to target weights. Acts only when F, B or BP is non-empty."""
++        tgt = sig_state["tgt"]
++        if tgt is None:
++            return
++        held = set(np.flatnonzero(shares > 0))
++        F, B, BP = {}, {}, set()   # BP: held names inside a public delisting period that the signal still targets
++        for j in sorted(held | set(tgt), key=lambda i: codes[i]):
++            d = pending.get(j, 0.0)
++            in_period = FS_FROM.get(j) is not None and t >= FS_FROM[j]
++            if j in held and abs(d) > 1e-9:
++                why = _blocked(t, j, int(np.sign(d)), mode_px)
++                if why:
++                    F[j] = why
++            elif j not in held and j in tgt:
++                why = _blocked(t, j, 1, mode_px)
++                if in_period:
++                    why = why or "DELIST_PERIOD"
++                if why:
++                    B[j] = why
++            if j in held and j in tgt and in_period and j not in F:
++                BP.add(j)
++        if not F and not B and not BP:
++            return
++        W = float(sum(tgt.values()))
++        VF = float(sum(shares[j] * mo[j] for j in F if np.isfinite(mo[j])))
++        budget = max(W * nav_open - VF, 0.0)   # NAV_open - V_F - cash buffer, cash buffer = (1 - sum w) * NAV_open
++        live = [k for k in tgt if k not in F and k not in B and k not in BP]
++        den = sum(tgt[k] for k in live) + (sum(tgt[k] for k in set(B) | BP) if cfg.blocked_buy_budget == "cash" else 0.0)
++        for j, why in F.items():
++            sd1_ev.append(dict(date=str(day.date()), code=codes[j], type=why, side=int(np.sign(pending.get(j, 0.0))),
++                               frozen_weight=float(shares[j] * mo[j] / nav_open) if nav_open > 0 else np.nan,
++                               target_weight=float(tgt.get(j, 0.0))))
++        for j in sorted(BP, key=lambda i: codes[i]):
++            sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_PERIOD", side=-1,
++                               frozen_weight=float(shares[j] * mo[j] / nav_open) if nav_open > 0 else np.nan,
++                               target_weight=float(tgt[j]), budget=cfg.blocked_buy_budget))
++        for j, why in B.items():
++            sd1_ev.append(dict(date=str(day.date()), code=codes[j], type=why, side=1, frozen_weight=0.0,
++                               target_weight=float(tgt[j]), budget=cfg.blocked_buy_budget))
++            pending.pop(j, None)   # a blocked buy is not carried: its budget is renormed (or kept as cash)
++        if cfg.blocked_buy_budget == "cash" and (B or BP):
++            # A2 (Arch): the blocked budget stays cash until the next signal (no re-buy on resumption); the
++            # BLOCKED_BUDGET_CASH_HELD event (sessions held) is closed at the next signal / end of run.
++            cash_hold.append(dict(start=t, start_date=str(day.date()), codes=[codes[j] for j in sorted(set(B) | BP)],
++                                  weight=float(sum(tgt[j] for j in set(B) | BP))))
++        moved = 0.0
++        for k in live:
++            px = mode_px[t, k]
++            if not (np.isfinite(px) and px > 0) or den <= 0:
++                continue
++            new = _lot_floor(k, tgt[k] * budget / den / px)
++            delta = new - shares[k]
++            moved += abs(tgt[k] * budget / den - tgt[k] * nav_open) / nav_open if nav_open > 0 else 0.0
++            if abs(delta) < 1e-9:
++                pending.pop(k, None)
++            else:
++                pending[k] = delta
++        sd1_ev.append(dict(date=str(day.date()), code="", type="RENORM", n_frozen=len(F), n_blocked_buy=len(B) + len(BP),
++                           frozen_value=VF, budget=budget, moved_weight=moved, mode=cfg.blocked_buy_budget,
++                           pricing="exec_day_open",
++                           note="no re-solve: exposure deviation vs solver is disclosed, not corrected (spec 3.2.4); "
++                                "A3: renormed shares priced at the execution-day open (PIT; SD0 prices at the signal close)"))
++
++    def _sd1_prorata_buys(t, day, mode_px):
++        buys = [j for j, q in pending.items() if q > 0 and _blocked(t, j, 1, mode_px) is None]
++        if not buys:
++            return
++        avail = cash - reserve[0] + credit[0]
++        need = 0.0
++        for j in buys:
++            px0 = mode_px[t, j]
++            px = round_to_tick(px0 * (1 + cfg.slippage), TICK[j])
++            q = pending[j]
++            if cfg.participation_cap is not None:
++                q = min(q, V[t, j] * cfg.participation_cap if np.isfinite(V[t, j]) else 0.0)
++            n_ = q * px
++            need += n_ + (max(MINC[j], n_ * COMM[j]) if (COMM[j] or MINC[j]) and q > 0 else 0.0)
++            if KJ[j] and q > 0:
++                need += float(sqrt_impact_cost(q * px0, ADV[t, j], SIG[t, j], KJ[j]))
++        if need <= 0 or need <= avail + 1e-9:
++            return
++        f = max(avail, 0.0) / need * (1.0 - 1e-9)
++        for j in buys:
++            pending[j] = pending[j] * f
++        sd1_ev.append(dict(date=str(day.date()), code="", type="PRORATA_BUY_SCALE", factor=float(f), n_buys=len(buys)))
++
++    def _sd1_terminal(t, day):
++        """Spec 3.5 step 2: first session after last_trade_date (accounting layer)."""
++        nonlocal cash
++        for j, d in DL.items():
++            if d["term_pos"] != t or shares[j] <= 0:
++                continue
++            q0 = float(shares[j]); last = d["last_close"]; typ = d["type"]
++            nav_ref = nav_out[t - 1] if t > 0 else float(initial_cash)
++            pv = q0 * last if np.isfinite(last) else 0.0
++            wgt = pv / nav_ref if nav_ref > 0 else np.nan
++            if typ == "UNKNOWN" and cfg.delist_unknown_policy == "last_close_cash":   # E-1 disclosure comparison only
++                cash += pv
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_UNKNOWN_LAST_CLOSE_CASH", delist_type=typ,
++                                   shares=q0, last_close=last, cash=pv, position_value=pv, weight=wgt,
++                                   flag="DISCLOSURE_ONLY_UNKNOWN_AT_LAST_CLOSE"))
++            elif typ in ("FORCED_PERIOD", "FORCED_NO_PERIOD", "UNKNOWN"):
++                rec = float(cfg.delist_forced_recovery)
++                amt = pv * rec
++                cash += amt
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j],
++                                   type="DELIST_WRITEOFF_UNKNOWN" if typ == "UNKNOWN" else "DELIST_WRITEOFF",
++                                   delist_type=typ, shares=q0, last_close=last, recovery=rec, cash=amt,
++                                   position_value=pv, writeoff_value=pv * (1 - rec), weight=wgt,
++                                   flag="UNKNOWN_SEPARATE_CATEGORY" if typ == "UNKNOWN" else ""))
++            elif typ == "MERGER_SWAP" and d.get("swap_ratio") and d.get("acq_col") is not None:
++                a = d["acq_col"]; ratio = float(d["swap_ratio"])
++                raw = q0 * ratio
++                whole = _lot_floor(a, raw)
++                frac_px = Cm[t, a] if np.isfinite(Cm[t, a]) else (Cm[t - 1, a] if t else np.nan)
++                odd = (raw - whole) * frac_px if np.isfinite(frac_px) else 0.0
++                shares[a] += whole; cash += odd
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_MA_CONVERT", shares=q0, swap_ratio=ratio,
++                                   acquirer=codes[a], new_shares=float(whole), odd_lot_cash=float(odd)))
++            elif typ == "CASH_OUT" and d.get("cash_per_share") is not None and np.isfinite(d["cash_per_share"]):
++                amt = q0 * float(d["cash_per_share"]); cash += amt
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_CASH_OUT", shares=q0,
++                                   cash_per_share=float(d["cash_per_share"]), cash=amt, pay_date=d.get("pay_date")))
++            else:   # MERGER_SWAP / CASH_OUT without consideration -> last close to cash, flagged
++                amt = q0 * last; cash += amt
++                sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="DELIST_FALLBACK", delist_type=typ, shares=q0,
++                                   last_close=last, cash=amt, flag="MA_FALLBACK_LAST_CLOSE"))
++            shares[j] = 0.0
++            pending.pop(j, None)
++            Cm[t:, j] = np.nan
++
++    sig_state = {"tgt": None, "fresh": False}
++    cash_hold: list = []   # A2 open BLOCKED_BUDGET_CASH_HELD spells (cash mode)
++
++    def _close_cash_hold(t_end, end_label):
++        for h in cash_hold:
++            sd1_ev.append(dict(date=h["start_date"], code="|".join(h["codes"]), type="BLOCKED_BUDGET_CASH_HELD",
++                               weight=h["weight"], sessions=int(t_end - h["start"]), end=end_label,
++                               note="A2: blocked-buy budget held as cash until the next signal (no re-buy on resumption)"))
++        cash_hold.clear()
++
+     marks_open = np.where(np.isfinite(O), O, Cm)
+     ca_cash = 0.0; ca_events = 0
+     term_cash_total = [0.0]
+@@ -847,6 +1191,8 @@
+                 shares[j] = 0.0
+                 pending.pop(j, None)
+                 Cm[t:, j] = np.nan   # no further marks after payout
++        if SD1_DELIST and DL:
++            _sd1_terminal(t, day)
+         prev_mark = Cm[t - 1] if t else Cm[t]
+         mo = np.where(np.isfinite(marks_open[t]) & ~SUS[t], marks_open[t], np.where(np.isfinite(Cm[t]), Cm[t], prev_mark))
+         navo_out[t] = cash + float(np.nansum(shares * np.nan_to_num(mo)))
+@@ -857,6 +1203,18 @@
+             reserve[0] = fb.margin_req(t, fb.O[t] if cfg.fill != "close" else None)
+         if mb is not None:
+             credit[0] = mb.credit(navo_out[t], cash)
++        if FS_FROM:
++            for j, f0 in FS_FROM.items():
++                if t >= f0 and shares[j] > 0:
++                    pending[j] = -float(shares[j])   # spec 3.5 step 1 / ruling 3: forced sell at every open of the period
++        if SD1_HALT:
++            for j in np.flatnonzero(shares > 0):
++                if SUS[t, j]:
++                    sd1_ev.append(dict(date=str(day.date()), code=codes[j], type="HALT_HOLD",
++                                       weight=float(shares[j] * mo[j] / navo_out[t]) if navo_out[t] > 0 else np.nan))
++            if sig_state["fresh"] and pending and cfg.fill != "close":
++                _sd1_renorm(t, day, PX, navo_out[t], mo)
++            sig_state["fresh"] = False
+         if cfg.fill != "close" and pending:
+             execute(t, day, PX)
+             if liq_pending:
+@@ -878,8 +1236,12 @@
+                     reserve[0] = fb.margin
+             pending = {}
+             tgt = {col[c]: float(x) for c, x in w.items() if c in col and x > 0}
++            if cash_hold:
++                _close_cash_hold(t, str(day.date()))
++            if SD1_HALT:
++                sig_state["tgt"] = dict(tgt); sig_state["fresh"] = True
+             if record_weights:
+-                cur_tw = np.zeros(len(codes), dtype=np.float32)
++                cur_tw = np.zeros(len(codes), dtype=WDT)
+                 for j, x in tgt.items():
+                     cur_tw[j] = x
+             # Stable code order (not set/hash or column-index order) so full vs schedule-only
+@@ -937,7 +1299,21 @@
+         if record_weights:
+             TW[t] = cur_tw
+             if nav_out[t] > 0:
+-                AW[t] = (shares * np.nan_to_num(Cm[t]) / nav_out[t]).astype(np.float32)
++                AW[t] = (shares * np.nan_to_num(Cm[t]) / nav_out[t]).astype(WDT)
++    if cash_hold:
++        _close_cash_hold(len(dates), "end_of_run")
++    sd1_summary = None
++    if cfg.engine_version == "exec_SD1":
++        sd1_summary = sd1_delist_summary(sd1_ev, delist_events=delist_events, unknown_policy=cfg.delist_unknown_policy,
++                                         recovery=cfg.delist_forced_recovery, threshold=cfg.g2_writeoff_threshold)
++        sd1_summary.update(a3_renorm_priced_at_exec_open=True,
++                           n_renorm=sum(1 for e in sd1_ev if e.get("type") == "RENORM"),
++                           halt_extra_source="suspend_flags_v2" if p.halt_extra is not None else
++                           "none(A11: open_status+volume only; P2-3 same-day volume used for fill feasibility only)")
++        sd1_ev.append(dict(date="", code="", type="G2_CHECK", weight=sd1_summary["combined_writeoff_weight"],
++                           g2_triggered=sd1_summary["g2_triggered"], n_writeoff_announced=sd1_summary["n_writeoff_announced"],
++                           n_writeoff_unknown=sd1_summary["n_writeoff_unknown"],
++                           delist_source=sd1_summary["delist_source"], source_sha256=sd1_summary["source_sha256"]))
+     nav = pd.Series(nav_out, index=dates)
+     total_cost = sum(cost.values())
+     enh = pd.Series(ENH, index=dates, name="effective_n_holdings")
+@@ -960,7 +1336,74 @@
+                 terminal_payout_cash=term_cash_total[0],
+                 corporate_action_cash=ca_cash, corporate_action_events=ca_events, corporate_action_flags=ca_flags,
+                 target_weights=None if TW is None else pd.DataFrame(TW, index=dates, columns=codes),
+-                actual_weights=None if AW is None else pd.DataFrame(AW, index=dates, columns=codes))
++                actual_weights=None if AW is None else pd.DataFrame(AW, index=dates, columns=codes),
++                # SD0 result keys are unchanged (paper-safety: identical dict to 373fed30); SD1 adds two keys.
++                **({"engine_version": "exec_SD1", "sd1_events": pd.DataFrame(sd1_ev), "sd1_summary": sd1_summary}
++                   if cfg.engine_version == "exec_SD1" else {}))
++
++
++def _sd1_delist_plan(delist_events, dates, codes, C) -> dict:
++    """Map accounting-layer delist events onto panel positions: {col: dict(type, ltd_pos, term_pos, last_close,
++    force_from, swap_ratio, acq_col, cash_per_share, pay_date)}. Codes match on ``code`` / ``instrument_id`` / ``ts_code``.
++    Only names present in the table are delisted; a trailing-NaN name absent from the table keeps the legacy
++    last-mark hold (nothing is inferred from missing data)."""
++    out: dict = {}
++    if delist_events is None or len(delist_events) == 0:
++        return out
++    col = {str(c): i for i, c in enumerate(codes)}
++    idx = pd.DatetimeIndex(dates)
++    nan_ok = lambda v: v is not None and not (isinstance(v, float) and np.isnan(v)) and v is not pd.NaT
++    for r in delist_events.to_dict("records"):
++        j = None
++        for k in ("code", "instrument_id", "ts_code"):
++            v = r.get(k)
++            if nan_ok(v) and str(v) in col:
++                j = col[str(v)]; break
++        if j is None:
++            continue
++        ltd_pos = int(idx.searchsorted(pd.Timestamp(r["last_trade_date"]), side="right")) - 1
++        term_pos = ltd_pos + 1 if ltd_pos + 1 < len(idx) else None
++        col_c = C[: max(ltd_pos, 0) + 1, j]
++        fin = np.flatnonzero(np.isfinite(col_c))
++        last_close = float(col_c[fin[-1]]) if len(fin) else float(r.get("last_close") or np.nan)
++        typ = str(r.get("type") or "UNKNOWN")
++        if typ not in SD1_DELIST_TYPES:
++            typ = "UNKNOWN"
++        ff = r.get("force_sell_from")
++        force_from = int(idx.searchsorted(pd.Timestamp(ff), side="left")) if nan_ok(ff) and pd.notna(ff) else None
++        nms = r.get("needs_manual_source")
++        if nan_ok(nms) and pd.notna(nms) and bool(nms):
++            force_from = None   # Arch P1-5: needs_manual_source=True never triggers a forced sell (defence in depth)
++        acq = r.get("acquirer"); sw = r.get("swap_ratio"); cps = r.get("cash_per_share"); pdt = r.get("pay_date")
++        out[j] = dict(type=typ, ltd_pos=ltd_pos, term_pos=term_pos, last_close=last_close, force_from=force_from,
++                      swap_ratio=float(sw) if nan_ok(sw) and pd.notna(sw) else None,
++                      acq_col=col.get(str(acq)) if nan_ok(acq) and pd.notna(acq) else None,
++                      cash_per_share=float(cps) if nan_ok(cps) and pd.notna(cps) else None,
++                      pay_date=str(pdt) if nan_ok(pdt) and pd.notna(pdt) else None)
++    return out
++
++
++def run_delist_sensitivity(panels: "ExecPanels", schedule: Mapping, *, delist_events, initial_cash: float = 600_000.0,
++                           config: "ExecConfig", **kw) -> dict:
++    """Spec 3.5 / ruling 2 / 主 Agent E-1 final (01:53 ET). ``config`` is required (it carries the track's budget rule).
++    Returns {recovery: result for r in config.delist_sensitivity} + {"unknown_last_close_cash": result}.
++    MAIN basis = recovery 0 with UNKNOWN written off (DELIST_WRITEOFF_UNKNOWN); every other entry is DISCLOSURE ONLY
++    (sd1_summary.basis says which). Real-data use needs an Arch .ok."""
++    cfg = config
++    main_r = float(cfg.delist_forced_recovery)
++    out = {}
++    for r in cfg.delist_sensitivity:
++        res = run_weight_schedule(panels, schedule, initial_cash=initial_cash,
++                                  config=replace(cfg, delist_forced_recovery=float(r), delist_unknown_policy="writeoff"),
++                                  delist_events=delist_events, **kw)
++        res["sd1_summary"]["basis"] = "main" if float(r) == main_r == 0.0 else "sensitivity_disclosure_only"
++        out[float(r)] = res
++    res = run_weight_schedule(panels, schedule, initial_cash=initial_cash,
++                              config=replace(cfg, delist_forced_recovery=main_r, delist_unknown_policy="last_close_cash"),
++                              delist_events=delist_events, **kw)
++    res["sd1_summary"]["basis"] = "sensitivity_disclosure_only"
++    out["unknown_last_close_cash"] = res
++    return out
+ 
+ 
+ # ----------------------------------------------------------------- capacity

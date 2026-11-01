@@ -1,0 +1,23 @@
+# AI 叶32 Margin Net Flow Resid X2 selfcheck_v1 RUNNING_ACK
+
+- ET: 2026-10-27 05:26 ET（America/New_York；`2026-10-27T05:26:15-04:00`）
+- status: **RUNNING**（开跑瞬间快照；完结见 RUN_RECEIPT）
+- ET_TS: `20261027_052540`
+- pid: `4008220` alive=False@ACK nice=10
+- script: `research/leaf32_margin_net_flow_resid_x2_selfcheck_v1.py` sha8 **`dcf6b559`** / 全长 `dcf6b559165e43dcaa56df8adc3cb5d9574b6b55cc5ba20cf39d97b0285cda4f`
+- `.ok`: `output/ai_factory/ARCH_RUN_AUTH_LEAF32_MARGIN_NET_FLOW_RESID_X2_SELFCHECK_V1_HILIQ_X2.ok` sha8 **`5774bb6e`** / 全长 `5774bb6e8a1ad3e5dc879561b4cb3f08b9a6ad67e2bbdf34168f9c2117d26909`
+- QUIET: `output/loop/RESEARCH_QUIET.lock` sha8 **`3301eb86`** holder=`leaf32_MARGIN_NET_FLOW_RESID_X2_SELFCHECK_V1`（**未擅 lift**；do_not_lift）
+- SIGNED回执: `docs/v2/audit/ARCH_LEAF32_MARGIN_NET_FLOW_RESID_X2_SELFCHECK_OK_SIGNED_20261027_ZH.md` sha8 **`e00f8f51`**
+- 审: **`3d7a5848`**；CMD: **`754bf251`**（禁 `--arch-ok-path`）；COVER/DIFF/RECEIPT **`e901405b`/`3f98d664`/`30af740d`**
+- 钉 alpha **`13eee6fd`** / meta **`e510f346`** / overlap **`a643d71a`**；构建 **`4e0f3c00` UNCHANGED**；模板 **`e1fe578c` UNCHANGED**；闸 **`1aa432a5`**
+- out: `output/ai_factory/_leaf32_margin_flow/20261027_042805/_selfcheck/`
+- report: `output/ai_factory/leaf_reports/leaf32_margin_flow/selfcheck_v1.json`
+- log: `output/ai_factory/_leaf32_margin_flow/20261027_042805/_selfcheck/_logs/run_20261027_052540.log`
+- samp: `/tmp/quantlab_leaf32_x2_selfcheck_20261027_052540`
+- approved_cmd: **exact**（**无** `--arch-ok-path`）
+- cmdline: `/workspace/qlvenv/bin/python research/leaf32_margin_net_flow_resid_x2_selfcheck_v1.py --universe HILIQ --window x2 --execute`
+- prelaunch: QUIET MATCH `3301eb86`；healthz quiet=true gen/snapshot/kline=false child_pids={}；wait≥15s 复检；pgrep data readers empty；MemAvailable≈12.2Gi≥soft；script/ok/alpha/meta/overlap/build MATCH；dry-compile-only PASS（executed=false）；IN_WINDOW expires 06:50；cmdline 无 `--arch-ok-path`
+- rss_limit_mb: **1500 禁抬**；硬 ABORT + peak_proof REQUIRED
+- forbid∋`02426b73`+`4bb141c9`+`fdbaa512`+`aa25e989`+`7e239487`+`5af20222`+`5ae077fa`
+- ≠X2 ACCEPT / ≠Book-Smoke / ≠重跑 alpha；live=false；`0087c928` 另队
+- 完后写 RUN_RECEIPT → 交 Arch CONSUME；**勿报 Leo**；**勿擅 lift QUIET**

@@ -1,0 +1,46 @@
+# AI_LEAF27_CHUNKED_MONTH_DIFF_DRAFT_20261025
+# role: QuantLab AI
+# written_et: 2026-10-25T14:20:03-04:00
+# status: DRAFT_ONLY · ok_requested=false · live=false · HOLD_UNTIL_ARCH_VOID
+# kind: CLI-ONLY change note (NO research/*.py byte change)
+# script_path: research/leaf27_chunked_members_mktcap_r1.py
+# script_sha256: 262f9bf6878d5c64956529a680abbf36e45adfe72fc7dedc4c68dc1c40291a10
+# script_status: UNCHANGED (already supports --chunk-mode month|ndays)
+# abort_receipt_sha256: 4e37aacc17998682a8713fe4e4648d40f4e8ac3fcbb3741182838ded849b879b
+# abort_ok_sha8_pending_void: 3a6caa4f
+# prior_quarter_cover_sha256: e42ce686d9d21d3cc9fd3f7fb9018f7f24b0dfa06806a43f3637bb31f2bd9f16
+# prior_quarter_cmd_sha256: cdf3a2295e395358fca9cbc4ccaf3bcfec6531878811597d294ff8d7b24685eb
+# prior_quarter_diff_sha256: b1a36d3849dfe6e74f8ed7f14bc78410f4289071f75e0124f07c998f44022635
+# prior_review_sha256: 282d6ca127f44050b8c1266d027417593365dc12dd6a13073a6f432124e690bb
+# rss_limit_mb: 1500 (NO raise)
+# forbid_restored_ok: 8bcd79dc… / 725be3e0… / 3a6caa4f… (after VOID)
+# factor_pins: UNCHANGED
+#
+# Summary:
+#   SCRIPT BYTES UNCHANGED — no unified hunk against research/*.py.
+#   Package delta vs quarter CMD is CLI flag only:
+#     --chunk-mode quarter  →  --chunk-mode month
+#   FALLBACK (separate future .ok, only if month ABORT_RSS):
+#     --chunk-mode ndays --chunk-ndays 40
+#   Do NOT invent code changes; hist-accumulation risk disclosed in COVER.
+#
+# Empty code hunk (intentional):
+--- a/research/leaf27_chunked_members_mktcap_r1.py
++++ b/research/leaf27_chunked_members_mktcap_r1.py
+@@ -0,0 +0 @@
+# (no textual change; sha256 remains 262f9bf6878d5c64956529a680abbf36e45adfe72fc7dedc4c68dc1c40291a10)
+#
+# CLI delta (documentation; not applied to any file under research/):
+--- a/approved_cli_quarter
++++ b/approved_cli_month_PRIMARY
+@@ -1,1 +1,1 @@
+-PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode quarter
++PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode month
+#
+--- a/approved_cli_month_PRIMARY
++++ b/approved_cli_ndays40_FALLBACK
+@@ -1,1 +1,1 @@
+-PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode month
++PYTHONDONTWRITEBYTECODE=1 /workspace/qlvenv/bin/python research/leaf27_chunked_members_mktcap_r1.py --universe HILIQ --window x2 --chunk-mode ndays --chunk-ndays 40
+#
+# live=false; NOT authorization; do not run; do not request .ok this turn.

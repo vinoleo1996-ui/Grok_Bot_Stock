@@ -1,0 +1,28 @@
+2026-10-18 04:52:47 EDT
+94403 state: T
+-- forbidden scan:
+MemAvailable:   11266384 kB
+-- pins:
+4b40b6b8b43eef4511aea07343c439a7691dfb23bcf89113432946c5dfb4cd21  scripts/fix_sd1/build_cs_panel_v2_resumefix.py
+53013099315348fd21a12673270aebca2204810f5868653eed22ad4c5e69ce73  scripts/fix_sd1/build_suspend_flags_v2.py
+a641626f42defe2d2ece3b7457ecfa76fac40e460387483dcdcd885e87f0d732  scripts/fix_sd1/build_stock_delisted_v2.py
+c275e15250942553529cc101d8302ec641f0b216150649e0a118a71a4b7d07fa  scripts/fix_sd1/sd1_common.py
+362e323994d3e40181ee2f26da3864c5fdf4720c0b1f1a5e35b095652eec3bbe  docs/v2/DATA_CS_PANEL_RESUME_REBUILD_PLAN_ZH.md
+dd84efe8ff63ae3657d99d31ac3bb39927e80c458df69033bc56012093bf492a  docs/v2/DATA_SUSPEND_DELIST_FIX_PLAN_ZH.md
+-- outputs:
+ls: cannot access 'output/ai_factory/panel_cache_v2_fixesnone': No such file or directory
+ls: cannot access 'output/ai_factory/panel_cache_v2_resumefix': No such file or directory
+ls: cannot access 'data/v2/suspend_flags': No such file or directory
+ls: cannot access 'data/v2/ref/stock_delisted_v2.parquet': No such file or directory
+ls: cannot access 'scripts/fix_sd1/__pycache__': No such file or directory
+-- quantlab-web:
+-- ps:
+     53       7 Ss   14736    03:47:04  \_ /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S    32564    03:47:03      \_ /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+  27427   27186 S    35112    03:38:18      |   \_ /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  27366      53 Ss   24208    03:38:18      \_ /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  80415   26442 Sl   170476   03:35:32  \_ python3 -X utf8 server.py
+ 469481   80415 ZN       0       00:08      \_ [python3] <defunct>
+  94322   94319 Ssl  140884   03:30:23  \_ python3 scripts/acquire/remaining_after_stk_surv.py
+  94403   94401 Ts   35612    03:30:21  \_ python3 scripts/acquire/relay_outage_backfill.py
+ 212762   94403 Z        0    02:24:26      \_ [python3] <defunct>

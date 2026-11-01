@@ -1,0 +1,7 @@
+     53       7 Ss      06:06:20 14372 /usr/bin/python3 /usr/local/bin/sand-exit-watch --telemetry-log /tmp/sand-box-telemetry.log --exec-owner 323 --supervise-owner 27167 --daemon-launcher orbitd=/usr/local/libexec/sand/orbitd/start
+    204      53 S       06:06:20 30704 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 --token-plugin TokenFile --token-source /tmp/sand-novnc-tokens.d 0.0.0.0:6081
+  27366      53 Ss      05:57:34 23892 /usr/bin/python3 /usr/local/bin/sand-memory-watch --telemetry-log /tmp/sand-box-telemetry.log
+  27427   27186 S       05:57:34 33032 /usr/bin/python3 /usr/bin/websockify --web=/usr/share/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900
+  80415   26442 Sl      05:54:49 161032 python3 -X utf8 server.py
+  94322   94319 Tsl     05:49:40 135048 python3 scripts/acquire/remaining_after_stk_surv.py
+ 734328   80415 ZN         00:20     0 [python3] <defunct>

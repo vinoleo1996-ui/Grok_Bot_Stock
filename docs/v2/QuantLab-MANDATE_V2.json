@@ -1,0 +1,340 @@
+{
+  "mandate_id": "QuantLab-MANDATE_V2",
+  "version": "2.0.0-defaults-locked",
+  "status": "defaults_locked_not_promoted",
+  "promotion_approved": false,
+  "created_at": "2026-10-10T07:57:00-04:00",
+  "timezone_note": "America/New_York (ET); China market decisions use China trading calendar",
+  "operator": "Leo",
+  "design_ref": "QuantLab-STRATEGY_DESIGN_V2.md",
+  "supersedes": {
+    "agents_md_position_cap": "AGENTS.md 最多50只 / STRATEGY.md 最多20只主账户 → V2 默认 30–60",
+    "risk_policy_halt": "旧 P1/P2 的 25% 永久不自动恢复 → V2 可恢复回撤缩放（极档可要求人工确认，非策略死亡）",
+    "mainline": "废弃 microcap 带宽篮 / legacy_repaired 作晋升主线"
+  },
+  "capital": {
+    "initial_cny": 600000,
+    "currency": "CNY",
+    "leverage_allowed": false,
+    "short_selling_allowed": false,
+    "margin_allowed": false,
+    "cash_allowed": true,
+    "cash_is_active_risk_tool": true,
+    "min_cash_buffer_normal": 0.02,
+    "comment": "主结论须 60万∧100万同时过；JSON initial_cny=600000 为默认单次初始。现金合法；现货无杠杆/无融资。Leo 门锁见 gates_research_targets_not_promises.leo_lock_20261012。",
+    "primary_aum_dual_cny": [
+      600000,
+      1000000
+    ]
+  },
+  "markets": {
+    "allowed_asset_types": [
+      "stock",
+      "equity_etf"
+    ],
+    "exchanges": [
+      "SSE",
+      "SZSE"
+    ],
+    "exclude_bse_default": true,
+    "benchmark_primary": "CSI300",
+    "benchmark_etf_examples": [
+      "510300",
+      "510500",
+      "512100"
+    ],
+    "overseas_assets_default": false,
+    "commodity_gold_default": false,
+    "comment": "仅 A 股股票 + 境内股票 ETF。黄金/纳指等默认不做（避免事后挑选偏差）；若启用须单独预注册。",
+    "benchmark_etf": "510300",
+    "benchmark_rationale": "宽基主基准：沪深300；Beta 袖套默认用 510300。小盘对照臂可用中证1000/512100，不作为主基准。"
+  },
+  "universe": {
+    "mask_first": true,
+    "listing_min_trading_days": 120,
+    "listing_min_trading_days_alt": 120,
+    "exclude_st": true,
+    "exclude_delisting_arrangement": true,
+    "liquidity_rule": {
+      "metric": "median_amount_20d",
+      "threshold_cny_primary": 30000000,
+      "threshold_cny_alt_research": 5000000,
+      "primary_label": "U30",
+      "alt_label": "U5",
+      "active_label": "U30",
+      "threshold_cny_active": 30000000
+    },
+    "microcap_policy": {
+      "mode": "exclude_bottom_pct",
+      "exclude_bottom_mktcap_pct": 0.3,
+      "hard_cap_portfolio_weight": 0.0,
+      "hard_cap_alt_range": [
+        0.0,
+        0.15
+      ],
+      "lsy_reference": "Liu-Stambaugh-Yuan Size and Value in China: shell contamination in smallest ~30%",
+      "microcap_as_universe_banned": true,
+      "rationale": "默认剔除最小约30%市值（LSY壳污染）；不做微盘硬顶并存，避免宇宙仍含壳层。"
+    },
+    "tradability_masks": [
+      "suspended",
+      "limit_up_buy_block",
+      "limit_down_sell_block",
+      "st_flag",
+      "adv_fail",
+      "data_gap"
+    ],
+    "etf_role": "beta_sleeve_only_default",
+    "comment": "先掩码后因子。微盘不得定义为宇宙本身；二选一：剔除最小市值约30%，或保留但风格硬顶。",
+    "listing_min_trading_days_locked": true
+  },
+  "portfolio_limits": {
+    "max_positions_stocks": 60,
+    "min_positions_target": 30,
+    "max_positions_soft_note": "相对旧 STRATEGY 最多20 / AGENTS 上限50；V2 默认目标区间 30–60",
+    "max_single_stock_weight": 0.05,
+    "max_single_stock_weight_soft": 0.05,
+    "max_single_stock_weight_alt_range": [
+      0.04,
+      0.06
+    ],
+    "max_industry_weight": 0.25,
+    "max_industry_weight_alt_range": [
+      0.2,
+      0.3
+    ],
+    "industry_scheme": "SW_L1",
+    "unknown_industry_cap": 0.25,
+    "max_etf_sleeve_weight": 0.4,
+    "max_order_vs_adv20": 0.01,
+    "lot_size_rounding": "floor_buy_to_lot",
+    "min_trade_notional_cny": 2000
+  },
+  "style_budget": {
+    "enabled": true,
+    "exposure_basis": "holdings_weighted_z_vs_universe_or_benchmark",
+    "size": {
+      "tilt_allowed": true,
+      "as_main_alpha": false,
+      "microcap_hard_cap_weight": 0.0,
+      "comment": "允许小盘倾斜但非主 alpha；微盘硬顶与 universe.microcap_policy 一致",
+      "note": "与 exclude_bottom_pct=30% 一致：默认不额外保留微盘硬顶仓位"
+    },
+    "value": {
+      "direction": "long_tilt_allowed",
+      "max_abs_z_exposure": 1.0
+    },
+    "momentum": {
+      "direction": "long_tilt_allowed",
+      "max_abs_z_exposure": 1.0,
+      "joint_with_value": true
+    },
+    "quality": {
+      "direction": "long_tilt_allowed",
+      "max_abs_z_exposure": 1.0,
+      "soft_ban_loss_making_high_leverage": true
+    },
+    "low_vol": {
+      "optional": true,
+      "max_abs_z_exposure": 0.75
+    }
+  },
+  "risk": {
+    "target_annual_vol": 0.16,
+    "target_annual_vol_range": [
+      0.14,
+      0.18
+    ],
+    "target_beta_vs_benchmark": 0.7,
+    "covariance": {
+      "estimator": "ledoit_wolf",
+      "comment": "配权默认 LW 收缩协方差；等权为强制对照臂"
+    },
+    "vol_targeting": {
+      "enabled": true,
+      "action_when_above_target": "scale_down_risk_assets_raise_cash_or_broad_etf"
+    },
+    "drawdown_scaler": {
+      "enabled": true,
+      "reference": "peak_nav_unreset",
+      "recoverable": true,
+      "permanent_halt_banned": true,
+      "levels": [
+        {
+          "drawdown_gte": 0.12,
+          "action": "multiply_effective_target_vol_by_0.75",
+          "label": "L1"
+        },
+        {
+          "drawdown_gte": 0.18,
+          "action": "cap_risk_asset_weight_at_0.60",
+          "label": "L2"
+        },
+        {
+          "drawdown_gte": 0.22,
+          "action": "cap_risk_asset_weight_at_0.30_and_block_new_risk",
+          "label": "L3"
+        },
+        {
+          "drawdown_gte": 0.25,
+          "action": "cancel_buys_continue_exits_require_human_confirm_to_add_risk",
+          "label": "L4_extreme",
+          "permanent_strategy_death": false,
+          "auto_restore": false,
+          "restore_requires": "human_confirm_plus_recovery_rule"
+        }
+      ],
+      "recovery": {
+        "mode": "stepwise_recoverable",
+        "rule": "当净值自高点回撤低于对应档门槛再减 3 个百分点，且实现波动回到目标带内，连续 N=5 个交易日后逐档恢复风险预算",
+        "recovery_buffer_pp": 0.03,
+        "consecutive_sessions_N": 5,
+        "extreme_tier_auto_restore": false,
+        "diff_vs_legacy_P2": "旧 P2 于 25% 不自动恢复（近似永久停机）；V2 设计默认可恢复，极档人工确认为操作政策而非策略死亡"
+      },
+      "disclaimer": "回撤档位是研究/操作预算，不能保证跳空或锁仓下实盘最大损失不超过阈值。"
+    },
+    "target_beta_band": [
+      0.5,
+      0.85
+    ]
+  },
+  "signal_construction": {
+    "default_mode": "integrate",
+    "mix_mode": "control_arm_only",
+    "composite_members_proposed": [
+      "V01_EP",
+      "V02_BP",
+      "M01_12_1",
+      "Q01_profitability",
+      "Q03_safety",
+      "L01_RV60"
+    ],
+    "size_factor_S01": "monitor_and_hard_cap_only_not_main_alpha",
+    "nonlinear_default": false,
+    "industry_neutral_residual_book": true,
+    "optional_mktcap_neutral": true
+  },
+  "rebalance": {
+    "mask_and_eligibility": "daily",
+    "risk_budget_and_vol_scale": "daily",
+    "ordinary_rebalance": "biweekly",
+    "ordinary_rebalance_alts": [
+      "weekly",
+      "biweekly",
+      "monthly_low_turnover_control"
+    ],
+    "decision_time_china": "18:00",
+    "execution": "next_trading_day_open",
+    "t_plus_1": true,
+    "forced_risk_exit": "daily",
+    "turnover_budget_monthly_one_way": 0.35,
+    "turnover_budget_note": "月单边换手预算35%；超预算按 marginal score/cost 截断"
+  },
+  "costs": {
+    "commission_bps_one_way": 2.5,
+    "commission_min_cny_per_order": 5.0,
+    "stamp_tax_sell_only": true,
+    "stamp_tax_schedule": "historical_CN_table",
+    "stamp_tax_note": "2023-08-28 前卖出 10bp，之后 5bp（以官方历史税率为准）",
+    "slippage_bps_one_way": 5.0,
+    "slippage_may_tier_by_adv": true,
+    "fast_sim_not_promotion_evidence": true,
+    "all_promotion_paths_must_use_tax_commission_module": true,
+    "cost_rationale": "零售偏保守：佣金万2.5+最低5元；单边滑点5bp；印花税按历史卖出表"
+  },
+  "execution_contract": {
+    "signal_uses_only_available_at": true,
+    "ledger_prices": "raw_open_close",
+    "features_may_use_adj": true,
+    "no_fabricated_fills_on_limit_or_suspend": true,
+    "locked_positions_retain_shares": true,
+    "corporate_actions_via_actions_table": true
+  },
+  "explicit_bans": [
+    {
+      "id": "BAN_F01_REINDEX",
+      "rule": "禁止 F01 式因子权重与证券索引静默错位；晋升路径必须有索引对齐单测"
+    },
+    {
+      "id": "BAN_FEE_BUG",
+      "rule": "禁止费用/印花税/最低佣金遗漏；快速 sim 不得作为晋升证据"
+    },
+    {
+      "id": "BAN_PERMANENT_HALT_AT_DD",
+      "rule": "禁止「触及某回撤即永久停止策略」；V2 使用可恢复回撤缩放（极档可人工确认）"
+    },
+    {
+      "id": "BAN_MICROCAP_AS_UNIVERSE",
+      "rule": "禁止以微盘/带宽篮作为宇宙定义或耐久主 alpha；微盘仅可为有硬顶的风格倾斜"
+    },
+    {
+      "id": "BAN_SURVIVORSHIP_POOL",
+      "rule": "禁止用今日名单回放历史宇宙"
+    },
+    {
+      "id": "BAN_LOOKAHEAD_FUNDAMENTALS",
+      "rule": "财务无公告时刻则至少推迟到下一交易日可得"
+    },
+    {
+      "id": "BAN_PROMISED_RETURNS",
+      "rule": "禁止将门禁区间表述为预期/承诺收益"
+    }
+  ],
+  "gates_research_targets_not_promises": {
+    "net_cagr_after_costs": {
+      "range": [
+        0.12,
+        0.18
+      ],
+      "note": "研究门禁语言，非收益承诺；高于18%不自动否决"
+    },
+    "max_drawdown_research": {
+      "not_worse_than_range": [
+        -0.25,
+        -0.32
+      ],
+      "fill_exact": -0.28,
+      "not_worse_than": -0.28
+    },
+    "subperiod_positive": true,
+    "multiple_testing": "Harvey_style_or_family_correction",
+    "promotion_approved": false,
+    "note": "精确门禁：研究净成本 CAGR 12%–18%；最大回撤不差于 -28% （落在 -25%~-32% 中位偏严）。Leo 2026-10-12 确认沿用。",
+    "leo_lock_20261012": "Leo 2026-10-12 拍板：门锁沿用本 JSON——净成本 CAGR 12%–18%；MDD 不差于 −28%。否决 UNIFIED 草案曾写的 12–15% / ≤25%。"
+  },
+  "architecture_layers": {
+    "L0": "tradability_universe_mask",
+    "L1": "beta_sleeve_cash_plus_equity_etf",
+    "L2": "style_risk_budget_with_microcap_hard_cap",
+    "L3": "industry_neutral_residual_alpha_book_30_to_60"
+  },
+  "fill_before_experiments": [],
+  "defaults_locked_at": "2026-10-10T08:40:00-04:00",
+  "defaults_locked_by": "New Bot (proposed defaults for Leo)",
+  "defaults_table": {
+    "benchmark": "CSI300 / ETF 510300",
+    "microcap": "exclude_bottom_pct=30%",
+    "listing_min_days": 120,
+    "liquidity": "U30 (median_amount_20d >= 3e7)",
+    "industry": "SW_L1",
+    "positions": "30-60",
+    "max_stock_weight": 0.05,
+    "max_industry_weight": 0.25,
+    "target_vol": 0.16,
+    "target_beta": 0.7,
+    "rebalance": "biweekly",
+    "turnover_monthly_one_way": 0.35,
+    "commission_bps": 2.5,
+    "commission_min_cny": 5,
+    "slippage_bps": 5,
+    "max_dd_gate": -0.28,
+    "promotion_approved": false,
+    "net_cagr_gate": "0.12-0.18",
+    "leo_gate_lock": "2026-10-12 Leo: CAGR 12-18% / MDD -28%"
+  },
+  "unified_mandate_draft_ref": "docs/v2/MANDATE_UNIFIED_STOCK_ETF_20261012_ZH.md",
+  "unified_mandate_note": "2026-10-12 architecture fix + Leo lock: capital/leverage/main sleeves follow UNIFIED (spot L<=1.0, stock+ETF defaults, strategy_promotion_approved naming). Gates: CAGR 12–18% / MDD −28% (Leo 2026-10-12, same as this JSON). status remains defaults_locked_not_promoted / strategy_promotion_approved=false.",
+  "strategy_promotion_approved": false,
+  "dataset_promotion_approved_note": "dataset layer may be true in Eng ping; strategy stays false"
+}

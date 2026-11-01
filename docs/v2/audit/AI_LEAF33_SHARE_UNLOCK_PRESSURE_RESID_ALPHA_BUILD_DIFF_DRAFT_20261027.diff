@@ -1,0 +1,169 @@
+# 叶33 限售解禁压力残差慢 α · DIFF DRAFT（相对叶32 骨架）
+
+- **时刻**：2026-10-27 06:13 ET（America/New_York；ISO 2026-10-27T06:13:30-04:00）
+- **状态**：DRAFT · EXECUTED=false · 派生自叶32 正式脚本 sha8 **`4e0f3c00`**（只读未改）
+- **新脚本**：`research/leaf33_share_unlock_pressure_resid_alpha_build.py` sha8 **`05c45917`**
+- **对照**：`diff -u research/leaf32_margin_net_flow_resid_alpha_build.py research/leaf33_share_unlock_pressure_resid_alpha_build.py`
+- **统计**：unified diff ~1282 行 / ~49 hunks（机制换装；骨架 argparse/rss/overlap/month-chunk 保留）
+
+## 派生声明
+
+- **模板只读**：`research/leaf32_margin_net_flow_resid_alpha_build.py` sha8 **`4e0f3c00`** **未改**
+- 亦可对照 leaf31 `08f37fd2`（未改）
+- 本 DIFF **不是** git commit；仅审计摘要
+
+## 机制换装要点（相对叶32）
+
+| 项 | 叶32 | 叶33 |
+|---|---|---|
+| mechanism_tag | g1g5_ashare_margin_net_flow_resid_v1 | g1g5_ashare_share_unlock_pressure_resid_v1 |
+| 主输入 | margin rzmre−rzche | share_float_pit float_share×close |
+| 原始量 | flow_raw=mean_W(net_rz/mktcap) | pressure_raw=mean_W(unlock_raw)；(a)+加价 |
+| 窗参 | W/rebal=20/20 | H/H_back/W/rebal=20/5/20/20 |
+| α | −rank(flow_resid) | −rank(pressure_resid) |
+| close | style 用 adj | unlock_mv 钉 **不复权 close**；style 仍 adj |
+| float_ratio | n/a | **PRIMARY 禁用** |
+| overlap | 19/25/27/30/31+margin_delta | +leaf32 +hk_hold +moneyflow |
+| forbid | 六票 | **5774bb6e+二十票**（21） |
+| FROZEN | 6b8de5e9 | **8ed43721** / PIN **4e17ccfc** / Arch **bf5234a9** |
+| sampler/out | leaf32_margin_flow | leaf33_share_unlock |
+| primary_load | rebal_day_lazy_margin_float_bars | rebal_day_lazy_share_float_close_mktcap_bars |
+| KEEP | 三闸钉 | 三闸钉 + **KEEP 不解阻** X2 ACCEPT |
+
+## unified diff 节选（前 120 行）
+
+```diff
+--- research/leaf32_margin_net_flow_resid_alpha_build.py	2026-10-27 16:07:42.945524731 +0800
++++ research/leaf33_share_unlock_pressure_resid_alpha_build.py	2026-10-27 18:11:18.987340796 +0800
+@@ -1,31 +1,38 @@
+ #!/usr/bin/env python3
+-"""Leaf32 margin net-flow resid slow alpha build — HILIQ×x2 (NOT authorized).
++"""Leaf33 share-unlock pressure resid slow alpha build — HILIQ×x2 (NOT authorized).
+ 
+-NEW file (2026-10-27). Nails PREREG_FROZEN sha8 6b8de5e9;
+-Arch FROZEN review 7c0d864f PASS_WITH_CONDITIONS (C2 formal script).
+-who_pays 84df02b5 / WHO_PAYS fad5911e / COVER ebda2603 (background only).
+-
+-Mechanism (FROZEN; mechanism_tag=g1g5_ashare_margin_net_flow_resid_v1):
+-  net_rz = rzmre - rzche (CNY; may be negative = net repay)
+-  flow_raw = mean_W(net_rz / float_mktcap_T-1), W=20 trade days; min valid days >=15
++NEW file (2026-10-27). Nails PREREG_FROZEN sha8 8ed43721;
++Arch FROZEN review bf5234a9 PASS_WITH_CONDITIONS (C2 formal script).
++who_pays review 55531e12 / WHO_PAYS 1032477d / COVER 61d9f656 / PIN 4e17ccfc.
++Derived from leaf32 skeleton sha8 4e0f3c00 (read-only; not modified).
++
++Mechanism (FROZEN; mechanism_tag=g1g5_ashare_share_unlock_pressure_resid_v1):
++  Event set E at day t: available_at<=t AND float_date in [t-H_back, t+H]
++  H=20; H_back=5
++  C3 (a)+add-price (PIN 4e17ccfc upgraded):
++    unlock_mv = Σ float_share × close_T-1   (close = bars unadjusted close CNY; pinned col "close")
++    unlock_raw = unlock_mv / float_mktcap_T-1
++    pressure_raw = mean_W(unlock_raw), W=20; min valid days >=15
++  Ban table float_ratio as PRIMARY (must not compute main alpha from it)
+   SW L1 demean -> OLS resid vs log float mktcap T-1 + mom20 + vol20 + logADV20
+-  alpha_raw = -rank(flow_resid); IC expected POSITIVE (comment pin; no return-IC here)
+-  Ban post-hoc sign / W / rebal flip; ban Amihud / on_minus_id / CRR / hk_hold as main
+-  Ban Delta-rzye margin_delta as main (margin_delta is overlap-only)
++  alpha_raw = -rank(pressure_resid); IC expected POSITIVE (comment pin; no return-IC here)
++  Ban post-hoc sign / W / H / H_back / rebal flip
++  Ban Amihud / on_minus_id / CRR / hk_hold / moneyflow / margin / float_ratio as main
+ 
+ PRIMARY: --universe HILIQ --window x2  (FULLA only via --also-fulla-research; never PRIMARY)
+ X2: 2024-06-03 -> 2026-10-09; rebal every 20 trade days
+-Margin: data/v2/margin/margin_detail_daily_2018plus.parquet (PIT=available_at <= rebal)
++share_float: data/v2/share_float/share_float_pit.parquet (PIT=available_at)
+ Float: data/v2/float_mktcap/float_mktcap_daily_from2015_tushare.parquet
+-Bars (style only): data/v2/tushare_raw/daily/{YYYYMMDD}.parquet + adj_factor
+-C3: overlap_vs_leaf19_25_27_30_31_margin_delta.json;
++Bars: data/v2/tushare_raw/daily/{YYYYMMDD}.parquet (+ adj_factor for STYLE only)
++C4 overlap: vs leaf19/25/27/30/31/32 + margin_delta/hk_hold/moneyflow;
+      Jaccard>=0.7 hard reject (exit!=0); rho>0.5 strength filter
+ Real path: --allow-real-data + existing --arch-ok-path; ok sha8 not in forbid
+ --dry-compile-only: print pins; ZERO big-table load
+-rss soft 1500 MB hard ABORT + peak_proof; sampler /tmp/quantlab_leaf32_margin_flow_*
+-out intent: output/ai_factory/_leaf32_margin_flow/
+-forbid: 4bb141c9+fdbaa512+aa25e989+7e239487+5af20222+5ae077fa
+-C9: leaf30 KEEP 0087c928 NOT merged
++rss soft 1500 MB hard ABORT + peak_proof; sampler /tmp/quantlab_leaf33_share_unlock_
++out intent: output/ai_factory/_leaf33_share_unlock/
++forbid: 5774bb6e + twenty tickets (see FORBID_OK_SHA8)
++C10: leaf30 KEEP 0087c928 NOT merged; leaf28/29 separate
++death KEEP pin: three gates; KEEP does NOT unblock X2 ACCEPT (leaf32 HOLD 45dd87dc)
+ live=false; promotion_approved=false; ok_requested=false
+ No Book-Smoke / selfcheck entry; !=X2 ACCEPT.
+ """
+@@ -47,18 +54,20 @@
+ if str(_HERE) not in sys.path:
+     sys.path.insert(0, str(_HERE))
+ 
+-MECHANISM_TAG = "g1g5_ashare_margin_net_flow_resid_v1"
+-SCRIPT_REL = "research/leaf32_margin_net_flow_resid_alpha_build.py"
++MECHANISM_TAG = "g1g5_ashare_share_unlock_pressure_resid_v1"
++SCRIPT_REL = "research/leaf33_share_unlock_pressure_resid_alpha_build.py"
+ FROZEN_REL = (
+-    "docs/v2/audit/AI_LEAF32_MARGIN_NET_FLOW_RESID_PREREG_FROZEN_20261027_ZH.md"
++    "docs/v2/audit/AI_LEAF33_SHARE_UNLOCK_PRESSURE_RESID_PREREG_FROZEN_20261027_ZH.md"
+ )
+-FROZEN_SHA8 = "6b8de5e9"
+-FROZEN_RECEIPT_SHA8 = "7623ce8c"
+-ARCH_FROZEN_REVIEW_SHA8 = "7c0d864f"
+-ARCH_WHO_PAYS_REVIEW_SHA8 = "84df02b5"
+-WHO_PAYS_SHA8 = "fad5911e"
+-COVER_SHA8 = "ebda2603"
+-# Leaf30 KEEP repair DRAFT — C9 separate queue; NOT merged into this script
++FROZEN_SHA8 = "8ed43721"
++FROZEN_RECEIPT_SHA8 = "8f43e2f8"
++ARCH_FROZEN_REVIEW_SHA8 = "bf5234a9"
++ARCH_WHO_PAYS_REVIEW_SHA8 = "55531e12"
++WHO_PAYS_SHA8 = "1032477d"
++COVER_SHA8 = "61d9f656"
++PIN_SHA8 = "4e17ccfc"
++LEAF32_SKELETON_SHA8 = "4e0f3c00"  # read-only template; ban edit
++# Leaf30 KEEP repair DRAFT — C10 separate queue; NOT merged into this script
+ LEAF30_KEEP_REPAIR_SHA8_SEPARATE = "0087c928"
+ 
+ RSS_LIMIT_MB = 1500
+@@ -71,12 +80,25 @@
+ X2_END = "2026-10-09"
+ X2_END_TRADE_DATE = "20261009"
+ REBAL_EVERY = 20
+-FLOW_W = 20
+-FLOW_MIN_VALID = 15
++PRESSURE_H = 20
++PRESSURE_H_BACK = 5
++PRESSURE_W = 20
++PRESSURE_MIN_VALID = 15
+ # IC sign pin (FROZEN): expected POSITIVE vs next-period idiosyncratic return.
+ # This script NEVER selects sign from returns — direction is documentation-only.
+ IC_SIGN_EXPECTED = "positive"
+-ALPHA_SIGN = "neg_rank_flow_resid"  # alpha = -rank(flow_resid); ban flip
++ALPHA_SIGN = "neg_rank_pressure_resid"  # alpha = -rank(pressure_resid); ban flip
++
++# C3 (a)+add-price: close col for unlock_mv is bars unadjusted close CNY; ban post-hoc adj swap
++CLOSE_COL_PINNED = "close"
++CLOSE_COL_ROLE = "unadjusted_close_cny_per_share"
++BAN_FLOAT_RATIO_PRIMARY = True
++C3_FORMULA_PIN = (
++    "unlock_mv=sum(float_share*close_T-1); "
++    "unlock_raw=unlock_mv/float_mktcap_T-1; "
++    "pressure_raw=mean_W(unlock_raw); "
++    "table_float_ratio_PRIMARY_DISABLED"
++)
+ 
+ # Style exposures: derived from daily bars (pinned; ban silent swap to capacity_adv)
+ STYLE_COLS_PINNED = ("mom20", "vol20", "logADV20")
+@@ -84,24 +106,45 @@
+```
+
+（完整 diff 见落盘时 `/tmp/leaf33_vs_leaf32.diff` 工作副本；本文件为审计摘要。）
+
+## 钉
+
+| 项 | 值 |
+|---|---|
+| script_sha8 | `05c45917` |
+| derived_from | `4e0f3c00` |
+| FROZEN / PIN / ArchFROZEN | `8ed43721` / `4e17ccfc` / `bf5234a9` |
+| EXECUTED | false |
+
+live=false · ok_requested=false · leo_notify=false

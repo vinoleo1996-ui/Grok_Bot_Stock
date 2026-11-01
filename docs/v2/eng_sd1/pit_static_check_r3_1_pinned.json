@@ -1,0 +1,78 @@
+{
+ "spec_sha256": "2e428f3956fcb6d2de8204a0b7226242763045afdd280a4d1e860bc6d0fbdb0b",
+ "mode": "pinned",
+ "closure_ok": true,
+ "closure_sha256": "6919e7afe605cc4d1af48868a06b6550db66e3fd1923a3e61bdcc16c621bae20",
+ "n_closure": 156,
+ "n_files": 162,
+ "n_hits": 7,
+ "n_violations": 0,
+ "n_preexisting": 7,
+ "n_allowed_func": 0,
+ "closure_mismatch": [],
+ "hits": [
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 61,
+   "text": "for c in (\"list_date\", \"delist_date\", \"last_trade_date\"):",
+   "token": "delist_date",
+   "function": "load_delisted_master",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 107,
+   "text": "alive = set(master.index[(master.list_date <= day) & (master.delist_date > day)])",
+   "token": "delist_date",
+   "function": "merge_cap_for_ranking",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 170,
+   "text": "alive_later = master[(master.list_date <= day) & (master.delist_date > day)]",
+   "token": "delist_date",
+   "function": "later_delisted_in_band",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 175,
+   "text": "\"delist_dates\": {i: str(alive_later.loc[i, \"delist_date\"].date()) for i in hit},",
+   "token": "delist_date",
+   "function": "later_delisted_in_band",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/beta/survivorship.py",
+   "line": 209,
+   "text": "\"delist_date\": str(row[\"delist_date\"].date()) if row[\"delist_date\"] == row[\"delist_date\"] else None,",
+   "token": "delist_date",
+   "function": "delist_sensitivity_table",
+   "status": "PREEXISTING",
+   "note": "B1 survivorship helper: re-includes later-delisted names (anti-survivorship ranking / terminal sensitivity) - accounting/universe audit, not alpha selection (Arch to confirm)"
+  },
+  {
+   "path": "quantlab/portfolio/v2_multisleeve_book.py",
+   "line": 118,
+   "text": "dl = self.BAS.set_index(\"code\").delist_date.dropna()",
+   "token": "delist_date",
+   "function": "panels",
+   "status": "PREEXISTING",
+   "note": "CB basic delist_date -> bond terminal payout (accounting; pre-SD1, in paper closure, unchanged)"
+  },
+  {
+   "path": "quantlab/universe/mask.py",
+   "line": 8,
+   "text": "is_st, listing_date, delist_date, asset_type, quality_status, ...",
+   "token": "delist_date",
+   "function": "<module>",
+   "status": "PREEXISTING",
+   "note": "docstring of the instruments contract (field list only); mask code must not use it"
+  }
+ ]
+}

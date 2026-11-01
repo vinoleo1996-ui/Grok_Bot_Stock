@@ -1,0 +1,16 @@
+# 单测回执 · test_sd1_common.py（SD1 r5）
+- 时间：2026-10-18 02:08:32 EDT；执行人：QuantLab Data；live=false，promotion=false
+- 命令：`cd /workspace/QuantLab && PYTHONDONTWRITEBYTECODE=1 nice -n 10 python3 scripts/fix_sd1/test_sd1_common.py`
+  - 环境里没有 /usr/bin/time，峰值 RSS 改用等价方式测量：外层 `python3 -c` 用 subprocess 起上面这条命令，跑完读 resource.getrusage(RUSAGE_CHILDREN).ru_maxrss。外层只负责计量，不 import 任何项目模块。
+- .ok：output/data/ARCH_RUN_AUTH_SELFTEST_SD1_COMMON.ok，sha256=7a0c1cdc54bf2b198a899382d55eb6bf41d507ad01044f800edc3e0594eda775
+  - scope=selftest，allow_real_data=false，out_dir=mkdtemp；expires 2026-10-19 02:07 ET，运行时未过期。
+- 测试文件：scripts/fix_sd1/test_sd1_common.py，sha256=74a176e7d3e2727afa2ce86578b7b4a02c17a997cc0277499827844b8432c502
+- 依赖：scripts/fix_sd1/sd1_common.py，sha256=28fbb15de59103b8b7e87c68e9477b8f037383a617c1bffc54a6808928921263
+  - scripts_eng/ok_runner_pin.py 为 c7805d9a…，未钉（Arch P3-3）。
+- 结果：exit 0，输出 "ALL SYNTHETIC TESTS PASS"。12 个 assert 全部通过，失败 0（单个 run()，遇错即停）。
+- 峰值 RSS：106,104 KB（约 104 MB）。
+- 运行前：MemAvailable 约 11.4 GB；ps 中没有 research/、tier1、adj_factor、bars_materialize、daily_pull 进程。
+- 清理后检查：
+  - 运行前后 `ls -d /tmp/tmp*` 的 diff 为空（NO_NEW_TMP），说明 mkdtemp 已被 rmtree。
+  - `find scripts/fix_sd1 -name __pycache__ -o -name .pytest_cache` 为空；`ls scripts/fix_sd1` 只有 5 个 .py 文件。
+  - 仓库里唯一的 __pycache__ 是 scripts/acquire/__pycache__，mtime 01:22，本次运行之前就存在，不属于 SD1。
