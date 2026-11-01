@@ -17,3 +17,4 @@
 - 开盘决策只看见前一会话及更早的行。调用时传 `known_by="open"`。
 - 原文件没有 `available_at`。把它直接交给 `float_mktcap_lookup_for_session` 仍然失败。
 - 不传路径时默认读 `float_mktcap_daily_tushare_pit.parquet`。这张新表不在就 `FileNotFoundError`，不退回原表。
+- 这张 parquet 已上传到 Release `quantlab-data-2026-11-01`，大小 190,186,382 字节，不进 git。

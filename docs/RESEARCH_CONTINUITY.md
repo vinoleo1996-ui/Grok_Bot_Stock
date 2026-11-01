@@ -1,6 +1,10 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:50 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 19:50 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## Release 补件（2026-11-01 19:50，无账户）
+
+同一 Release `quantlab-data-2026-11-01` 上又有四件，都不进 git：`stock_patches_2026-11-01.tgz`、`ENG_PING_PATHS.json`、`dividends_corporate_actions_2026-11-01.tgz`、`README_MISSING_ASSETS.md`。抽查 `ENG_PING_PATHS.json` 里的 `promotion_approved` 与 `promotion_approved_overall` 都是 false。分红包说明里的表名是 `data/v2/corporate_actions/dividend_tushare.parquet`，不是 `dividends.parquet`。`float_mktcap_daily_tushare_pit.parquet`（190,186,382 字节）已经单独挂在这个 Release 上。没有打开 Stock-patches 包，没有改晋升。
 
 ## 流通市值公布时点（2026-11-01 19:50，无账户）
 
