@@ -1,6 +1,16 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-10-02 10:55 CST。唯一主工作目录：`/Users/agiuser/Desktop/QuantLab`。
+更新时间：2026-11-01 16:44 CST。本次检出在 `/workspace`，分支 `cursor/wire-core-runtime-5dc3`。
+
+## 接线：补回被 gitignore 挡住的 quantlab/data（2026-11-01 16:44，无账户）
+
+`.gitignore` 里的 `data/` 会匹配任意名为 data 的目录，所以 `quantlab/data` 源码包没有进入 `6ecab69`。已改为只忽略仓库根的 `/data/`。补回的模块按现有测试写：`contracts`、`exchange_rules`、`market`、`industry`、`qualification`、`local_adapter`、`store`、`sources`、`sina`，以及 `v2_readers` 的导入面。行情 parquet 仍不在检出里。`v2_readers.load_merged_panel` 等在文件缺失时抛 `FileNotFoundError`，不编净值。
+
+`python -m quantlab.cli skeleton-smoke`（不加 `--book-nav`）退出码 0，`strategy_promotion_approved` 为 false。`book-smoke --skip-run --stock-path` 把因子演化冒烟写出的权重长表标成 `book_consumable`，`nav_ran` 为 false。`book-smoke --run-nav` 停在缺少 `data/v2/etf/etf_daily_adj.parquet`。`tests/test_skeleton_oneclick.py::test_live_dryrun_gates_only` 仍失败，因为没有 `data/v2/tushare_raw/trade_cal.parquet`。没有跑密封窗，没有改 Mandate 门。
+
+账本对公司行动的 `available_at` 先转成普通时间再比较，否则 pandas 3 的无序分类列无法比较。这不改变现金和股数规则。
+
+工作原则在 `docs/notes/WORKING_PRINCIPLE_20261101_ZH.md`。基线失败记录在 `docs/notes/BASELINE_RUNTIME_20261101.md`。
 
 ## 补宏观发布日、指数名单和沪深300行情截止日（2026-10-02 10:55，数据层，无账户）
 

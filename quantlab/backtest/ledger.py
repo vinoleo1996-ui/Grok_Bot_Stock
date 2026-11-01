@@ -166,7 +166,8 @@ class Ledger:
         d = pd.Timestamp(date).normalize()
         if actions is not None and not actions.empty:
             due = actions[pd.to_datetime(actions.ex_date).dt.normalize() == d]
-            known = due[due.available_at.map(timestamp) <= timestamp(d) + pd.Timedelta(hours=9)]
+            available = pd.to_datetime(due.available_at.astype(object).map(timestamp), utc=True)
+            known = due[available <= timestamp(d) + pd.Timedelta(hours=9)]
             unknown = set(due.action_id) - set(known.action_id)
             if unknown: self.data_issues.append({"date": str(d), "reason": "late_corporate_action", "actions": sorted(unknown)})
             known = known.sort_values("available_at").drop_duplicates("action_id", keep="last")

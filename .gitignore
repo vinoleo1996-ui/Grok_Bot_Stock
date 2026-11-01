@@ -13,7 +13,8 @@ __pycache__/
 *.egg-info/
 
 # large local artifacts (upload later / never)
-data/
+# Anchor to the repo root. A bare `data/` also ignores quantlab/data, the source package.
+/data/
 output/
 backups/
 _recovery/
