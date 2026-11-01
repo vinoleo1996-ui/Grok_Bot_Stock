@@ -1,6 +1,12 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 20:19 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+更新时间：2026-11-01 20:48 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## 总监审核四份备忘录（2026-11-01 20:48，无账户）
+
+书面结论在 `docs/rd/tasks/round_director_20261101.md`。不批准落地，下一张账不开跑。`docs/rd/experiments/universe.md` 第 11 行还没有承接北交所、又不是代码序的取样句。成本组合 A（`strategy_v1` 滑点 0.0）与组合 B（Mandate 第 70 行滑点 5bp）未选定。ST 与退市表在盘上，`research/rd_ablation_20261101.py` 没读。`quantlab/smallcap/panel.py` 第 94 行的复权 `bfill` 仍在，`architect-002` 保持 open。
+
+架构备忘录里「分红默认路径打不开已落地表」与当前源码不符。`quantlab/data/v2_readers.py` 第 29–30 行已经指向 `data/v2/corporate_actions/` 下两张表，两文件都在。`quantlab/platform/execution.py` 第 1580 行的 `with_name` 因此落在除息表。上面 20:10 那一节已经记过这次路径改动。81.66% 那笔代码序账不重跑，不写成收益。`strategy_promotion_approved` 仍为 false。没有改 Mandate 门，没有改选股代码。
 
 ## 读取器对齐公告时钟和 ETF 成交单位（2026-11-01 20:19，无账户）
 
