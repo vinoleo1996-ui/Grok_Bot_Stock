@@ -1,6 +1,15 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 17:20 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 18:40 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+
+## Release 验收与探索窗消融（2026-11-01 18:40，无账户）
+
+GitHub Release `quantlab-data-2026-11-01` 的分卷已下载到 git 忽略的 `data/_release/`。契约核对在 `docs/rd/tasks/release_audit_20261101.md`。交易日历、D0、申万、财务宽表、E/P、mid-large 在。流通市值日频、`etf_daily_adj.parquet`、`ENG_PING_PATHS.json` 不在。E/P 没有 `available_at` 列。非行情笔记在 `data/_quarantine_nondata/`，没有并进 `quantlab/`。`Stock-patches` 不在本机，也不在 Release 清单里，这一轨停止。
+
+探索窗 2024-06-03 至 2026-06-30 的消融在 `docs/rd/experiments/run_20261101.md`，数字来自 `output/rd_ablation_20261101/summary.json`。宽篮与 mid-large 的名单分开，超额不同号。宽篮按代码取 60 只的 60 万 CAGR 是 81.66%，MDD −29.85%，差于 −28% 门。五专家和净利润都低于这份不打分账。构造器仍接近等权。没有重跑密封窗，`strategy_promotion_approved` 仍为 false。
+
+接线：`V2DataRoots.sw_l1_path`、日历的 `first_session` / `n_sessions` / `d0_asof_cutoff`、extend 按目录名回退、D1 的 `asset_type` 过滤。缺文件仍失败。`allocation.py` 在未知行业行写入前把暴露矩阵转成 float。
+
 
 ## 接线审阅写回台账（2026-11-01 17:20，无账户）
 

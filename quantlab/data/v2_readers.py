@@ -69,6 +69,7 @@ class V2DataRoots:
     ep_pit_path: Path = DEFAULT_EP_PIT
     float_mktcap_path: Path = DEFAULT_FLOAT_MKTCAP
     dividend_path: Path = DEFAULT_DIVIDENDS
+    sw_l1_path: Path = DEFAULT_SW_L1_PATH
 
 
 def default_v2_roots() -> V2DataRoots:
@@ -90,6 +91,17 @@ def _extend_dir(roots: V2DataRoots, override: Path | None) -> Path:
     if fallback.exists():
         return fallback
     return primary
+
+
+def _calendar_view(sessions: pd.DatetimeIndex, path: Path, includes_extend: bool, cutoff: date) -> MergedCalendarView:
+    if len(sessions):
+        first = sessions[0].date()
+        last = sessions[-1].date()
+    else:
+        first = last = None
+    return MergedCalendarView(
+        sessions, last, str(path), includes_extend, False, first, int(len(sessions)), cutoff,
+    )
 
 
 def resolve_d0_asof_cutoff(extend_dir: Path | None = None, *, roots: V2DataRoots | None = None) -> date:
@@ -126,6 +138,9 @@ class MergedCalendarView:
     path_primary: str
     includes_extend: bool
     promotion_approved: bool = False
+    first_session: date | None = None
+    n_sessions: int = 0
+    d0_asof_cutoff: date | None = None
 
 
 @dataclass(frozen=True)
@@ -205,12 +220,18 @@ def load_merged_calendar(
     d0 = Path(d0_root) if d0_root is not None else Path(roots.d0_root)
     extend_path = extend / "calendar.parquet"
     d0_path = d0 / "calendar.parquet"
+    cutoff = resolve_d0_asof_cutoff(extend, roots=roots)
     if extend_path.is_file():
         sessions = _read_calendar_file(extend_path)
-        return MergedCalendarView(sessions, sessions[-1].date() if len(sessions) else None, str(extend_path), True)
+        return _calendar_view(sessions, extend_path, True, cutoff)
+    sibling = _sibling_extend_dir(extend)
+    sibling_path = sibling / "calendar.parquet" if sibling is not None else None
+    if sibling_path is not None and sibling_path.is_file():
+        sessions = _read_calendar_file(sibling_path)
+        return _calendar_view(sessions, sibling_path, True, cutoff)
     if d0_path.is_file():
         sessions = _read_calendar_file(d0_path)
-        return MergedCalendarView(sessions, sessions[-1].date() if len(sessions) else None, str(d0_path), False)
+        return _calendar_view(sessions, d0_path, False, cutoff)
     raise FileNotFoundError(str(extend_path))
 
 
@@ -221,6 +242,30 @@ def _panel_file(root: Path, instrument_id: str) -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def _sibling_extend_dir(extend: Path) -> Path | None:
+    """The other documented extend directory next to the one the caller passed."""
+    name = Path(extend).name
+    parent = Path(extend).parent
+    if name == "asof_extend_tushare_202610":
+        return parent / "asof_extend_202610"
+    if name == "asof_extend_202610":
+        return parent / "asof_extend_tushare_202610"
+    return None
+
+
+def _extend_panel_file(extend: Path, instrument_id: str) -> tuple[Path | None, str]:
+    found = _panel_file(extend, instrument_id)
+    if found is not None:
+        return found, ""
+    sibling = _sibling_extend_dir(extend)
+    if sibling is None:
+        return None, ""
+    found = _panel_file(sibling, instrument_id)
+    if found is not None:
+        return found, "extend_per_id_fallback"
+    return None, ""
 
 
 def _with_event_time(frame: pd.DataFrame) -> pd.DataFrame:
@@ -251,11 +296,13 @@ def load_merged_panel(
     extend = _extend_dir(roots, asof_extend_dir)
     cutoff = d0_asof_cutoff or resolve_d0_asof_cutoff(extend, roots=roots)
     d0_path = _panel_file(d0, instrument_id)
-    extend_path = _panel_file(extend, instrument_id)
+    extend_path, extend_note = _extend_panel_file(extend, instrument_id)
     if d0_path is None and extend_path is None:
         raise FileNotFoundError(str(d0 / "panels" / f"{instrument_id}.parquet"))
     parts = []
     notes: list[str] = []
+    if extend_note:
+        notes.append(extend_note)
     n_d0 = n_ext = 0
     if d0_path is not None:
         d0_frame = _with_event_time(pd.read_parquet(d0_path))

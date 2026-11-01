@@ -16,7 +16,7 @@ def allocate(returns, records, exposures, cfg, gross=.98, vol_scale=1., expected
     if missing and industry_policy not in ('disabled_diagnostic','unknown_capped'):return empty,'industry_coverage_insufficient'
     if missing and industry_policy=='unknown_capped':
         # Unknown holdings share one conservative group; never invent industries.
-        exposures=exposures.copy()
+        exposures=exposures.copy().astype(float)
         exposures.loc['UNKNOWN',codes]=[1. if c in missing else 0. for c in codes]
     prior=pd.Series(dtype=float) if previous is None else previous
     prior=prior.reindex(codes,fill_value=0.).to_numpy()

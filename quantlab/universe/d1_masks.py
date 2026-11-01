@@ -101,6 +101,13 @@ class D1MaskResult:
         # that is distinct from overall promotion_approved.
 
 
+def filter_research_instruments(instruments: pd.DataFrame) -> pd.DataFrame:
+    """Keep the asset types named in the D1 module map. A missing column stays a failure."""
+    if "asset_type" not in instruments.columns:
+        raise ValueError("instruments_asset_type_missing")
+    return instruments.loc[instruments["asset_type"].isin(["stock", "equity_etf"])].copy()
+
+
 def resolve_sw_l1_path(explicit: Path | None = None) -> Path | None:
     """Prefer accepted tushare via v2_readers; fall back to DEFAULT_SW_L1_PATHS."""
     if explicit is not None and explicit.is_file():
@@ -223,7 +230,11 @@ def sw_l1_asof(
     sess = pd.Timestamp(session).date()
     sess_ts = pd.Timestamp(sess)
     out: dict[str, SWL1AsOfAssignment] = {}
+    if len(instrument_ids) == 0:
+        return out
     sub = members[members["instrument_id"].isin(list(instrument_ids))].copy()
+    if sub.empty:
+        return out
     sub["in_date"] = pd.to_datetime(sub["in_date"]).dt.normalize()
     sub["out_date"] = pd.to_datetime(sub["out_date"], errors="coerce").dt.normalize()
 
@@ -238,6 +249,8 @@ def sw_l1_asof(
         return stamp.date() < sess
 
     sub = sub[sub["available_at"].map(_published_before_session)]
+    if sub.empty or "instrument_id" not in getattr(sub, "columns", []):
+        return out
     for iid, g in sub.groupby("instrument_id"):
         cand = g[(g["in_date"] <= sess_ts) & (g["out_date"].isna() | (g["out_date"] > sess_ts))]
         if cand.empty:
@@ -312,7 +325,7 @@ def build_d1_masks_for_session(
     if not (cal.normalize() == pd.Timestamp(session)).any():
         raise ValueError(f"session_not_in_calendar:{session}")
 
-    instruments = pd.read_parquet(d0_root / "instruments.parquet")
+    instruments = filter_research_instruments(pd.read_parquet(d0_root / "instruments.parquet"))
     if instrument_ids is not None:
         instruments = instruments[instruments["instrument_id"].isin(list(instrument_ids))]
     elif max_instruments is not None:
