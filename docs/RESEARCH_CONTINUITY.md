@@ -1,6 +1,12 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 20:48 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+更新时间：2026-11-01 21:50 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## 探索窗三组符号对照（2026-11-01 21:50，无账户）
+
+设计写在 `docs/rd/experiments/universe.md`。代码序不再当不打分对照，名次带不截 60 只。主成本是 `strategy_v1`，滑点 5bp 只作敏感性。价格是原始开盘加已落地分红，不用 `adj_close`。
+
+结果在 `docs/rd/experiments/run_pool_sign_20261101.md`。后排宽篮与中大盘的等权诊断超额相对 510300 都为正，5bp 敏感性没有翻号。这不是 60 万可成交账户的年化。mid-large 的 `available_at` 是决策日 09:00，按「上海日期早于决策日」全部去掉，这一臂没有符号。三组符号未齐，没有改专家、宽篮名次或构造器帽。`strategy_promotion_approved` 仍为 false。没有重跑密封窗。
 
 ## 总监审核四份备忘录（2026-11-01 20:48，无账户）
 

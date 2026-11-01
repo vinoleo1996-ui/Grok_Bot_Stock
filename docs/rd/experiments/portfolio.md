@@ -1,6 +1,6 @@
 # 组合消融设计
 
-状态：等待前两岗的名单冻结。不授权改 `quantlab/portfolio/v2_constructor.py` 的默认帽。不承诺年化。
+状态：等待前两岗冻结 30–60 只的名单。本轮股票池实验不截这 60 只，组合实验不开跑。不授权改 `quantlab/portfolio/v2_constructor.py` 的默认帽。不承诺年化。
 
 ## 目的
 
