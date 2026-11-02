@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pytest
 
 from quantlab.factors.event_pipeline import (
@@ -12,6 +14,7 @@ from quantlab.factors.event_pipeline import (
     assert_no_lookahead,
     available_at_to_signal_session,
     build_event_signals,
+    load_events_parquet,
     process_ic_tradable,
     register_trial_placeholder,
 )
@@ -108,6 +111,40 @@ def test_build_event_signals_and_promotion_flags_false():
 
     ph = register_trial_placeholder(family="alpha_event_v1", trial_id="unit_test")
     assert ph.promotion_approved is False
+
+
+def test_cninfo_sample_uses_announcement_time_without_rewriting_the_file(tmp_path):
+    path = tmp_path / "cninfo.parquet"
+    pd.DataFrame({
+        "instrument_id": ["sz.000001"],
+        "title": ["2023年三季度报告"],
+        "announcement_id": ["1218135621"],
+        "announcement_time": ["2023-10-25T00:00:00+08:00"],
+        "source": ["cninfo_hisAnnouncement"],
+        "promotion_approved": [False],
+    }).to_parquet(path, index=False)
+    records, notes = load_events_parquet(path)
+    assert records[0].instrument == "sz.000001"
+    assert records[0].event_id == "1218135621"
+    assert records[0].event_type == "cninfo_periodic_announcement"
+    assert records[0].polarity == 0.0
+    assert records[0].available_at.tzinfo is not None
+    assert records[0].available_at.date() == date(2023, 10, 25)
+    assert "available_at_from_announcement_time" in notes
+    assert "polarity_unclassified" in notes
+    assert "available_at" not in pd.read_parquet(path).columns
+    bare = tmp_path / "bare.parquet"
+    pd.DataFrame({"title": ["no clock"]}).to_parquet(bare, index=False)
+    empty, missing = load_events_parquet(bare)
+    assert empty == []
+    assert any("missing columns" in item for item in missing)
+    landed = Path("data/v2/free_hunt/fundamentals/cninfo_periodic_announcements_sample.parquet")
+    if landed.is_file():
+        live, live_notes = load_events_parquet(landed)
+        assert len(live) == 301
+        assert live[0].instrument == "sz.000001"
+        assert "available_at" not in pd.read_parquet(landed).columns
+        assert "polarity_unclassified" in live_notes
 
 
 def test_signal_spec_rejects_promotion_true():

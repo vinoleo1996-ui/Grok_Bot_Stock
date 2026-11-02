@@ -1601,17 +1601,18 @@ def cost_ladder(panels: ExecPanels, schedule: Mapping, *, initial_cash: float = 
 def _extend_fund_panel(iid: str, fr, roots, diag: dict):
     """Exchange funds (sh.510300): the merged D0+asof_extend reader stops at the
     D0/extend cut (2026-06-30). Append the accepted ETF panel
-    (``roots.etf_panel_path``: OHLC tencent, amount CNY, volume in LOTS, matches
-    Tushare fund_daily exactly) for sessions after the merged frame. Volume
-    stays in lots here; the loader's amount/(volume*close) inference scales x100."""
+    (``roots.etf_panel_path``) for sessions after the merged frame. Landed
+    ``etf_daily_adj`` uses ``trade_date`` and ``vol``; its ``amount`` is thousand
+    CNY and is scaled to CNY in memory so it matches D0. Volume stays in lots;
+    the loader's amount/(volume*close) inference then scales x100."""
     if not is_exchange_fund(iid):
         return fr
     path = Path(getattr(roots, "etf_panel_path", "") or "")
     if not path.is_file():
         return fr
-    ep = pd.read_parquet(path)
-    if "instrument_id" in ep.columns:
-        ep = ep[ep["instrument_id"].astype(str) == iid]
+    from quantlab.data.v2_readers import align_exchange_fund_frame, read_exchange_fund_slice
+
+    ep, fund_note = align_exchange_fund_frame(read_exchange_fund_slice(path, iid), iid)
     if ep.empty or "event_time" not in ep.columns:
         return fr
     ep_et = pd.to_datetime(ep["event_time"])
@@ -1630,7 +1631,7 @@ def _extend_fund_panel(iid: str, fr, roots, diag: dict):
         fr = ep
     diag.setdefault("fund_panel_extended", {})[iid] = dict(
         rows=int(len(ep)), first=str(ep["event_time"].min().date()), last=str(ep["event_time"].max().date()),
-        source=str(path))
+        source=str(path), note=fund_note)
     return fr
 
 
@@ -1688,7 +1689,10 @@ def load_execution_panels(instrument_ids: Sequence[str], start, end, *, roots=No
     fund_fallback = []
     for iid in instrument_ids:
         if is_exchange_fund(str(iid)):
-            _probe = load_merged_panel(str(iid), roots=roots).frame
+            try:
+                _probe = load_merged_panel(str(iid), roots=roots).frame
+            except FileNotFoundError:
+                _probe = None
             if _probe is None or _probe.empty:
                 fund_fallback.append(str(iid))
     if fund_fallback:

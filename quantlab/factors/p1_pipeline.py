@@ -13,6 +13,7 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from quantlab.config import ROOT as _REPO_ROOT
 from quantlab.factors.engine import winsorize_zscore
 from quantlab.factors.orthogonalize import gram_schmidt_set, residualize_ols
 from quantlab.factors.p1_factor_lib import (
@@ -829,8 +830,8 @@ def mainbook_v2_d1_config(**overrides):
     return D1MaskConfig(**kw)
 
 
-VALUATION_TUSHARE_PATH = Path("/workspace/QuantLab/data/v2/valuation/daily_basic_valuation_tushare.parquet")
-FLOAT_MKTCAP_TUSHARE_PATH = Path("/workspace/QuantLab/data/v2/float_mktcap/float_mktcap_daily_tushare.parquet")
+VALUATION_TUSHARE_PATH = _REPO_ROOT / "data" / "v2" / "valuation" / "daily_basic_valuation_tushare.parquet"
+FLOAT_MKTCAP_TUSHARE_PATH = _REPO_ROOT / "data" / "v2" / "float_mktcap" / "float_mktcap_daily_tushare.parquet"
 
 
 def _read_window(path: Path, cols: list[str], start, end) -> pd.DataFrame:

@@ -1,6 +1,6 @@
 # 组合消融设计
 
-状态：等待前两岗的名单冻结。不授权改 `quantlab/portfolio/v2_constructor.py` 的默认帽。不承诺年化。
+状态：股票池三组诊断超额同号，按设计停。本轮不截 30–60 只，组合实验不开跑。不授权改 `quantlab/portfolio/v2_constructor.py` 的默认帽。不承诺年化。
 
 ## 目的
 

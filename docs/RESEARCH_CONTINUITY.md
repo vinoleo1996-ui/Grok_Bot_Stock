@@ -1,6 +1,41 @@
 # QuantLab 研究接续台账
 
-更新时间：2026-11-01 19:45 CST。本次检出在 `/workspace`，分支 `cursor/rd-system-5dc3`。
+更新时间：2026-11-01 22:08 CST。本次检出在 `/workspace`，分支 `cursor/float-mktcap-pit-5dc3`。
+
+## 三组诊断超额同号，停（2026-11-01 22:08，无账户）
+
+mid-large 改用 `decision_time`：`available_at` 不晚于决策日 18:00 Asia/Shanghai。表内时钟是当日 09:00，网格上 126944 行都可见。申万那种「日期必须早于决策日」不再套到这张表上。
+
+重算后三组相对 510300 的等权诊断超额都为正，5bp 敏感性没有翻号。宽篮中位 1824 只，中大盘 3277 只，mid-large 2489 只。这不是可交易年化。同号则停。没有改专家、宽篮名次或构造器帽，也没有补 30–60 只截断。`strategy_promotion_approved` 仍为 false。没有重跑密封窗。记录在 `docs/rd/experiments/run_pool_sign_20261101.md`。
+
+## 探索窗三组符号对照（2026-11-01 21:50，无账户）
+
+设计写在 `docs/rd/experiments/universe.md`。代码序不再当不打分对照，名次带不截 60 只。主成本是 `strategy_v1`，滑点 5bp 只作敏感性。价格是原始开盘加已落地分红，不用 `adj_close`。
+
+结果在 `docs/rd/experiments/run_pool_sign_20261101.md`。后排宽篮与中大盘的等权诊断超额相对 510300 都为正，5bp 敏感性没有翻号。这不是 60 万可成交账户的年化。mid-large 的 `available_at` 是决策日 09:00，按「上海日期早于决策日」全部去掉，这一臂没有符号。三组符号未齐，没有改专家、宽篮名次或构造器帽。`strategy_promotion_approved` 仍为 false。没有重跑密封窗。
+
+## 总监审核四份备忘录（2026-11-01 20:48，无账户）
+
+书面结论在 `docs/rd/tasks/round_director_20261101.md`。台账条目是 `algo-universe-003`、`test-006`、`data-008`、`architect-020`、`director-004`。不批准落地，下一张账不开跑。`docs/rd/experiments/universe.md` 第 11 行还没有承接北交所、又不是代码序的取样句。成本组合 A（`strategy_v1` 滑点 0.0）与组合 B（Mandate 第 70 行滑点 5bp）未选定。ST 与退市表在盘上，`research/rd_ablation_20261101.py` 没读。`quantlab/smallcap/panel.py` 第 94 行的复权 `bfill` 仍在，`architect-002` 保持 open。
+
+架构备忘录里「分红默认路径打不开已落地表」与当前源码不符。`quantlab/data/v2_readers.py` 第 29–30 行已经指向 `data/v2/corporate_actions/` 下两张表，两文件都在。`quantlab/platform/execution.py` 第 1580 行的 `with_name` 因此落在除息表。上面 20:10 那一节已经记过这次路径改动。81.66% 那笔代码序账不重跑，不写成收益。`strategy_promotion_approved` 仍为 false。没有改 Mandate 门，没有改选股代码。
+
+## 读取器对齐公告时钟和 ETF 成交单位（2026-11-01 20:19，无账户）
+
+没有调用外部行情接口，密钥没有写入仓库。巨潮样本用 `announcement_time` 作为 `available_at`，`instrument_id` 作为标的，极性固定为 0，表示还没有分类。`etf_daily_adj` 的 `vol` 按手数、`amount` 按千元，读入后手数保持、金额乘 1000 变成元，和 D0 的 `sh.510300` 同一天对得上（2024-06-03 成交额 2,533,469,501 元）。没有 D0 面板的场内基金改读这张表，不再因为缺面板直接失败。原 parquet 不改。`promotion_approved` 仍为 false。没有重跑探索窗，也没有重跑已作废的代码序账。
+
+## 读取器对齐已落地的列和路径（2026-11-01 20:10，无账户）
+
+没有调用外部行情接口，也没有把密钥写入仓库。E/P 用内存中的 `e_available_at` 作为 `available_at`，原文件不改。财务宽表按列名取 `net_profit` 等指标。分红默认改为 `data/v2/corporate_actions/dividend_tushare.parquet`，`ts_code` 在内存里变成 `sh.`/`sz.`/`bj.` 的 `instrument_id`。tushare extend 缺日历时改读 `asof_extend_202610/calendar.parquet`。事件样本路径本来就指向全量包里的那个 parquet。`promotion_approved` 仍为 false。
+
+## Release 补件（2026-11-01 19:50，无账户）
+
+同一 Release `quantlab-data-2026-11-01` 上又有四件，都不进 git：`stock_patches_2026-11-01.tgz`、`ENG_PING_PATHS.json`、`dividends_corporate_actions_2026-11-01.tgz`、`README_MISSING_ASSETS.md`。抽查 `ENG_PING_PATHS.json` 里的 `promotion_approved` 与 `promotion_approved_overall` 都是 false。分红包说明里的表名是 `data/v2/corporate_actions/dividend_tushare.parquet`，不是 `dividends.parquet`。`float_mktcap_daily_tushare_pit.parquet`（190,186,382 字节）已经单独挂在这个 Release 上。没有打开 Stock-patches 包，没有改晋升。
+
+## 流通市值公布时点（2026-11-01 19:50，无账户）
+
+原表 `float_mktcap_daily_tushare.parquet` 仍没有 `available_at`，读取它继续失败。新文件 `data/v2/float_mktcap/float_mktcap_daily_tushare_pit.parquet` 把 `available_at` 写成 `trade_date` 当天 18:00 Asia/Shanghai，`revision=tushare_daily_basic_eod18_proxy`，`promotion_approved=false`。这是收盘后可知的研究代理，不是申报钟。收盘决策可以用当日行；开盘决策传 `known_by="open"`，只用前一会话。没有重跑 U30，没有晋升。
+
 
 ## 北交所账作废（2026-11-01 19:45，无账户）
 

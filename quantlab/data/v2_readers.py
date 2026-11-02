@@ -21,10 +21,13 @@ DEFAULT_EP_TUSHARE_ASOF = ROOT / "data" / "v2" / "ep" / "ep_tushare_asof_2026063
 DEFAULT_EP_RESEARCH_FALLBACK = ROOT / "data" / "v2" / "financials_pit" / "ep_research_asof_20260630.parquet"
 DEFAULT_ETF_PANEL = ROOT / "data" / "v2" / "etf" / "etf_daily_adj.parquet"
 DEFAULT_FLOAT_MKTCAP = ROOT / "data" / "v2" / "float_mktcap" / "float_mktcap_daily_tushare.parquet"
+DEFAULT_FLOAT_MKTCAP_PIT = ROOT / "data" / "v2" / "float_mktcap" / "float_mktcap_daily_tushare_pit.parquet"
+FLOAT_MKTCAP_EOD18_REVISION = "tushare_daily_basic_eod18_proxy"
 DEFAULT_D0 = ROOT / "data" / "local_market" / "1c85fd9aceaa03c3c4863bec"
 DEFAULT_ASOF_EXTEND_DIR = ROOT / "data" / "v2" / "asof_extend_tushare_202610"
 DEFAULT_SW_L1_PATH = ROOT / "data" / "v2" / "sw_l1_pit" / "industry_members_sw_l1_tushare.parquet"
-DEFAULT_DIVIDENDS = ROOT / "data" / "v2" / "dividends" / "dividends.parquet"
+DEFAULT_DIVIDENDS = ROOT / "data" / "v2" / "corporate_actions" / "dividend_tushare.parquet"
+DEFAULT_DIVIDENDS_BY_EXDATE = ROOT / "data" / "v2" / "corporate_actions" / "dividend_by_exdate_tushare.parquet"
 DOCUMENTED_CUTOFF = date(2026, 6, 30)
 
 
@@ -67,7 +70,7 @@ class V2DataRoots:
     etf_panel_path: Path
     financials_pit_path: Path = DEFAULT_FINANCIALS_PIT_TUSHARE
     ep_pit_path: Path = DEFAULT_EP_PIT
-    float_mktcap_path: Path = DEFAULT_FLOAT_MKTCAP
+    float_mktcap_path: Path = DEFAULT_FLOAT_MKTCAP_PIT
     dividend_path: Path = DEFAULT_DIVIDENDS
     sw_l1_path: Path = DEFAULT_SW_L1_PATH
 
@@ -268,6 +271,65 @@ def _extend_panel_file(extend: Path, instrument_id: str) -> tuple[Path | None, s
     return None, ""
 
 
+def _instrument_to_ts_code(instrument_id: str) -> str:
+    text = str(instrument_id)
+    if text.count(".") != 1:
+        return text
+    prefix, number = text.split(".", 1)
+    exchange = {"sh": "SH", "sz": "SZ", "bj": "BJ"}.get(prefix.lower())
+    if exchange is None:
+        return text
+    return f"{number}.{exchange}"
+
+
+def read_exchange_fund_slice(path: Path, instrument_id: str | None = None) -> pd.DataFrame:
+    """Read one fund from ``etf_daily_adj`` without loading every ETF. Full file if it has no ``ts_code``."""
+    path = Path(path)
+    if instrument_id is None:
+        return pd.read_parquet(path)
+    import pyarrow.parquet as pq
+
+    names = set(pq.ParquetFile(path).schema_arrow.names)
+    if "ts_code" not in names:
+        return pd.read_parquet(path)
+    wanted = [column for column in (
+        "ts_code", "trade_date", "event_time", "instrument_id",
+        "open", "high", "low", "close", "vol", "volume", "amount",
+        "pre_close", "adj_factor", "available_at", "quality_status",
+    ) if column in names]
+    table = pq.read_table(
+        path,
+        columns=wanted,
+        filters=[("ts_code", "=", _instrument_to_ts_code(instrument_id))],
+    )
+    return table.to_pandas()
+
+
+def align_exchange_fund_frame(frame: pd.DataFrame, instrument_id: str | None = None) -> tuple[pd.DataFrame, str]:
+    """Map a landed fund_daily table onto the D0 panel columns. Does not write the file.
+
+    ``etf_daily_adj`` stores ``vol`` in the same lots as D0 ``volume``, and ``amount``
+    in thousand CNY. D0 ``amount`` is CNY, so this view multiplies by 1000 once.
+    """
+    out = frame
+    if instrument_id is not None:
+        if "instrument_id" in out.columns:
+            out = out[out["instrument_id"].astype(str) == str(instrument_id)]
+        elif "ts_code" in out.columns:
+            out = out[out["ts_code"].astype(str) == _instrument_to_ts_code(instrument_id)]
+    note = ""
+    if "event_time" not in out.columns and "trade_date" in out.columns:
+        out = out.copy()
+        out["event_time"] = pd.to_datetime(out["trade_date"].astype(str), errors="coerce")
+    if "volume" not in out.columns and "vol" in out.columns:
+        out = out.copy()
+        out["volume"] = pd.to_numeric(out["vol"], errors="coerce")
+        if "amount" in out.columns:
+            out["amount"] = pd.to_numeric(out["amount"], errors="coerce") * 1000.0
+            note = "volume_from_vol amount_cny_from_thousand"
+    return out, note
+
+
 def _with_event_time(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     if "event_time" not in out.columns:
@@ -356,15 +418,18 @@ def panel_session_row(panel: pd.DataFrame, session: date) -> pd.Series:
 
 def load_etf_510300(*, roots: V2DataRoots | None = None) -> Etf510300Bundle:
     path = _require_file(Path((roots or default_v2_roots()).etf_panel_path))
-    frame = pd.read_parquet(path)
+    frame = read_exchange_fund_slice(path, "sh.510300")
     if "ts_code" in frame.columns:
         frame = frame[frame["ts_code"].astype(str).str.startswith("510300")]
+    frame, fund_note = align_exchange_fund_frame(frame)
     frame = _with_event_time(frame)
     dates = list(pd.to_datetime(frame["event_time"]).dt.date) if not frame.empty else []
     if "quality_status" in frame.columns and frame["quality_status"].notna().any():
         status = str(frame["quality_status"].dropna().iloc[-1])
     else:
         status = "quality_status_column_missing"
+    if fund_note:
+        status = f"{status} {fund_note}"
     return Etf510300Bundle(
         frame,
         max(dates) if dates else None,
@@ -390,6 +455,43 @@ def load_sw_l1_members(*, path: Path | None = None, roots: V2DataRoots | None = 
         frame, str(path), _variant(path), _dataset_promotable(path, frame), False,
         available_at_nulls=nulls, n_rows=len(frame), n_non_null=_n_non_null(frame),
     )
+
+
+def _alias_publication_column(frame: pd.DataFrame, source_column: str) -> tuple[pd.DataFrame, str]:
+    """Use an existing publication column as ``available_at``. Does not write the file."""
+    if "available_at" in frame.columns or source_column not in frame.columns:
+        return frame, ""
+    out = frame.copy()
+    out["available_at"] = out[source_column]
+    return out, f"available_at_from_{source_column}"
+
+
+def _ts_code_to_instrument_id(code: str) -> str:
+    text = str(code)
+    if text.count(".") != 1:
+        return text
+    number, exchange = text.split(".", 1)
+    prefix = {"SH": "sh.", "SZ": "sz.", "BJ": "bj."}.get(exchange.upper())
+    if prefix is None:
+        return text
+    return f"{prefix}{number}"
+
+
+def _with_instrument_id(frame: pd.DataFrame) -> pd.DataFrame:
+    if "instrument_id" in frame.columns or "ts_code" not in frame.columns:
+        return frame
+    out = frame.copy()
+    out["instrument_id"] = out["ts_code"].map(_ts_code_to_instrument_id)
+    return out
+
+
+def _ann_date_to_available_at(frame: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    if "available_at" in frame.columns or "ann_date" not in frame.columns:
+        return frame, ""
+    out = frame.copy()
+    announced = pd.to_datetime(out["ann_date"].astype(str), format="%Y%m%d", errors="coerce")
+    out["available_at"] = announced.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=18)
+    return out, "available_at_from_ann_date"
 
 
 def _drop_unpublished(frame: pd.DataFrame, session: date | None) -> pd.DataFrame:
@@ -430,10 +532,18 @@ def _coverage_min(frame: pd.DataFrame) -> date | None:
     return None
 
 
+_WIDE_FINANCIAL_METRICS = (
+    "net_profit", "n_income", "n_income_attr_p", "operate_profit", "total_profit",
+    "basic_eps", "diluted_eps", "eps", "dt_eps", "roe", "roe_waa", "roe_dt",
+    "profit_dedt", "netprofit_margin", "grossprofit_margin", "debt_to_assets",
+    "ocf_to_or", "bps", "total_revenue", "revenue",
+)
+
+
 def _metric_names(frame: pd.DataFrame) -> tuple:
-    if "metric" not in frame.columns:
-        return ()
-    return tuple(sorted(set(frame["metric"].dropna().astype(str))))
+    if "metric" in frame.columns:
+        return tuple(sorted(set(frame["metric"].dropna().astype(str))))
+    return tuple(name for name in _WIDE_FINANCIAL_METRICS if name in frame.columns)
 
 
 def load_ep_research(*, roots: V2DataRoots | None = None, session: date | None = None, prefer: str | None = None) -> TabularView:
@@ -450,9 +560,10 @@ def load_ep_research(*, roots: V2DataRoots | None = None, session: date | None =
             if DEFAULT_EP_RESEARCH_FALLBACK.is_file():
                 path = DEFAULT_EP_RESEARCH_FALLBACK
                 raw = pd.read_parquet(path)
-    promotable = False if outside else _dataset_promotable(path, raw)
+    raw, alias = _alias_publication_column(raw, "e_available_at")
+    promotable = False if outside or alias else _dataset_promotable(path, raw)
     frame = _drop_unpublished(raw, session)
-    labels = [part for part in (outside, "available_at_strictly_before_session" if session else "") if part]
+    labels = [part for part in (outside, alias, "available_at_strictly_before_session" if session else "") if part]
     return TabularView(
         frame, str(path), _variant(path), promotable, False, session=session,
         quality_label=" ".join(labels),
@@ -492,8 +603,8 @@ def load_financials_pit(*, roots: V2DataRoots | None = None, prefer: str | None 
         quality = "ocf_to_profit=tushare_pit"
         promotable = _dataset_promotable(path, frame)
     else:
-        quality = ""
-        promotable = _dataset_promotable(path, frame)
+        quality = "wide_columns" if "metric" not in frame.columns and "net_profit" in frame.columns else ""
+        promotable = False if quality == "wide_columns" else _dataset_promotable(path, frame)
     return TabularView(
         frame, str(path), _variant(path), promotable, False,
         quality_label=quality,
@@ -510,8 +621,10 @@ def financials_metric_asof(frame: pd.DataFrame, session: date, instrument_ids, m
     visible = _drop_unpublished(frame, session)
     if "metric" in visible.columns:
         visible = visible[visible["metric"].astype(str) == metric]
-    wanted = {str(item) for item in instrument_ids}
-    if "instrument_id" in visible.columns:
+    elif "available_at" in visible.columns:
+        visible = visible.sort_values("available_at")
+    wanted = {str(item) for item in instrument_ids} if instrument_ids is not None else None
+    if wanted is not None and "instrument_id" in visible.columns:
         visible = visible[visible["instrument_id"].astype(str).isin(wanted)]
     value_col = "value" if "value" in visible.columns else metric
     out: dict[str, float] = {}
@@ -528,19 +641,71 @@ def financials_metric_asof(frame: pd.DataFrame, session: date, instrument_ids, m
     return out
 
 
-def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = None, instrument_ids=None, prefer_daily: bool = True) -> FloatMktcapLookup:
-    path = Path(asof_path) if asof_path is not None else DEFAULT_FLOAT_MKTCAP
+def materialize_float_mktcap_daily_pit(source: Path | None = None, dest: Path | None = None) -> Path:
+    """Write a new PIT file. The source parquet is left unchanged.
+
+    ``available_at`` is 18:00 Asia/Shanghai on ``trade_date``. That is the
+    research proxy for a daily_basic figure known after the close, not an
+    exchange filing clock. ``promotion_approved`` stays false.
+    """
+    source_path = Path(source) if source is not None else DEFAULT_FLOAT_MKTCAP
+    dest_path = Path(dest) if dest is not None else DEFAULT_FLOAT_MKTCAP_PIT
+    if source_path.resolve() == dest_path.resolve():
+        raise ValueError("float_mktcap_pit_would_overwrite_source")
+    frame = pd.read_parquet(_require_file(source_path))
+    if "trade_date" not in frame.columns:
+        raise ValueError("trade_date_missing")
+    if "available_at" in frame.columns:
+        raise ValueError("source_already_has_available_at")
+    traded = pd.to_datetime(frame["trade_date"].astype(str))
+    frame = frame.copy()
+    frame["available_at"] = traded.dt.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=18)
+    frame["revision"] = FLOAT_MKTCAP_EOD18_REVISION
+    frame["quality_status"] = "research"
+    frame["promotion_approved"] = False
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(dest_path, index=False)
+    return dest_path
+
+
+def _float_decision_cutoff(session: date, known_by: str) -> pd.Timestamp:
+    from quantlab.data.contracts import decision_time
+
+    if known_by == "close":
+        return decision_time(session)
+    if known_by == "open":
+        # Last legal print is the prior session's 18:00 proxy. A calendar gap
+        # still qualifies because those rows are dated before this session.
+        return decision_time(session).normalize() - pd.Timedelta(nanoseconds=1)
+    raise ValueError(f"float_mktcap_known_by:{known_by}")
+
+
+def _filter_float_visible(frame: pd.DataFrame, session: date, known_by: str) -> pd.DataFrame:
+    if "available_at" not in frame.columns:
+        raise ValueError("available_at_missing")
+    cutoff = _float_decision_cutoff(session, known_by)
+    stamps = pd.to_datetime(frame["available_at"])
+    if getattr(stamps.dt, "tz", None) is None:
+        stamps = stamps.dt.tz_localize("Asia/Shanghai")
+    else:
+        stamps = stamps.dt.tz_convert("Asia/Shanghai")
+    visible = frame.loc[(stamps <= cutoff).to_numpy()].copy()
+    if "instrument_id" in visible.columns and not visible.empty:
+        visible = visible.sort_values("available_at").drop_duplicates("instrument_id", keep="last")
+    return visible
+
+
+def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = None, instrument_ids=None, prefer_daily: bool = True, known_by: str = "close") -> FloatMktcapLookup:
+    path = Path(asof_path) if asof_path is not None else DEFAULT_FLOAT_MKTCAP_PIT
     if not path.is_file():
-        if asof_path is not None:
-            raise FileNotFoundError(str(path))
-        return FloatMktcapLookup(notes=(f"float_mktcap_file_missing:{path}",))
-    frame = _drop_unpublished(pd.read_parquet(path), session)
-    if "trade_date" in frame.columns:
-        frame = frame[pd.to_datetime(frame["trade_date"].astype(str)).dt.date <= session]
+        raise FileNotFoundError(str(path))
+    frame = _filter_float_visible(pd.read_parquet(path), session, known_by)
     wanted = None if instrument_ids is None else {str(item) for item in instrument_ids}
     values: dict[str, float] = {}
     source: dict[str, str] = {}
     column = "float_mktcap" if "float_mktcap" in frame.columns else None
+    proxy = _frame_is_eod18_proxy(frame, path)
+    label = "v2_daily_eod18_proxy" if proxy else ("v2_daily" if prefer_daily else "v2_parquet")
     if column and "instrument_id" in frame.columns:
         for row in frame.itertuples(index=False):
             iid = str(getattr(row, "instrument_id"))
@@ -549,35 +714,57 @@ def float_mktcap_lookup_for_session(session: date, *, asof_path: Path | None = N
             number = getattr(row, column)
             if pd.notna(number):
                 values[iid] = float(number)
-                source[iid] = "v2_daily" if prefer_daily else "v2_parquet"
-    return FloatMktcapLookup(values, source, "v2_daily" if values else "none", ())
+                source[iid] = label
+    notes = (FLOAT_MKTCAP_EOD18_REVISION,) if proxy else ()
+    return FloatMktcapLookup(values, source, "v2_daily_eod18_proxy" if notes else ("v2_daily" if values else "none"), notes)
+
+
+def _frame_is_eod18_proxy(frame: pd.DataFrame, path: Path) -> bool:
+    if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name:
+        return True
+    return "revision" in frame.columns and bool(frame["revision"].astype(str).eq(FLOAT_MKTCAP_EOD18_REVISION).any())
+
+
+def _float_promotable(path: Path, frame: pd.DataFrame) -> bool:
+    if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name:
+        return False
+    if "revision" in frame.columns and frame["revision"].astype(str).eq(FLOAT_MKTCAP_EOD18_REVISION).any():
+        return False
+    return _dataset_promotable(path, frame)
 
 
 def load_float_mktcap_asof(*, roots: V2DataRoots | None = None) -> TabularView:
     path = _require_file(Path((roots or default_v2_roots()).float_mktcap_path))
     frame = pd.read_parquet(path)
     return TabularView(
-        frame, str(path), _variant(path), _dataset_promotable(path, frame), False,
+        frame, str(path), _variant(path), _float_promotable(path, frame), False,
         n_rows=len(frame), n_non_null=_n_non_null(frame),
+        quality_label=FLOAT_MKTCAP_EOD18_REVISION if path.name == DEFAULT_FLOAT_MKTCAP_PIT.name else "",
     )
 
 
-def load_float_mktcap_daily(*, roots: V2DataRoots | None = None, session: date | None = None) -> TabularView:
+def load_float_mktcap_daily(*, roots: V2DataRoots | None = None, session: date | None = None, known_by: str = "close") -> TabularView:
     view = load_float_mktcap_asof(roots=roots)
     if session is not None:
-        view.frame = _drop_unpublished(view.frame, session)
+        view.frame = _filter_float_visible(view.frame, session, known_by)
         view.session = session
         view.n_rows = len(view.frame)
+        view.available_at_rule = "available_at_le_close_18:00" if known_by == "close" else "available_at_before_session_open"
     return view
 
 
 def load_dividends(path: Path | None = None, *, roots: V2DataRoots | None = None) -> TabularView:
-    chosen = Path(path) if path is not None else DEFAULT_DIVIDENDS
+    if path is not None and Path(path).is_file():
+        chosen = Path(path)
+    else:
+        root_path = Path(getattr(roots, "dividend_path", DEFAULT_DIVIDENDS)) if roots is not None else DEFAULT_DIVIDENDS
+        candidates = (root_path, DEFAULT_DIVIDENDS_BY_EXDATE, DEFAULT_DIVIDENDS, ROOT / "data" / "v2" / "dividends" / "dividends.parquet")
+        chosen = next((item for item in candidates if item.is_file()), root_path)
     chosen = _require_file(chosen)
-    frame = pd.read_parquet(chosen)
+    frame, alias = _ann_date_to_available_at(_with_instrument_id(pd.read_parquet(chosen)))
     return TabularView(
-        frame, str(chosen), _variant(chosen), _dataset_promotable(chosen, frame), False,
-        n_rows=len(frame), n_non_null=_n_non_null(frame),
+        frame, str(chosen), _variant(chosen), False, False,
+        quality_label=alias, n_rows=len(frame), n_non_null=_n_non_null(frame),
     )
 
 
